@@ -285,10 +285,11 @@ known_issues:
     in kg/m2/s. Since water density is 1000 kg/m3, 1 kg/m2/s = 1 mm/s = 3600 mm/hr. Passing mm/hr values
     directly means rainfall is 3600x too high. A 5 mm/hr storm becomes 5 kg/m2/s = 18000 mm/hr.
 
-    ; [''forcing'', ''hy'
+    ; [''forcing'', ''hydrol'', ''ode'']'
   remedy: 'Convert precipitation: P_pihm = P_mmhr / 3600.0 / 1000.0; forcing_converter.py; [''Check input
     units in source dataset documentation'', ''Divide mm/hr by 3600000 to get kg/m2/s'', ''Divide mm/day
-    by 86400000 to get kg/m2/s'', ''Verify max PRCP ~ 0.01 kg/m2/s (= 36 mm/hr, heavy rain)'']; forcing_converter.py'
+    by 86400000 to get kg/m2/s'', ''Verify max PRCP ~ 0.01 kg/m2/s (= 36 mm/hr, heavy rain)'']; forcing_converter.py
+    validates max PRCP < 0.1 kg/m2/s'
   severity: silent
 - id: dt_002
   symptom: 'Snow accumulates year-round even in summer. ET is extremely low. Soil temperatures remain
@@ -299,7 +300,7 @@ known_issues:
     (SFCTMP). Passing 20°C as 20 K means the model sees -253°C. All precipitation becomes snow, ET shuts
     down, and the water balance becomes snowpack-dominated. This is a silent error — no crash occurs.
 
-    ; [''forc'
+    ; [''forcing'', ''is_sm_et'', ''noah'']'
   remedy: 'Add 273.15 to all Celsius temperature values; forcing_converter.py; [''Convert: T_K = T_C +
     273.15'', ''Verify SFCTMP values are in range 230-330 K'', ''Check that seasonal cycle is visible
     in converted data'']; forcing_converter.py adds 273.15 and validates range'
@@ -313,7 +314,7 @@ known_issues:
     101325 Pa). Many datasets provide pressure in hPa or mbar (e.g., 1013.25). Passing hPa directly means
     pressure is 100x too low, which affects vapor pressure, air density, and all energy balance calculations.
 
-    '
+    ; [''forcing'', ''noah'', ''is_sm_et'']'
   remedy: 'Multiply hPa/mbar by 100 to get Pa; forcing_converter.py; [''Convert: P_Pa = P_hPa * 100.0'',
     ''Verify PRES values ~ 80000-105000 Pa'']; forcing_converter.py multiplies by 100 when source is hPa'
   severity: silent
@@ -322,14 +323,16 @@ known_issues:
     ratios are unrealistic.
 
     '
-  diagnosis: Humidity variable type mismatch (specific humidity vs RH); PIHM expects relative humidity
+  diagnosis: 'Humidity variable type mismatch (specific humidity vs RH); PIHM expects relative humidity
     as a percentage (0-100%). Some datasets provide specific humidity (kg/kg, values ~0.001-0.025) or
     RH as fraction (0-1). Passing specific humidity directly makes the model see near-zero RH, producing
-    excessive E
+    excessive ET demand.
+
+    ; [''forcing'', ''is_sm_et'']'
   remedy: 'Convert specific humidity to RH using Clausius-Clapeyron; forcing_converter.py; [''Calculate
     saturation vapor pressure: es = 611.2 * exp(17.67*(T-273.15)/(T-29.65))'', ''Calculate actual vapor
     pressure from specific humidity: e = q*P/(0.622+0.378*q)'', ''RH = 100 * e / es'', ''Verify RH in
-    range 5-100%'']; '
+    range 5-100%'']; forcing_converter.py detects humidity type and converts'
   severity: degraded
 - id: dt_005
   symptom: 'ET is extremely low. Snow never melts. Energy balance is dominated by longwave. Surface temperature
@@ -340,11 +343,11 @@ known_issues:
     Some datasets provide daily accumulated radiation in MJ/m2/day. A typical clear-sky solar value is
     ~25 MJ/m2/day = ~290 W/m2 (average). Passing 25 as W/m2 means solar input is ~12x too low.
 
-    ; [''forcing'', ''noah'
+    ; [''forcing'', ''noah'', ''is_sm_et'']'
   remedy: 'Convert: W/m2 = MJ/m2/day / 0.0864; forcing_converter.py; [''For daily totals: divide by 86400
     to get W/m2 average, then distribute'', ''For instantaneous: should already be in W/m2'', ''Verify
     peak solar radiation ~ 800-1200 W/m2'', ''Verify longwave radiation ~ 200-450 W/m2'']; forcing_converter.py
-    checks'
+    checks radiation magnitude and converts'
   severity: silent
 - id: dt_006
   symptom: 'Aerodynamic resistance is too low. ET is moderately too high. Snow redistribution is overestimated.
@@ -383,7 +386,7 @@ known_issues:
     as 1/m makes the air-entry value 100x too high, meaning the soil drains at much lower suctions than
     reality.
 
-    '
+    ; [''soil'', ''vert_flow'', ''is_sm_et'']'
   remedy: 'Multiply alpha by 100 to convert from 1/cm to 1/m; soil_converter.py; [''alpha_per_m = alpha_per_cm
     * 100'', ''Verify: sand alpha ~ 14.5 1/m, clay ~ 0.8 1/m'']; soil_converter.py multiplies by 100 and
     validates range'
@@ -423,11 +426,13 @@ known_issues:
   diagnosis: 'Calibration file contains absolute values instead of multipliers; The .calib file uses multipliers
     (default 1.0). Setting KSATH=1e-5 thinking it''s the actual Ksat value instead means the base Ksat
     is multiplied by 1e-5, making conductivity essentially zero. Similarly, PRCP is a multiplier (1.0
-    = no '
+    = no change), not an absolute precipitation.
+
+    ; [''read_calib'', ''init_soil'', ''init_river'']'
   remedy: Set all .calib values as multipliers (1.0 = no change); ; ['Review .calib file — all values
     should be near 1.0 for initial run', 'KSATH=2.0 means double the base Ksat, not set to 2.0 m/s', 'SFCTMP
     is an additive offset in K (0.0 = no change)', 'PRCP is multiplicative (1.0 = no change)']; Document
-    cl
+    clearly in parameter configuration docs
   severity: silent
 - id: dt_012
   symptom: 'Baseflow is zero or unrealistically low for first 1-5 years. Water table is at soil bottom.
@@ -437,10 +442,13 @@ known_issues:
   diagnosis: 'Simulation started without spin-up, using default initial conditions; PIHM''s default IC
     (INIT_MODE=0) uses a relaxation scheme that starts from approximate conditions. Groundwater in particular
     requires years to reach dynamic equilibrium. Without spin-up, early simulation years are unreliable
-    — the '
+    — the model spends time filling/draining the subsurface.
+
+    ; [''initialize'', ''spinup'', ''ode'']'
   remedy: 'Run spin-up simulation first, then use output IC for production run; run_pihm.py; [''Set SIMULATION_MODE=1
     in .para file'', ''Run: ./pihm -o spinup ShaleHills'', ''Copy output IC: cp output/spinup/*.ic input/ShaleHills/'',
-    ''Set SIMULATION_MODE=0, INIT_MODE=1 in .para'', ''Run production: ./pihm -o productio'
+    ''Set SIMULATION_MODE=0, INIT_MODE=1 in .para'', ''Run production: ./pihm -o production ShaleHills''];
+    run_pihm.py warns if INIT_MODE=0 and no spin-up detected'
   severity: degraded
 - id: dt_013
   symptom: 'Mass balance error grows over time. Total water in system drifts. Water balance check shows
@@ -464,7 +472,9 @@ known_issues:
   diagnosis: 'Output interval codes confused (negative codes vs seconds); In the .para file, output intervals
     use special negative codes: -1=yearly, -2=monthly, -3=daily, -4=hourly, 0=off. Positive values are
     seconds. Setting GW to 3 (intending daily) actually outputs every 3 seconds, creating massive files.
-    Sett'
+    Setting to -4 gives hourly.
+
+    ; [''read_para'', ''map_output'', ''print'']'
   remedy: 'Use correct codes: -3 for daily, -4 for hourly, 0 for off; ; [''Review .para output section'',
     ''-1 = yearly, -2 = monthly, -3 = daily, -4 = hourly'', ''3600 = every 3600 seconds (= hourly, same
     as -4)'', ''0 = off (no output for this variable)'']; Document output codes clearly'
@@ -476,11 +486,14 @@ known_issues:
     '
   diagnosis: 'CVODE solver cannot converge due to stiff system or bad input; The implicit ODE solver fails
     when the system is too stiff (sharp gradients), input data has discontinuities, or numerical values
-    are extreme. Common causes: precipitation spike, bad mesh element (degenerate triangle), extreme hydraulic '
+    are extreme. Common causes: precipitation spike, bad mesh element (degenerate triangle), extreme hydraulic
+    conductivity contrast.
+
+    ; [''ode'', ''cvode'']'
   remedy: 'Check input data quality and mesh, then adjust solver params; ; [''Enable debug mode: ./pihm
     -d ShaleHills'', ''Check CVODE log for the failing time step'', ''Look at forcing data at that time
     for spikes/discontinuities'', ''Check mesh quality for degenerate triangles'', ''Try increasing MAX_NONLIN_ITER
-    to 5'
+    to 5'', ''Try reducing MODEL_STEPSIZE to 30 seconds'']; run_pihm.py pre-checks forcing continuity'
   severity: fatal
 - id: dt_016
   symptom: 'CVODE convergence failures at specific elements. Oscillating water table at certain locations.
@@ -491,11 +504,11 @@ known_issues:
     small angles (<10°) or very large aspect ratios. These elements have poor numerical properties — small
     changes in head create large flux imbalances. The solver must take tiny steps to handle them.
 
-    ; [''mesh'', ''od'
+    ; [''mesh'', ''ode'', ''lat_flow'']'
   remedy: Improve mesh quality in PIHMgis with minimum angle constraint; ; ['Check minimum angle of all
     triangles (should be >15°)', 'Check element area ratios (adjacent elements should be similar size)',
     'Regenerate mesh with stricter quality constraints', 'Use -c flag to enable elevation correction for
-    sink
+    sinks']; Check mesh quality metrics before simulation
   severity: degraded
 - id: dt_017
   symptom: 'Model produces flat-line output during specific periods. Forcing values jump between reasonable
@@ -506,7 +519,7 @@ known_issues:
     If a gap spans days/weeks, the model interpolates across the gap, producing incorrect intermediate
     values. Missing data coded as -999 is interpolated as if it were a real extreme value.
 
-    ; [''forcing'', ''r'
+    ; [''forcing'', ''read_forc'']'
   remedy: Fill gaps and remove -999 sentinel values before running; forcing_converter.py; ['Check for
     -999 or NaN in forcing files', 'Fill gaps using interpolation or nearby station data', 'Verify temporal
     continuity (no missing hours)']; forcing_converter.py checks for gaps and -999 values
@@ -520,7 +533,7 @@ known_issues:
     soil type index to each element. If these indices don''t match the order in the .soil file, elements
     get the wrong soil properties. This is silent — the model runs fine but with shuffled soil assignments.
 
-    ; [''read_'
+    ; [''read_att'', ''read_soil'', ''init_soil'']'
   remedy: Verify soil type indices match between .att and .soil files; ; ['Count soil types in .soil (NUMSOIL)',
     'Check all SOIL values in .att are between 1 and NUMSOIL', 'Map a few elements and verify soil type
     matches GIS soil map']; Cross-check indices during preprocessing
@@ -549,10 +562,11 @@ known_issues:
     bad IC), the ODE solver may produce a negative trial value. Taking log or sqrt of this value causes
     FPE crash.
 
-    ;'
+    ; [''ode'', ''vert_flow'', ''lat_flow'']'
   remedy: Check IC and forcing for extreme values; tighten solver tolerance; ; ['Check .ic file for negative
     values', 'Reduce ABSTOL to 1e-5', 'Reduce MODEL_STEPSIZE to 30 seconds', 'Check for extreme Ksat values
-    in .soil', 'Run with -d flag to identify failing element']; Pre-validate IC and soil parameters b
+    in .soil', 'Run with -d flag to identify failing element']; Pre-validate IC and soil parameters before
+    execution
   severity: fatal
 - id: dt_021_obs_station_type_and_newbasin_mesh_block
   symptom: PIHM verifier called with metrics all null (r=null) and ki_usable=false; orchestrator r<0.5
@@ -561,10 +575,10 @@ known_issues:
   diagnosis: 'Two structural blockers: (1) requested discharge obs does not exist — station is a regulated
     reservoir STAGE gauge with zero DLY_FLOWS records, so NSE/r/KGE are uncomputable; (2) PIHM TIN mesh
     + .att attribute assignment require PIHMgis (external GUI, not installed, not headless), and no mesh
-    tool s'
+    tool ships in tools/.'
   remedy: Before launching PIHM at a HYDAT site, REQUIRE DATA_TYPE='Q' (natural streamflow) AND a pre-built/validated
     mesh (only ShaleHills validates). Do not synthesize a mesh or fabricate discharge. If the station
-    is reservoir/level-only, classify requires_data and re-target. New-basin mesh authoring is req
+    is reservoir/level-only, classify requires_data and re-target. New-basin mesh authoring is requires_human_engineering.
 - id: dt_021
   symptom: 'Pipeline blocked at S1 for a new basin: no .mesh/.att can be produced; metrics null though
     preflight passes and ShaleHills dev example reproduces.'
@@ -576,39 +590,66 @@ known_issues:
 - id: dt_022_china_gw_yearbook_water_table_domain_skip
   symptom: PIHM targeted at the China Geological Environment Monitoring Groundwater Level Yearbook (中国地质环境监测地下水位年鉴,
     2005-2021), obs variable daily_water_table_depth_m at a monitoring well (Huai/North-China-Plain subset).
-    All metrics null, ki_usable=false; r<0.5 retry trigger may misfire on a run that cannot pr
+    All metrics null, ki_usable=false; r<0.5 retry trigger may misfire on a run that cannot produce a
+    comparable series.
   diagnosis: 'Three independent structural blockers, none fixable by parameter/forcing retry: (1) MESH
     BLOCK (same as dt_021) — the yearbook region has no shipped real TIN; only synthetic 2-triangle placeholder
     meshes exist for Huai sites (Wangjiaba/Bengbu, NUMELE=2), whose lumped GW head is explicitly ''not
-    inter'
+    interpretable as model skill'' per the capability scorecard. (2) MODEL-DOMAIN MISMATCH — core PIHM
+    hydrology has NO groundwater pumping/abstraction module; the dominant signal in NCP/Huai yearbook
+    wells is pumping-driven multi-decadal water-table decline (GRACE NCP ~-22 mm/yr), which an unconfined
+    surface-subsurface watershed model physically cannot reproduce. (3) VARIABLE/DATUM MISMATCH — PIHM
+    .gw.dat is groundwater HEAD above the aquifer bottom (m), while the yearbook reports DEPTH-to-water
+    below land surface (m); conversion needs per-element ground elevation that a lumped placeholder mesh
+    cannot supply per well. Additionally the only shipped Huai forcing (Wangjiaba.meteo) is 1975-1991,
+    with zero temporal overlap with the 2005-2021 yearbook.'
   remedy: Classify as domain-validity SKIP (requires_human_engineering), not a calibration failure — do
     NOT enter the retry loop. The GW variable's obs_shape here is point_time_series (metric family is
     valid in principle), so the gate will NOT emit REJECT_WRONG_METRIC; the block is structural, upstream
-    of met
+    of metric choice. To make this target runnable a future build needs BOTH a headless TIN/.att generator
+    for the well's catchment AND a confined-aquifer pumping sink (out of scope for core MM-PIHM). Until
+    then, validate water-table dynamics only on basins with a real mesh and negligible abstraction.
 - id: dt_023_headless_tin_fragmented_river_network_no_routed_outlet
   symptom: PIHM run on a large NEW basin (e.g. 唐乃亥/Tangnaihai Yellow-source ~132,000 km², or Bengbu/Wangjiaba
     Huai) with an AD-HOC headless-built TIN (NUMELE in the hundreds–thousands, real geometry, dev example
-    reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (Bengbu real run 2026-0
+    reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (in one real run about
+    40x under), NSE_val negative, PBIAS near -100%, r low. Water balance may still "close" (P≈ET+Q+dS)
+    — the deficit is a routing/accumulation gap, not a mass-conservation bug.
   diagnosis: 'Overcoming the dt_021 mesh-generation block with meshpy/ad-hoc triangulation is NECESSARY
     BUT NOT SUFFICIENT for discharge validation. The ad-hoc river network is FRAGMENTED: many segments
     (Bengbu 132/174) carry DOWN=-3 and exit the domain independently, so NO single segment carries the
-    basin-integr'
-  remedy: 'Do NOT launch a multi-hour PIHM discharge run on a new large basin expecting a valid NSE —
-    the ad-hoc TIN cannot route to the gauge and NSE>=0.5 is structurally unreachable. Classify requires_human_engineering
-    (same class as dt_021). A valid discharge target needs a CONNECTED river network draining '
+    basin-integrated flow and there is no routed outlet co-located with the gauge. Summing RIVFLX1 over
+    all boundary-exit segments is a proxy that lacks channel routing/accumulation to the gauge, so it
+    systematically undershoots basin discharge by ~1-2 orders of magnitude (each fragment drains only
+    its local contributing area). This is the same lumped-collapse failure dt_021/s1_domain.md warns about,
+    now confirmed on a REAL non-placeholder TIN. Independently verified by the run_validity critic: verdict
+    fix_setup / capability_to_build, attribution workflow_incomplete — all metrics provisional, nothing
+    attributable to model physics until the mesh routes to a genuine single outlet.'
+  remedy: Do NOT launch a multi-hour PIHM discharge run on a new large basin expecting a valid NSE — the
+    ad-hoc TIN cannot route to the gauge and NSE>=0.5 is structurally unreachable. Classify requires_human_engineering
+    (same class as dt_021). A valid discharge target needs a CONNECTED river network draining to ONE outlet
+    segment co-located with the gauge (accumulating the full contributing area) — i.e. a real PIHMgis-equivalent
+    delineation+meshing pipeline, not raw Delaunay + fragmented boundary exits. Until that ships, pin
+    PIHM discharge validation to ShaleHills (small single-outlet basin) and treat Bengbu_v3/Wangjiaba_v2
+    large-basin runs as capability tests, not skill scores. Do not re-enter the r<0.5 / NSE retry loop.
 - id: dt_024_pihm_input_header_conventions
   symptom: 'flux-pihm / pihm exits immediately with ''Expected header: ...'' + ''Error: input file format
     error in input/<proj>/<proj>.att at Line 1'' (or the same for .meteo / .soil), rc=1, before any timestep.
     Happens with decks written by the KI tools forcing_converter.py / soil_converter.py, or by following
-    SKI'
+    SKILL.md sections 4.2/4.4 literally.'
   diagnosis: Three reader conventions that the KI docs got wrong. (1) src/read_att.c CheckHeaders the
     FIRST line of .att against 'INDEX SOIL GEOL LC METEO LAI BC1 BC2 BC3' and sizes the table from nelem
     in the .mesh -- there is NO 'NUMATT <n>' record, but SKILL.md section 4.2 showed one. (2) src/read_forc.c
-    pars
+    parses METEO_TS with sscanf("%s %d %s %lf") requiring match==4, i.e. 'METEO_TS 1 WIND_LVL 10.0' on
+    ONE line, then CheckHeader(8, TIME PRCP SFCTMP RH SFCSPD SOLAR LONGWV PRES); forcing_converter.py
+    wrote METEO_TS and WIND_LVL on two lines and no column header. (3) src/read_soil.c calls CheckHeader(16,
+    INDEX SILT CLAY OM BD KINF KSATV KSATH MAXSMC MINSMC ALPHA BETA MACHF MACVF DMAC QTZ) right after
+    NUMSOIL; soil_converter.py wrote data rows directly.
   remedy: Use tools/mesh_builder.py (.att), the patched forcing_converter.py (.meteo) and the patched
     soil_converter.py (.soil) -- all three now emit the reader-exact headers. When hand-checking a deck,
     diff it against input/ShaleHills, which is the ONLY authoritative format reference; SKILL.md sections
-    4.2/4
+    4.2/4.4 were wrong until 2026-08-02. Comment lines beginning '#' are skipped by NextLine, so a '#TS
+    <units>' line under the header is safe.
 - id: dt_025_headless_tin_conventions_ccw_nabr_outlet
   symptom: 'A headlessly generated PIHM TIN loads but the run is wrong or dies: negative/zero element
     storage, hillslope fluxes going to the wrong neighbour, the river never exchanging with the aquifer,
@@ -616,10 +657,18 @@ known_issues:
   diagnosis: 'Four geometric contracts MM-PIHM enforces implicitly. (a) InitTopo computes a SIGNED element
     area 0.5*((x1-x0)(y2-y0)-(y1-y0)(x2-x0)); clockwise node order gives a NEGATIVE area (verified: 0/535
     ShaleHills elements are clockwise). (b) NABR[j] is the neighbour across the edge OPPOSITE node j --
-    verif'
+    verified empirically on all 1544 ShaleHills neighbour records (0/1544 match the ''node j -> node j+1''
+    alternative). 0 means no neighbour. (c) InitRiver sets nabr_river by scanning for elem[left-1].nabr[j]
+    == right, so the LEFT and RIGHT elements of a river segment MUST share the segment''s edge in the
+    mesh -- a river reach that is not a mesh edge silently decouples the channel from the hillslope. (d)
+    the outlet DOWN code -3 is ZERO_DPTH_GRAD, whose OutletFlux computes sqrt((zbed - (node_zmax(to) -
+    depth))/dist); if the segment''s `to` node is not LOWER than the segment mean the gradient is negative
+    and the discharge is NaN.'
   remedy: Generate the mesh with tools/mesh_builder.py, which (a) flips any clockwise triangle, (b) builds
     NABR from an edge->element map using the opposite-node rule, (c) inserts the river centreline as CONSTRAINED
-    Triangle segments and then recovers the river reaches as actual mesh edges (both endpoints AND
+    Triangle segments and then recovers the river reaches as actual mesh edges (both endpoints AND the
+    midpoint within tolerance of the centreline, interior edges only), and (d) forces node elevations
+    to decrease monotonically downstream. Do not hand-write a TIN.
 - id: dt_026_gw_head_to_piezometric_level
   symptom: PIHM .gw.dat compared against a piezometer gives an absurd bias (tens of metres) or an NSE
     far below zero even though the seasonal shape looks right. Typical with obs reported as a LEVEL in
@@ -628,7 +677,11 @@ known_issues:
   diagnosis: 'GW is the head ABOVE THE ELEMENT''S AQUIFER BOTTOM: lat_flow.c uses (elem.ws.gw + elem.topo.zmin)
     as the head elevation, and topo.zmin is the MEAN of the three node ZMIN values. So GW is neither a
     datum elevation nor a depth below ground. A second, separate error is using the element''s mean ZMAX
-    as t'
+    as the wellhead elevation: a ~0.1 km2 triangle on a slope can average several metres away from the
+    well''s surveyed ground level, injecting a pure elevation bias into the head comparison.'
   remedy: 'Convert in DEPTH space, then re-datum with the WELL''s own surveyed elevation: sim_depth_to_water
     = elem_zmax - (elem_zmin + GW); sim_level_datum = well_ground_elev - sim_depth_to_water. NSE/r/KGE
-    are identical whether scored on depth or on level, but the depth-space route removes the element-averagi'
+    are identical whether scored on depth or on level, but the depth-space route removes the element-averaging
+    elevation bias. Also make sure the mesh''s aquifer thickness (zmax - zmin) EXCEEDS the observed depth
+    to water, otherwise the modelled water table cannot physically reach the observed level and the metric
+    is capped by construction.'

@@ -454,10 +454,12 @@ known_issues:
 - id: dt_001
   symptom: Zero snowfall even during winter. All precipitation classified as rain. Snow height remains
     zero.
-  diagnosis: Temperature in degrees Celsius instead of Kelvin; COSIPY expects T2 in Kelvin. The snow/rain
+  diagnosis: 'Temperature in degrees Celsius instead of Kelvin; COSIPY expects T2 in Kelvin. The snow/rain
     transfer function uses tanh((T2 - 273.16 - center) * spread). If T2 is in Celsius (e.g., -5), then
     T2 - 273.16 = -278.16, making tanh() = -1, so 0.5*(-(-1)+1) = 1.0 which means 100% rain fraction.
-    All precip
+    All precipitation becomes rain.
+
+    ; [''convert_forcing'', ''cosipy_core'']'
   remedy: Add 273.16 to temperature values if they are in Celsius; convert_forcing; ['Check T2 range —
     values should be 220-320 K, not -50 to +50', 'If max T2 < 100, values are in Celsius — add 273.16'];
     convert_forcing validates T2 range 223.16 to 316.16 K
@@ -468,7 +470,7 @@ known_issues:
     percentage (0-100%). The saturation vapor pressure computation uses RH2 directly. If RH2=0.7 instead
     of 70, the specific humidity at 2m is ~100x too low, making latent heat flux negligible.
 
-    ; [''convert_forcing'','
+    ; [''convert_forcing'', ''surfaceTemperature'']'
   remedy: Multiply RH2 by 100 if values are in 0-1 range; convert_forcing; ['Check max RH2 — should be
     60-100 for most climates', 'If max RH2 < 1.5, values are fraction — multiply by 100']; convert_forcing
     checks for RH2 < 2.0 and warns
@@ -479,17 +481,19 @@ known_issues:
     Pa = 500 hPa). The bounds check is 200-1080 hPa. Values of 50000+ will pass no bounds check, and air
     density rho = p / (R * T) will be ~100x too high, causing turbulent heat fluxes to be 100x too large.
 
-    ; [''conv'
+    ; [''convert_forcing'', ''surfaceTemperature'']'
   remedy: Divide pressure by 100 to convert Pa to hPa; convert_forcing; ['Check PRES range — should be
     200-1080 hPa', 'If PRES > 2000, values are in Pa — divide by 100']; convert_forcing validates PRES
     range
   severity: crash_or_silent
 - id: dt_004
   symptom: Precipitation 24x too much or too little. Unrealistic snowfall accumulation or no snow buildup.
-  diagnosis: Precipitation in wrong temporal units (mm/day vs mm/timestep); COSIPY expects RRR in mm per
-    model timestep (default 1 hour). If the input is mm/day, the model receives 24x too little precipitation
+  diagnosis: 'Precipitation in wrong temporal units (mm/day vs mm/timestep); COSIPY expects RRR in mm
+    per model timestep (default 1 hour). If the input is mm/day, the model receives 24x too little precipitation
     per step. If the input is mm/3hr but treated as mm/hr, precipitation is 3x too much. COSIPY does NOT
-    di
+    divide by dt internally — it uses the raw value.
+
+    ; [''convert_forcing'', ''cosipy_core'']'
   remedy: 'Convert precipitation to mm per model timestep before writing netCDF; convert_forcing; [''Identify
     source temporal resolution'', ''Scale: mm/day -> mm/hr = /24; mm/3hr -> mm/hr = /3'']; convert_forcing
     checks RRR bounds 0-20 mm/hr'
@@ -502,7 +506,7 @@ known_issues:
     but input is 3-hourly, melt will be 1/3 of the correct value. All mass-flux calculations scale with
     dt.
 
-    ; '
+    ; [''constants.toml'', ''cosipy_core'']'
   remedy: Set dt in constants.toml to match input time step in seconds; None; ['Check input netCDF time
     coordinate spacing', 'Set dt = time_spacing_in_seconds in constants.toml']; run_cosipy preflight checks
     dt vs input time resolution
@@ -514,7 +518,7 @@ known_issues:
     snow height per timestep (not water equivalent). If SNOWFALL is in mm (e.g., 5 mm) the model interprets
     it as 5 m of snow per timestep, creating many new layers and quickly exceeding max_layers (200).
 
-    ; [''convert'
+    ; [''convert_forcing'', ''cosipy_core'']'
   remedy: 'Convert SNOWFALL to meters of snow: m_snow = mm_we / (density / 1000); convert_forcing; [''Check
     SNOWFALL range — should be 0-0.05 m per hourly timestep'', ''If max SNOWFALL > 0.1, values are likely
     in mm — divide by 1000'']; convert_forcing validates SNOWFALL range 0-0.05'
@@ -525,35 +529,42 @@ known_issues:
     N as a fraction 0-1. The longwave parameterization uses N directly in the Stefan-Boltzmann equation.
     If N=80 instead of 0.8, the computed LWin will be astronomically large, causing unrealistic warming.
 
-    ; [''conv'
+    ; [''convert_forcing'', ''surfaceTemperature'']'
   remedy: Divide N by 100 if values exceed 1.0; convert_forcing; ['Check N range — should be 0.0 to 1.0',
     'If max N > 1.5, values are percentage — divide by 100']; convert_forcing validates N range 0-1
   severity: silent
 - id: dt_008
   symptom: Shortwave radiation values of 10^6 W/m2. Model blows up with extreme melt.
-  diagnosis: Shortwave radiation in J/m2 (accumulated) instead of W/m2 (instantaneous); ERA5 provides
+  diagnosis: 'Shortwave radiation in J/m2 (accumulated) instead of W/m2 (instantaneous); ERA5 provides
     shortwave radiation as accumulated J/m2 per accumulation period. To get W/m2, divide by the number
     of seconds in the accumulation period. If raw J/m2 values (e.g., 3.6e6 = 1000 W/m2 * 3600s) are used
-    directly, r
+    directly, radiation is ~3600x too high.
+
+    ; [''convert_forcing'']'
   remedy: 'Divide accumulated radiation by dt_seconds: W/m2 = J_m2 / dt_s; convert_forcing; [''Check G
     range — should be 0-1600 W/m2'', ''If max G > 2000, values may be accumulated J/m2'']; convert_forcing
     checks G bounds 0-1600'
   severity: crash
 - id: dt_009
   symptom: Model reads wrong input file or crashes with 'No such file' error.
-  diagnosis: input_netcdf path in config.toml is relative to data_path, not cwd; The full input path is
-    data_path + 'input/' + input_netcdf. For example, data_path='./data/' and input_netcdf='Zhadang/Zhadang_ERA5_2009.nc'
-    resolves to './data/input/Zhadang/Zhadang_ERA5_2009.nc'. The 'input/' subdirectory is autom
+  diagnosis: 'input_netcdf path in config.toml is relative to data_path, not cwd; The full input path
+    is data_path + ''input/'' + input_netcdf. For example, data_path=''./data/'' and input_netcdf=''Zhadang/Zhadang_ERA5_2009.nc''
+    resolves to ''./data/input/Zhadang/Zhadang_ERA5_2009.nc''. The ''input/'' subdirectory is automatically
+    prepended.
+
+    ; [''config.toml'', ''io.py'']'
   remedy: Set input_netcdf relative to data_path/input/ (not absolute); None; ['Verify the file exists
     at <data_path>/input/<input_netcdf>']; run_cosipy preflight checks file existence
   severity: crash
 - id: dt_010
   symptom: Unrealistic mass balance in first 3-6 months. Large initial melt or accumulation before reaching
     steady state.
-  diagnosis: Initial conditions (snowheight, glacier height, temperature) do not match site conditions;
+  diagnosis: 'Initial conditions (snowheight, glacier height, temperature) do not match site conditions;
     COSIPY initializes with initial_snowheight_constant (default 0.2m) and initial_glacier_height (default
     40m). If the actual snowpack is 2m deep, the model starts with too little snow and shows rapid melt.
-    The b
+    The bottom temperature (default 270.16K) affects the heat equation solution.
+
+    ; [''constants.toml'', ''init.py'']'
   remedy: Set initial conditions to match site observations or use a spinup period; None; ['Set initial_snowheight_constant
     to observed snow depth', 'Set initial_glacier_height to glacier thickness', 'Run 1+ year spinup before
     analysis period']; Use restart files from spinup simulation
@@ -564,7 +575,7 @@ known_issues:
     and ''west_east'' instead of ''lat'' and ''lon''. Setting WRF=true in config.toml switches COSIPY
     to use WRF dimension names. Without this flag, xarray cannot find the lat/lon dimensions in WRF data.
 
-    ; [''co'
+    ; [''config.toml'', ''io.py'']'
   remedy: Set WRF = true in config.toml [DIMENSIONS] section; None; ['Check input file dimension names
     with ncdump -h', 'Set WRF=true if dimensions are south_north/west_east']; run_cosipy preflight checks
     dimension names
@@ -575,35 +586,42 @@ known_issues:
     Dask distributed for parallel execution. If the default port (8786) is already in use, or if the system
     lacks memory for the requested workers, the cluster initialization hangs indefinitely.
 
-    ; [''COSIPY.py'', ''con'
+    ; [''COSIPY.py'', ''config.toml'']'
   remedy: 'Change local_port in config.toml or reduce workers count; None; [''Check if port 8786 is in
     use: lsof -i :8786'', ''Change local_port to an unused port (e.g., 8787)'', ''Set workers to a smaller
     number (e.g., 4)'']; run_cosipy checks port availability before starting'
   severity: hang
 - id: dt_013
   symptom: '''ERROR! There are NaNs in the dataset'' — model stops at grid check.'
-  diagnosis: Input forcing data contains NaN values in masked (glacier) grid cells; COSIPY checks each
+  diagnosis: 'Input forcing data contains NaN values in masked (glacier) grid cells; COSIPY checks each
     grid cell with MASK=1 for NaN values before processing. If any forcing variable (T2, RH2, U2, G, PRES,
     RRR) has NaN in a masked cell, the model exits with this error. This commonly happens when the input
-    grid d
+    grid does not fully cover the glacier mask.
+
+    ; [''COSIPY.py'', ''io.py'']'
   remedy: Fill NaN values in the input netCDF for all cells where MASK=1; convert_forcing; ['Open input
     file and check for NaN in masked cells', 'Use xarray fillna or interpolation to remove NaN']; convert_forcing
     validates no NaN in masked cells
   severity: crash
 - id: dt_014
   symptom: '''Maximum number of layers reached'' — model crashes during simulation.'
-  diagnosis: Too much snowfall without adequate merging — layer count exceeds max_layers; Each snowfall
+  diagnosis: 'Too much snowfall without adequate merging — layer count exceeds max_layers; Each snowfall
     event adds a new layer. If the remeshing (merging) parameters are too restrictive or snowfall is unrealistically
-    high, the layer count exceeds max_layers (default 200). This is often caused by SNOWFALL unit er
+    high, the layer count exceeds max_layers (default 200). This is often caused by SNOWFALL unit errors.
+
+    ; [''cosipy_core'', ''grid.py'']'
   remedy: Check SNOWFALL units and adjust remeshing parameters; None; ['Check max SNOWFALL per timestep
     — should be < 0.05 m', 'Increase max_layers in constants.toml (e.g., 500)', 'Increase merge_max or
     relax density_threshold_merging']; Validate SNOWFALL units before running
   severity: crash
 - id: dt_015
   symptom: Surface temperature solver does not converge. Surface temperature oscillates or goes to NaN.
-  diagnosis: Extreme forcing values cause energy balance residual to be non-convergent; The Secant/Newton
+  diagnosis: 'Extreme forcing values cause energy balance residual to be non-convergent; The Secant/Newton
     method for surface temperature may fail to converge if the forcing values produce extreme energy imbalance
     (e.g., G=5000 W/m2 from unit error, or PRES=101325 Pa instead of hPa). The solver oscillates between
+    bounds (220K to 330K) without finding a root.
+
+    ; [''surfaceTemperature.py'']'
   remedy: Fix forcing data units — usually G, PRES, or LWin is wrong; convert_forcing; ['Check all forcing
     variable ranges against bounds in check_data()', 'Verify G < 1600, PRES in 200-1080 hPa, LWin < 400'];
     convert_forcing validates all bounds
@@ -614,7 +632,7 @@ known_issues:
     shapefile to create the MASK variable. If the shapefile extent does not overlap with the DEM tile
     coordinates (longitude_upper_left etc.), all MASK values will be 0, and no grid cell is processed.
 
-    ; [''create_stat'
+    ; [''create_static_file.py'', ''utilities_config.toml'']'
   remedy: Check that DEM tile and shapefile extents overlap; convert_static; ['Plot DEM extent and shapefile
     boundaries', 'Adjust coordinate bounds in utilities_config.toml']; convert_static validates MASK has
     at least one cell = 1
@@ -625,7 +643,7 @@ known_issues:
     create_static_file resamples the DEM to the specified aggregate_degree (default 0.003 degrees). If
     this is too coarse, glacier features are lost. If too fine, computation is slow.
 
-    ; [''utilities_config.t'
+    ; [''utilities_config.toml'', ''create_static_file.py'']'
   remedy: 'Set aggregate_degree to match glacier size and desired detail; convert_static; [''For small
     glaciers (< 1 km2): use 0.001 degree'', ''For medium glaciers: use 0.003 degree'', ''For large ice
     caps: use 0.01 degree'']; Check static file dimensions after creation'
@@ -657,7 +675,9 @@ known_issues:
   diagnosis: 'Wind speed at 10m used directly without height correction; ERA5 and most reanalysis products
     provide wind at 10m height. COSIPY expects U2 at 2m (the measurement height z=2.0 in constants.toml).
     Using 10m wind directly overestimates turbulent transfer by 30-50% via the log wind profile: U2 =
-    U10 * l'
+    U10 * ln(2/z0) / ln(10/z0).
+
+    ; [''convert_forcing'', ''surfaceTemperature'']'
   remedy: 'Apply logarithmic wind profile correction from 10m to 2m; convert_forcing; [''U2 = U10 * ln(2/z0)
     / ln(10/z0), with z0 ~ 0.001 m'', ''Typical correction factor: U2 ~ 0.75 * U10'']; convert_forcing
     applies height correction by default'
@@ -676,21 +696,27 @@ known_issues:
   symptom: 'xr.open_dataset / to_netcdf with the default (netcdf4) engine raises ''OSError: [Errno -101]
     NetCDF: HDF error'' when reading the COSIPY forcing file, writing output, or even on the shipped Zhadang
     input. Reproducible in the shared python_env (libnetcdf 4.9.3 / HDF5 1.14.6); a trivial 1-var file
-    may s'
+    may still write, but multi-variable COSIPY files fail. The h5netcdf engine handles the same files
+    fine.'
   diagnosis: The python_env netCDF4/HDF5 backend is broken on this host (regressed after 2026-06-19).
     It is NOT a file-locking or filesystem issue (HDF5_USE_FILE_LOCKING has no effect; a /tmp copy fails
     identically). The previously-documented dedicated venv (auto_dissect/_work/COSIPY/venv) no longer
     exists.
-  remedy: 'Run COSIPY through tools/run_cosipy.py, which injects tools/_netcdf_shim/sitecustomize.py onto
-    PYTHONPATH and sets COSIPY_FORCE_H5NETCDF=1 so COSIPY''s default-engine xarray I/O routes through
-    h5netcdf (no model-source edit). run_cosipy validation and parse_output both already use an engine-fallback '
+  remedy: Run COSIPY through tools/run_cosipy.py, which injects tools/_netcdf_shim/sitecustomize.py onto
+    PYTHONPATH and sets COSIPY_FORCE_H5NETCDF=1 so COSIPY's default-engine xarray I/O routes through h5netcdf
+    (no model-source edit). run_cosipy validation and parse_output both already use an engine-fallback
+    open helper (default -> h5netcdf -> netcdf4). Just use the system python3 — no special venv needed.
 - id: dt_023
   symptom: run_cosipy.py preflight reports "Input file not found" for a relative data_path even though
     the file exists and COSIPY itself runs fine. Triggered when run_cosipy is invoked from the KI directory
     (or anywhere) with --source-dir pointing at the COSIPY repo, while config.toml uses a relative data_path
+    like "./data/". The model subprocess runs with cwd=source_dir, but the preflight validators resolved
+    the relative path against the CALLER cwd, so they looked in the wrong place and aborted before COSIPY
+    ever started.
   diagnosis: validate_config/validate_input_data/validate_output joined the relative data_path against
     the process cwd instead of --source-dir (where COSIPY actually resolves it). Path-base mismatch, not
     a missing file.
   remedy: Fixed in tools/run_cosipy.py — added _resolve_data_path(data_path, source_dir) which normalizes
     a relative data_path against source_dir, and threaded --source-dir into all three validators. Relative
-    configs now preflight correctly from any cwd. (If you hit this on an older copy, either pass an absol
+    configs now preflight correctly from any cwd. (If you hit this on an older copy, either pass an absolute
+    data_path in config.toml or run from inside source_dir.)

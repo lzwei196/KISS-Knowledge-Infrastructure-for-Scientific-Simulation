@@ -11,7 +11,7 @@
 # Format: symptom -> diagnosis -> remedy
 # Each triplet captures a known failure pattern for the SHAW model.
   # =========================================================================
-  # VALIDATION-DISCOVERED ERRORS (Manitoba Station 544, 2026-03-24)
+  # ERRORS FOUND IN REAL-STATION RUNS (where and when: each entry's seen_at)
   # =========================================================================
 # Field names normalised to the controlled vocabulary 2026-08-12
 # (see ki_vocabulary.py). Values unchanged; only keys were renamed.
@@ -247,7 +247,7 @@
   severity: critical
   failure_domain: input_format
   silent: true
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_027
   symptom: Weather file has columns in YR DOY order instead of DOY YR
   diagnosis: "SHAW daily format (MTSTEP=1) expects JD first, then JYR:\n  JD JYR TMAX TMIN TDEW WIND PRECIP\
@@ -263,7 +263,7 @@
   severity: critical
   failure_domain: input_format
   silent: true
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_028
   symptom: Solar noon (HRNOON) parameter set to wrong value in .sit Line C
   diagnosis: 'HRNOON in .sit Line C controls the timing of the diurnal temperature, radiation, and wind
@@ -281,7 +281,7 @@
   severity: critical
   failure_domain: parameterization
   silent: true
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_029
   symptom: Solar radiation in MJ/m2/day not converted to W/m2 for daily mode
   diagnosis: 'Manitoba MAWP stations report daily total solar radiation as TotRS_MJ (MJ/m2/day). SHAW
@@ -300,7 +300,7 @@
   failure_domain: unit_conversion
   silent: true
   cfp: cfp_002
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_030
   symptom: Simulation start date must be 1 day AFTER first weather line
   diagnosis: 'SHAW''s DAY2HR subroutine reads the PREVIOUS day''s TMAX/TMIN for temperature interpolation
@@ -317,7 +317,7 @@
   severity: high
   failure_domain: input_format
   silent: false
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_032
   symptom: 4-digit year in .sit/.wea/.moi/.tem causes SHAW to stop after 1 day
   diagnosis: 'Using 4-digit year (e.g. IYEAR=2015 in .sit Line B and JYR=2015 in .wea/.moi/.tem) causes
@@ -329,13 +329,13 @@
   remedy: 'Use 2-digit year throughout ALL input files consistently: - .sit Line B: "   1  0 15 365  20"
     (not 2015) - .wea: "  1  15   -4.8 ..." (not 2015) - .moi: "   1   0  15 0.120 ..." (not 2015) - .tem:
     "   1   0  15  -4.0 ..." (not 2015) Verified: switching from 2015→15 across all files fixes the 1-day
-    termination. This was discovered during Quebec station runs (Compton, Sainte-Famille, Barraute) 2026-04-09.
+    termination.
 
     '
   severity: critical
   failure_domain: input_format
   silent: true
-  discovered_at: Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09
+  seen_at: "2026-04-09, Quebec stations (Compton/Sainte-Famille/Barraute)"
 - id: shaw_033
   symptom: .tem/.moi last entry is before JEND — simulation stops early
   diagnosis: 'SHAW stops the simulation when it reaches the last entry in the .tem or .moi file and cannot
@@ -346,19 +346,18 @@
     '
   remedy: "Always ensure the last entry in .tem and .moi is at or after JEND (the simulation end day).\
     \ For a full-year run (JEND=365), add a final profile at DOY 365:\n  \" 365   0  15  -5.0  -4.0  -2.5\
-    \  -1.0   1.0   2.5   3.5   4.5   5.0   5.0   5.0\"\nThe Manitoba and Quebec validated cases both\
-    \ follow this rule.\n"
+    \  -1.0   1.0   2.5   3.5   4.5   5.0   5.0   5.0\"\n"
   severity: high
   failure_domain: input_format
   silent: true
-  discovered_at: Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09
+  seen_at: "2026-04-09, Quebec stations (Compton/Sainte-Famille/Barraute)"
 - id: shaw_031
   symptom: Copy-first rule violated — .sit generated from scratch instead of template
   diagnosis: 'Generating SHAW .sit files from scratch (even following the manual) misses implicit format
     requirements: exact line structure (Lines A-J), flag-dependent sections (F-series only if MCANFLG=1/3),
-    soil node columns (12 per node for Campbell, different for VG). The Manitoba initial attempt generated
-    .sit from scratch and had wrong HRNOON, wrong MCANFLG section handling, and missing snow parameters.
-    JackPine succeeded by copying Trial.30.sit and modifying values.
+    soil node columns (12 per node for Campbell, different for VG). A .sit generated from scratch typically
+    gets HRNOON wrong, mishandles the MCANFLG sections and misses snow parameters; copying a working
+    template (e.g. Trial.30.sit) and changing values works.
 
     '
   remedy: 'ALWAYS use setup_shaw_from_template.py which copies the validated JackPine .sit/.inp/.tem/.moi
@@ -370,7 +369,7 @@
   failure_domain: methodology
   silent: false
   cfp: cm_026
-  discovered_at: Manitoba Station 544, 2026-03-24
+  seen_at: "2026-03-24, Manitoba Station 544"
 - id: shaw_034
   symptom: SHAW weather tool looked for VIC ASCII forcing first; a run with CMFD/MSWX/NASA POWER needed
     VIC forcing made beforehand, or silently used an old VIC cell file found in --forcing_dir
@@ -393,13 +392,13 @@
   severity: high
   failure_domain: methodology
   silent: true
-  discovered_at: RISMA ON2 direct-forcing case, 2026-10-02
+  seen_at: "2026-10-02, RISMA ON2 direct-forcing case"
 - id: shaw_035
   symptom: Daily precipitation in the .wea is near zero (annual total about 0.1 mm) when the weather
     was built from CMFD NetCDF by the old tool; soil dries out, no runoff, no error printed
   diagnosis: 'The old tool had its own CMFD reader that added the eight 3-hour CMFD precipitation values
     of a day (prec_mm = sum(prec[s:e])). CMFD prec is a RATE in kg m-2 s-1, so each value must be
-    multiplied by 10800 s first. Without it daily rain is 10800 times too small. Check 2026-10-02 at
+    multiplied by 10800 s first. Without it daily rain is 10800 times too small. Reference check at
     (32.43, 115.6), year 2010: load_daily_forcing("cmfd") gives 816.06 mm; the raw-rate sum would give
     about 0.076 mm. The same block opened files with a bare xr.open_dataset (works or fails by import
     order on this server) and hid every failure in a try/except that only printed.
@@ -415,7 +414,7 @@
   severity: critical
   failure_domain: unit_conversion
   silent: true
-  discovered_at: CMFD point (32.43N, 115.6E) year 2010, 2026-10-02
+  seen_at: "2026-10-02, CMFD point (32.43N, 115.6E), year 2010"
 - id: shaw_036
   symptom: --mode hourly with gridded forcing crashed with KeyError 'hour', or wrote 3-hour records
     and a 4-digit year into an hourly (MTSTEP=0) weather file
@@ -435,7 +434,7 @@
   severity: high
   failure_domain: input_format
   silent: false
-  discovered_at: RISMA ON2 direct-forcing case, 2026-10-02
+  seen_at: "2026-10-02, RISMA ON2 direct-forcing case"
 - id: shaw_037
   symptom: 'copy_template prints "WARNING: .../outputs/shaw_quebec_compton/compton.sit not found, skipping"
     for every file and the run later fails with FileNotFoundError on <case>.sit'
@@ -454,4 +453,4 @@
   severity: high
   failure_domain: platform_trap
   silent: false
-  discovered_at: RISMA ON2 direct-forcing case, 2026-10-02
+  seen_at: "2026-10-02, RISMA ON2 direct-forcing case"

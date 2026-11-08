@@ -182,7 +182,7 @@
   stage: s2_weather
   failure_domain: parameter_format
   severity: fatal
-  symptom: "convert_forcing_to_daycent.py --source cmfd fails or returns empty arrays for a non-China latitude/longitude (e.g. DE-Tha 50.96N 13.57E, Wooster 40.78N 81.93W)."
+  symptom: "convert_forcing_to_daycent.py --source cmfd fails or returns empty arrays for a non-China latitude/longitude (e.g. DE-Tha in Germany, Wooster in Ohio)."
   diagnosis: "CMFD covers the China domain only (~70E-140E, ~15N-55N). Querying it outside this window either returns no grid cell or raises FileNotFoundError on per-year NetCDFs. validate_inputs now hard-refuses CMFD for lon outside 70-140E."
   remedy: "Use --source fluxnet with the tower's FULLSET_DD.csv for FLUXNET sites, or --source nasa_power for global coverage (only if the host can reach power.larc.nasa.gov — see triplet 21)."
 
@@ -209,7 +209,7 @@
   symptom: "DayCent crashes with 'swclimit[1] is negative. Check soils.in' during first timestep."
   diagnosis: "convert_soil_to_daycent.py wrote 12 columns but DayCent rev 491 expects 13 columns. The missing column 11 (delta_min, minimum volumetric water content) causes DayCent to read Ksat into the delta_min slot and pH into the Ksat slot, producing negative swclimit."
   remedy: "Fixed in convert_soil_to_daycent.py (2026-04-22): added delta_min column (= WP × 0.9) between OM and Ksat. Verify soils.in has exactly 13 tab-separated columns per row. Cross-check against WoosterExampleLinux/soils.in."
-  discovered_during: "AT-Neu + US-Var FLUXNET validation runs (2026-04-22)"
+  seen_at: "2026-04-22, AT-Neu and US-Var FLUXNET sites"
   affects_models: ["DayCent"]
   tags: ["soils_in", "column_count", "13_columns"]
 
@@ -220,6 +220,6 @@
   symptom: "Soil organic matter in soils.in is 0.86 or 1.45 instead of 0.0086 or 0.0145. DayCent runs without error but SOM decomposition is wildly overestimated."
   diagnosis: "HWSD returns OC as percent (e.g., 0.86% = 0.86). The old threshold (> 1.5) missed typical values 0.5-1.5 which were written directly as OM fraction instead of being divided by 100. A value of 0.86 in the fraction column means 86% organic matter (peat), not 0.86% OC."
   remedy: "Fixed 2026-10-05: convert_soil_to_daycent.py no longer guesses percent from the size of the value. HWSD T_OC/S_OC is % organic carbon; column 10 is organic MATTER, written as OM = OC/100 x 1.724. Typical mineral soil OM fraction is 0.005-0.05; the tool stops if any OM > 0.2."
-  discovered_during: "AT-Neu + US-Var FLUXNET validation runs (2026-04-22)"
+  seen_at: "2026-04-22, AT-Neu and US-Var FLUXNET sites"
   affects_models: ["DayCent"]
   tags: ["organic_matter", "unit_conversion", "HWSD", "soils_in"]

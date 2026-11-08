@@ -374,189 +374,271 @@ known_issues:
 - id: dt_001
   symptom: LDNDC reports 'Cannot open file' or 'Source file not found' even though files exist in the
     project directory
-  diagnosis: The sourceprefix attribute in project.xml does not end with a trailing slash, or uses an
+  diagnosis: 'The sourceprefix attribute in project.xml does not end with a trailing slash, or uses an
     absolute path that does not match the actual file location; LDNDC concatenates sourceprefix with each
     source filename. If sourceprefix is "input" (no trailing slash), the resulting path is "inputsite.xml"
-    not "i
+    not "input/site.xml". Additionally, if project.xml uses absolute paths and the project directory has
+    been moved, all paths break silently.
+
+    ; [''project.xml'', ''All input files'']'
   remedy: Ensure sourceprefix ends with a trailing slash (e.g., 'input/') and that all source files exist
     at the concatenated paths; generate_project_xml; ['Open project.xml and check the sourceprefix attribute',
-    "Verify it ends with '/'", 'For each source element, verify the file exists at sourceprefix + sou
+    "Verify it ends with '/'", 'For each source element, verify the file exists at sourceprefix + source'];
+    Always use the generate_project_xml tool which enforces trailing slash
   severity: fatal
 - id: dt_002
   symptom: LDNDC crashes at initialization with XML parse error or 'invalid soil layer' when reading site.xml
   diagnosis: 'site.xml has malformed XML structure: unclosed tags, missing required attributes (depth,
     clay, sand), or layer depths that do not increase monotonically from surface; LDNDC''s XML parser
     is strict about tag structure. Common mistakes include using self-closing tags where child elements
-    are expected, '
+    are expected, omitting required soil attributes, or defining layers where bottom_depth <= top_depth.
+
+    ; [''site.xml'', ''Soil initialization'']'
   remedy: Regenerate site.xml using the generate_site_xml tool which validates all attributes and layer
     ordering; generate_site_xml; ['Validate site.xml with an XML linter (xmllint --noout site.xml)', 'Check
     each soil layer has depth, clay, sand, silt, bd, pH, corg attributes', 'Verify layer depths increase
-    m
+    monotonically from surface']; Always generate site.xml programmatically; never hand-edit
   severity: fatal
 - id: dt_003
   symptom: LDNDC runs successfully but CO2 emissions are 10-100x higher than expected literature values
     for the ecosystem type
-  diagnosis: Soil organic carbon (corg) is specified as percentage (e.g., 1.5) instead of mass fraction
+  diagnosis: 'Soil organic carbon (corg) is specified as percentage (e.g., 1.5) instead of mass fraction
     (e.g., 0.015). LDNDC interprets the value as mass fraction, so 1.5 means 150% organic carbon.; HWSD
     reports organic carbon as percentage (0-60%). LDNDC site.xml expects mass fraction (0-0.60). If the
-    conversio
+    conversion (divide by 100) is skipped, the initial soil C pool is 100x too large. Decomposition rates
+    scale with pool size, producing enormously inflated CO2 emissions. The model does not validate that
+    corg < 1.0 because peat soils can have corg > 0.5.
+
+    ; [''site.xml corg attribute'', ''Soil C pool initialization'', ''All CO2 emission outputs'']'
   remedy: 'Verify corg values in site.xml are mass fractions (typically 0.005-0.05 for mineral soils).
     If values are > 0.10 for non-peat soils, divide by 100.; hwsd_to_ldndc_soil; [''Open site.xml and
     check corg values for each layer'', ''Mineral soils: corg should be 0.005-0.05 (topsoil) and 0.001-0.02
-    (subsoil)'
+    (subsoil)'', ''If values are > 1.0, they are percentages and must be divided by 100'']; Use hwsd_to_ldndc_soil
+    tool which applies the /100 conversion automatically'
   severity: silent
 - id: dt_004
   symptom: LDNDC crashes with 'Unknown module' or 'Module not registered' error during initialization
-  diagnosis: setup.xml references a module name that does not exist in this LDNDC version, or uses incorrect
-    capitalization; LDNDC module names are case-sensitive and version-dependent. For example, 'soilchemistry:dndc'
-    is not the same as 'SoilchemistryDNDC'. The valid module names change between LDNDC versions.
+  diagnosis: 'setup.xml references a module name that does not exist in this LDNDC version, or uses incorrect
+    capitalization; LDNDC module names are case-sensitive and version-dependent. For example, ''soilchemistry:dndc''
+    is not the same as ''SoilchemistryDNDC''. The valid module names change between LDNDC versions. Using
+    a module name from documentation for a different version causes this error.
+
+    ; [''setup.xml'', ''Module initialization'']'
   remedy: 'Use generate_setup_xml tool which uses validated module names for the installed LDNDC version;
     generate_setup_xml; [''Check LDNDC version: ldndc --version'', ''Use exact module names from LDNDC
-    documentation for that version'', ''Common valid names: microclimate:canopyecm, watercycle:dndc, soilchemistry:'
+    documentation for that version'', ''Common valid names: microclimate:canopyecm, watercycle:dndc, soilchemistry:metrx,
+    physiology:plamox'']; Always use generate_setup_xml with ecosystem_type parameter'
   severity: fatal
 - id: dt_005
   symptom: LDNDC runs but simulates no snow in winter and extreme evapotranspiration; hydrograph shape
     is completely wrong
-  diagnosis: Temperature in climate.txt is in Kelvin (values ~273-310) instead of Celsius. LDNDC interprets
+  diagnosis: 'Temperature in climate.txt is in Kelvin (values ~273-310) instead of Celsius. LDNDC interprets
     these as 273-310 degrees Celsius.; CMFD and some ERA5 products provide temperature in Kelvin. LDNDC
     expects Celsius. When Kelvin values are fed directly, LDNDC treats them as extreme heat. Snow never
-    forms
-  remedy: 'Run validate_climate_file (error when tavg in the first 10 data rows is > 100); do not edit
-    climate.txt by hand; rebuild it from the data source with convert_forcing_to_ldndc_climate. That tool
-    does NOT guess units from magnitude: the shared loader converts from the known source unit (CMFD
-    K - 273.15), FLUXNET is read as degC, and any daily temperature outside -100..70 stops the tool (nothing
-    is converted or written).'
+    forms. ET is maximized. All temperature-dependent biogeochemistry (decomposition, nitrification, denitrification)
+    runs at extreme rates. The model produces output without any error message.
+
+    ; [''climate.txt temperature columns'', ''All temperature-dependent processes'']'
+  remedy: 'Run validate_climate_file; it reports an error (dt_005) when tavg (or tmin) in any of the first
+    10 data rows is > 100. Do not edit climate.txt by hand; rebuild it with convert_forcing_to_ldndc_climate.;
+    validate_climate_file; [''Read first 5 data lines of climate.txt'', ''If tavg > 100, the file is not
+    valid Celsius (often Kelvin); do not convert it by magnitude'', ''Rerun convert_forcing_to_ldndc_climate
+    from the data source'']; Always use convert_forcing_to_ldndc_climate. It does NOT guess units from
+    magnitude: for cmfd/mswx/nasa_power the shared loader (ki_tools_common.load_forcing) converts from
+    the known source unit (CMFD K - 273.15); FLUXNET columns are read as degC. Any daily tavg/tmax/tmin
+    outside -100..70 stops the tool with "Daily temperatures must be Celsius"; nothing is converted or
+    written.'
   severity: silent
 - id: dt_006
   symptom: LDNDC reports 'Error reading climate data' or 'Unexpected column count' during initialization
   diagnosis: 'climate.txt uses comma or space separation instead of tab separation, or the header row
     column names do not match LDNDC''s expected names; LDNDC''s climate parser expects tab-separated values
     with specific column names in the header row (tavg, tmin, tmax, prec, wind, rh, glob, lrad). Using
-    CSV format '
+    CSV format (comma-separated) or LDNDC-incompatible column names causes a parse error. The header row
+    must start with ''#'' followed by tab-separated column names.
+
+    ; [''climate.txt format'', ''Climate data reader'']'
   remedy: 'Regenerate climate.txt with tab separation and LDNDC-standard column names; convert_forcing_to_ldndc_climate;
     [''Check delimiter: open climate.txt in hex editor, verify tabs (0x09) between columns'', "Check header:
-    first line must be ''#'' followed by tab-separated column names", ''Required names: at lea'
+    first line must be ''#'' followed by tab-separated column names", ''Required names: at least tavg
+    (or tmin+tmax) and prec'']; Always use convert_forcing_to_ldndc_climate tool'
   severity: fatal
 - id: dt_007
   symptom: LDNDC runs but N2O emissions are unrealistically high or the soil N balance does not close
   diagnosis: 'N deposition values in airchem.txt are in g/m2/yr instead of kgN/ha/yr (factor of 10 difference:
     1 g/m2 = 10 kgN/ha); Different N deposition datasets use different units. EMEP uses mg/m2/yr, some
     publications report g/m2/yr, while LDNDC expects kgN/ha/yr. A factor of 10 error in N deposition adds
-    si'
+    significant spurious nitrogen input to the soil, inflating nitrification and denitrification rates
+    and producing excessive N2O. For a typical site receiving 10 kgN/ha/yr, providing 10 g/m2/yr instead
+    means 100 kgN/ha/yr -- 10x too much.
+
+    ; [''airchem.txt N deposition columns'', ''Soil N input budget'', ''N2O, NO3 leaching outputs'']'
   remedy: 'Verify N deposition units. Typical global range: 1-30 kgN/ha/yr. Values >50 are suspicious.
     Values >100 almost certainly use wrong units.; generate_airchemistry_file; [''Check airchem.txt deposition
     values'', ''If values > 50 kgN/ha/yr, verify against published data for the region'', ''Convert if
-    needed:'
+    needed: g/m2/yr * 10 = kgN/ha/yr; mg/m2/yr * 0.01 = kgN/ha/yr'']; Use generate_airchemistry_file with
+    validated kgN/ha/yr inputs'
   severity: silent
 - id: dt_008
   symptom: LDNDC crashes with 'Invalid event date' or 'Event date outside simulation period'
-  diagnosis: Management event dates in mana.xml are outside the simulation schedule defined in project.xml,
+  diagnosis: 'Management event dates in mana.xml are outside the simulation schedule defined in project.xml,
     or use an incorrect date format; LDNDC validates that all management event dates fall within the schedule
-    defined in project.xml. If the simulation runs 2000-2010 but a sowing event is dated 2011-04-15, LD
+    defined in project.xml. If the simulation runs 2000-2010 but a sowing event is dated 2011-04-15, LDNDC
+    rejects it. Date format must be ISO 8601 (YYYY-MM-DD). American date formats (MM/DD/YYYY) cause parse
+    errors.
+
+    ; [''mana.xml event dates'', ''project.xml schedule'']'
   remedy: 'Verify all event dates in mana.xml fall within the project.xml schedule and use YYYY-MM-DD
     format; generate_management_xml; [''Read schedule from project.xml: start and end dates'', ''Check
     each event date in mana.xml is within [start, end]'', ''Ensure format is YYYY-MM-DD, not DD/MM/YYYY
-    or MM/DD/YYYY'']'
+    or MM/DD/YYYY'']; generate_management_xml validates dates against simulation period'
   severity: fatal
 - id: dt_009
   symptom: LDNDC runs but crop yield is zero or near-zero despite correct climate and soil; no harvest
     output recorded
-  diagnosis: The crop species name in mana.xml sowing event does not exactly match any entry in parameters_species.xml.
+  diagnosis: 'The crop species name in mana.xml sowing event does not exactly match any entry in parameters_species.xml.
     LDNDC silently skips the sowing and no crop grows.; LDNDC matches crop species by exact string comparison.
-    If mana.xml specifies 'wheat' but parameters_species.xml has 'winter_wheat', the sowin
-  remedy: Run validate_species_params to cross-check species names between mana.xml and parameters_species.xml;
-    validate_species_params; ['Extract species names from all sowing events in mana.xml', 'Check each
-    name exists as a species entry in parameters_species.xml', 'Match must be exact (case-sensitive)',
-    '
+    If mana.xml specifies ''wheat'' but parameters_species.xml has ''winter_wheat'', the sowing event
+    is ignored. No crop is planted, no growth occurs, and harvest yield is zero. LDNDC does not warn about
+    unmatched species names -- it simply treats the field as fallow. This is the most common cause of
+    zero-yield simulations.
+
+    ; [''mana.xml species names'', ''parameters_species.xml species definitions'', ''Crop physiology module'']'
+  remedy: 'Run validate_species_params to cross-check species names between mana.xml and parameters_species.xml;
+    validate_species_params; [''Extract species names from all sowing events in mana.xml'', ''Check each
+    name exists as a species entry in parameters_species.xml'', ''Match must be exact (case-sensitive)'',
+    ''Common LDNDC names: winter_wheat, spring_wheat, maize, spring_barley, winter_barley, soybean, rice''];
+    Always validate with validate_species_params before running LDNDC'
   severity: silent
 - id: dt_010
   symptom: LDNDC crashes with segmentation fault during soil initialization
-  diagnosis: site.xml contains zero or negative values for bulk density, or layer depth is zero, causing
+  diagnosis: 'site.xml contains zero or negative values for bulk density, or layer depth is zero, causing
     division by zero in soil initialization; LDNDC computes soil pore volume from bulk density (pore =
     1 - bd/2.65). If bd <= 0, this produces negative porosity. If a layer has zero thickness, per-layer
-    flux calc
+    flux calculations divide by zero. Both cause segfaults without a meaningful error message because
+    the C++ code does not validate these inputs before using them in arithmetic.
+
+    ; [''site.xml soil layers'', ''Soil initialization code'']'
   remedy: 'Check site.xml for zero/negative bulk density and zero-thickness layers; generate_site_xml;
     ["Open site.xml and check each layer''s bd attribute: must be 0.5-2.0 g/cm3", ''Check each layer has
     non-zero thickness (depth_bottom > depth_top)'', ''Regenerate with generate_site_xml if any values
-    are invalid'''
+    are invalid'']; generate_site_xml validates bd > 0 and layer thickness > 0'
   severity: fatal
 - id: dt_011
   symptom: LDNDC runs for some time then crashes with 'NaN detected in soil state' or produces NaN in
     output
-  diagnosis: Numerical instability in soil water or chemistry solver, typically caused by extreme soil
+  diagnosis: 'Numerical instability in soil water or chemistry solver, typically caused by extreme soil
     property values (very high Ksat, very low porosity) or extreme climate events (massive single-day
     precipitation); LDNDC uses daily or sub-daily time stepping for water and biogeochemistry. Extreme
-    parameter com
+    parameter combinations can cause the solver to produce negative water content or negative nutrient
+    pools, which propagate as NaN through subsequent calculations. This commonly occurs when: (1) Ksat
+    is unrealistically high, causing complete drainage in one timestep; (2) a single-day precipitation
+    event exceeds the soil''s storage capacity by an order of magnitude; (3) soil pH is exactly 0 or negative.
+
+    ; [''Watercycle solver'', ''Soilchemistry solver'', ''All downstream outputs'']'
   remedy: 'Check site.xml for extreme parameter values and climate.txt for unrealistic precipitation events;
     ; [''Check soil: Ksat < 1000 cm/day, 0.2 < porosity < 0.8, 3 < pH < 10'', ''Check climate: max daily
-    precip < 500 mm, no negative precip'', ''If a single extreme precip event causes the crash, try increasing'
+    precip < 500 mm, no negative precip'', ''If a single extreme precip event causes the crash, try increasing
+    number of soil layers'']; Validate parameter ranges in generate_site_xml and validate_climate_file'
   severity: fatal
 - id: dt_012
   symptom: Parsed N2O emissions appear 1000x too low when compared to literature values reported in g
     N2O/ha/yr
-  diagnosis: LDNDC reports N2O emissions in kgN/ha (mass of nitrogen), but comparison is against literature
+  diagnosis: 'LDNDC reports N2O emissions in kgN/ha (mass of nitrogen), but comparison is against literature
     values in g N2O/ha (mass of N2O molecule). The molecular weight ratio is N2O/N = 44/28 = 1.571.; LDNDC
-    internally tracks nitrogen mass. Output variable dN_n2o_emis is in kgN/ha, meaning the mass of nitroge
+    internally tracks nitrogen mass. Output variable dN_n2o_emis is in kgN/ha, meaning the mass of nitrogen
+    in the emitted N2O. To convert to mass of N2O: multiply by 44/28 = 1.571. To convert to CO2-equivalents:
+    multiply by 298 (GWP100 of N2O). Failing to apply these conversions when comparing to published data
+    produces apparent order-of-magnitude discrepancies that are actually just unit mismatches.
+
+    ; [''Soilchemistry output parser'', ''Reporting and validation'']'
   remedy: 'When comparing LDNDC N2O output to literature, convert: kgN/ha * 1.571 = kg N2O/ha, or * 1000
     * 1.571 = g N2O/ha; aggregate_annual_budget; [''Check units of LDNDC output: dN_n2o_emis is kgN/ha'',
     ''Check units of comparison data: often g N2O/ha/yr or kg N2O-N/ha/yr'', ''Apply conversion: kgN *
-    (44/28) = '
+    (44/28) = kg N2O; kgN * 1000 = gN'']; aggregate_annual_budget reports in both kgN/ha and kg N2O/ha'
   severity: silent
 - id: dt_013
   symptom: 'Annual N budget does not close: total N input (deposition + fertilizer + fixation) minus total
     N output (harvest + leaching + gaseous) does not equal change in soil N pool'
-  diagnosis: 'Not all N flux components are included in the budget. Common missing terms: (1) N fixation
-    by legumes is in physiology output, not soilchemistry; (2) NH3 volatilization is a separate output
-    variable; (3) NO emissions (as opposed to N2O) are tracked separately.; LDNDC tracks many N species
-    across mul'
+  diagnosis: "Not all N flux components are included in the budget. Common missing terms: (1) N fixation\
+    \ by legumes is in physiology output, not soilchemistry; (2) NH3 volatilization is a separate output\
+    \ variable; (3) NO emissions (as opposed to N2O) are tracked separately.; LDNDC tracks many N species\
+    \ across multiple output modules. A complete N budget requires summing from both soilchemistry and\
+    \ physiology outputs: Inputs: N_deposition + N_fertilizer + N_fixation (physiology) Outputs: N_harvest\
+    \ + N_leach_NO3 + N_leach_NH4 + N_leach_DON +\n         N_n2o_emis + N_no_emis + N_n2_emis + N_nh3_volatil\n\
+    Missing any of these terms produces a non-closing budget.\n; ['Soilchemistry output', 'Physiology\
+    \ output', 'Budget computation']"
   remedy: Use aggregate_annual_budget tool which includes all N flux terms from both output modules; aggregate_annual_budget;
     ['Identify all N output variables across soilchemistry and physiology outputs', 'Include N fixation
-    (from physiology), NH3 volatilization, NO emissions', 'Budget residual should be < 5
+    (from physiology), NH3 volatilization, NO emissions', 'Budget residual should be < 5% of total N input'];
+    Always use aggregate_annual_budget for budget closure checks
   severity: silent
 - id: dt_014
   symptom: After converting a sub-daily forcing series to LDNDC climate, LDNDC simulates almost no precipitation
     events -- nearly all days are dry
   diagnosis: 'A sub-daily forcing series (CMFD, MSWX: 3-hourly, 8 values per day) was turned into a daily
     value without adding up all 8 timesteps. Result: daily precip = one 3-hour value instead of the sum
-    of eight.'
-  remedy: Build climate.txt with convert_forcing_to_ldndc_climate (daily totals from the shared loader);
-    check the annual precipitation in the header against the known value for the site.
+    of eight.; When converting to LDNDC daily climate.txt, each day''s precipitation must be the SUM of
+    all sub-daily values. If only one value is taken (e.g., first timestep), daily precipitation is 1/8
+    of the true value. For light rain days, this produces near-zero precipitation that LDNDC treats as
+    dry. The model runs without error but the water balance and all moisture-dependent biogeochemistry
+    are wrong.
+
+    ; [''climate.txt precipitation column'', ''All water-dependent processes'']'
+  remedy: Build climate.txt with convert_forcing_to_ldndc_climate (it reads daily totals from the shared
+    loader). Check the annual precipitation in the %attributes block against what is known for the site.;
+    convert_forcing_to_ldndc_climate; ['Read the annual precipitation line in the climate.txt header',
+    'Compare it with the known annual precipitation of the site', 'If it is about 1/8 of the expected
+    value, the daily aggregation is wrong']; convert_forcing_to_ldndc_climate takes daily totals from
+    ki_tools_common.load_forcing
   severity: silent
 - id: dt_v001
   symptom: 'LDNDC error: ''Couldn''t open file /home/user/.ldndc/udunits2/udunits2.xml'''
-  diagnosis: install.sh was not run before first LDNDC execution; LDNDC requires udunits2 XML database
-    and configuration files in ~/.ldndc/. The install.sh script copies these from the distribution's dotfiles/
-    directory. Without running install.sh, LDNDC cannot find the unit conversion database and fails immedia
+  diagnosis: 'install.sh was not run before first LDNDC execution; LDNDC requires udunits2 XML database
+    and configuration files in ~/.ldndc/. The install.sh script copies these from the distribution''s
+    dotfiles/ directory. Without running install.sh, LDNDC cannot find the unit conversion database and
+    fails immediately at startup.
+
+    ; [''s1_project_setup'', ''s8_execution'']'
   remedy: 'Run install.sh from the LDNDC distribution directory before first use; ; [''cd KISSPATH_BINARIES/ldndc/ldndc-1.37.linux64'',
     ''bash install.sh'', ''Verify: ls ~/.ldndc/udunits2/udunits2.xml'']; verify_ldndc_installation tool
     checks for ~/.ldndc/udunits2/ existence'
   severity: fatal
 - id: dt_v002
   symptom: 'LDNDC error: ''Failed to open project'' — project XML has empty source attributes'
-  diagnosis: Tutorial .ldndc project files are templates with empty source/schedule fields; Tutorial 1
-    and 2 project files (CH_oensingen.ldndc, DE_graswang.ldndc) have empty source="" and schedule="" attributes
-    — they are templates for users to fill in. Only the non-tutorial project files (arable/DE_gebesee,
-    for
+  diagnosis: 'Tutorial .ldndc project files are templates with empty source/schedule fields; Tutorial
+    1 and 2 project files (CH_oensingen.ldndc, DE_graswang.ldndc) have empty source="" and schedule=""
+    attributes — they are templates for users to fill in. Only the non-tutorial project files (arable/DE_gebesee,
+    forest/DE_hoeglwald, grassland/DE_graswang) are pre-configured and runnable.
+
+    ; [''s1_project_setup'']'
   remedy: 'Use pre-configured project files, not tutorials. Or fill in source/schedule in tutorial XML.;
     generate_project_xml; [''For testing: use projects/arable/DE_gebesee/DE_gebesee.ldndc'', ''For new
     basins: use generate_project_xml tool to create valid project XML'', "Schedule format: ''2002-01-01/24
-    -> +3-0-0'
+    -> +3-0-0'' (start/timestep_hours -> +years-months-days)"]; generate_project_xml tool always writes
+    complete source references'
   severity: fatal
 - id: dt_v003
   symptom: LDNDC rejects soil type mnemonic — uses full names not abbreviations
   diagnosis: 'LDNDC soil type mnemonics are LOAM, SAND, CLAY, SILT, SLCL, LOSI etc — not VIC/USDA abbreviations;
     Valid soil types are defined in the Lresources file at model/ldndc/ldndc-1.37.linux64/Lresources.
-    Common types: SAND, LOSA, SALO, LOAM, SLCL, SLOA, CLAY, CLOA, SACL, SILT, SILO, SICL. Using abbreviatio'
+    Common types: SAND, LOSA, SALO, LOAM, SLCL, SLOA, CLAY, CLOA, SACL, SILT, SILO, SICL. Using abbreviations
+    like LO, SL, SCL from USDA texture triangle fails silently or crashes.
+
+    ; [''s2_site_config'']'
   remedy: 'Use full LDNDC mnemonics from Lresources. Map USDA texture: Sandy Loam→SALO, Silt Loam→SILO,
     Clay Loam→CLOA, Loam→LOAM; ; [''Check valid types: grep soil model/ldndc/ldndc-1.37.linux64/Lresources'',
     ''Map from USDA: Sand→SAND, Loamy Sand→LOSA, Sandy Loam→SALO, Loam→LOAM'']; run_ldndc_bengbu_ghg.py
-    inclu'
+    includes full mapping table'
   severity: fatal
 - id: dt_v004
   symptom: 'Crop species name not recognized — LDNDC uses CORN not :maize:'
   diagnosis: 'LDNDC species names differ from DSSAT/SWAT+ conventions; LDNDC species database (in Lresources)
     uses: CORN (maize), WIWH (winter wheat), RICE (rice), SWHE (spring wheat), BARL (barley), RAPE (rapeseed),
-    SOYB (soybean), POTA (potato), SUGB (sugar beet). The :species: syntax seen in some examples uses'
+    SOYB (soybean), POTA (potato), SUGB (sugar beet). The :species: syntax seen in some examples uses
+    the internal registry name. Use grep to find valid names in Lresources.
+
+    ; [''s6_management_config'']'
   remedy: 'Use LDNDC species names: CORN, WIWH, RICE, SWHE, BARL, SOYB, POTA, RAPE; ; [''Check available
     species: grep -i species model/ldndc/ldndc-1.37.linux64/Lresources'']; run_ldndc_bengbu_ghg.py uses
     correct names'
@@ -578,7 +660,7 @@ known_issues:
     in % (e.g., 2.3 means 2.3%). LDNDC corg attribute expects fraction (0.023 for 2.3%). Gebesee example:
     corg="0.023" = 2.3% OC. Using % directly gives corg=2.3 which is 230% OC — physically impossible.
 
-    ; [''s2_si'
+    ; [''s2_site_config'']'
   remedy: 'Divide HWSD OC% by 100: corg = T_OC / 100; hwsd_to_ldndc_soil; [''HWSD OC 2.3% → corg=0.023'',
     ''Validate: cropland corg typically 0.005-0.05 (0.5-5%)'']; run_ldndc_bengbu_ghg.py applies /100 conversion'
   severity: silent
@@ -588,10 +670,13 @@ known_issues:
   diagnosis: RICE is an abstract base class in LDNDC parameters_species.xml. It defines the crop type
     hierarchy but is NOT a runnable species. Must use PADR (paddy rice) or UPLR (upland rice).; LDNDC
     silently accepts RICE as a species name in management.xml sowing events but treats it as a no-op.
-    The crop is nev
-  remedy: Replace all <plant type='RICE'> with <plant type='PADR'> for paddy rice or <plant type='UPLR'>
-    for upland rice.; validate_species_params; ['grep -r \'type="RICE"\' to find all affected management.xml
-    files', 'sed -i \'s/type="RICE"/type="PADR"/g\' management.xml', 'Re-run all affected cells']; Alway
+    The crop is never initialized, so yield and all biogeochemical fluxes are zero.; ['management.xml
+    species name', 'parameters_species.xml']
+  remedy: 'Replace all <plant type=''RICE''> with <plant type=''PADR''> for paddy rice or <plant type=''UPLR''>
+    for upland rice.; validate_species_params; [''grep -r \''type="RICE"\'' to find all affected management.xml
+    files'', ''sed -i \''s/type="RICE"/type="PADR"/g\'' management.xml'', ''Re-run all affected cells''];
+    Always validate species names against parameters_species.xml leaf nodes. Abstract classes: RICE, WHEAT,
+    BARLEY — use specific cultivar codes.'
   severity: silent
 - id: dt_v009
   symptom: Rice crashes at first timestep even with correct PADR species. setup.xml uses dryland module
@@ -599,11 +684,12 @@ known_issues:
   diagnosis: LDNDC's standard dryland modules cannot simulate flooded rice paddies. MeTrX assumes aerobic
     soil. Rice paddies need anaerobic decomposition, CH4 production, and ponded water layer.; The module
     stack must be changed for paddy rice to include paddyecm or equivalent anaerobic chemistry module
-    and a wa
+    and a watercycle that handles ponded conditions.; ['setup.xml module declarations', 'soilchemistry
+    module selection']
   remedy: Use paddy-specific setup.xml for rice cells. Replace soilchemistry:metrx with paddyecm module.;
     ; ['Modify setup.xml for rice cells to use paddy module stack', 'Ensure watercycle handles ponded
     water', 'Test single cell before batch re-run']; Maintain separate setup.xml templates for dryland
-    vs padd
+    vs paddy crops.
   severity: fatal
 - id: dt_v010
   symptom: Paddy rice runs but produces no CH4 and unrealistic water balance. Management.xml missing flood/drain
@@ -611,30 +697,36 @@ known_issues:
   diagnosis: 'LDNDC paddy management requires explicit flood and drain events. Without flood events, the
     paddy water layer is never established. Without drain events, harvest cannot complete.; Flood/drain
     scheduling: flood ~DOY 135 (transplanting, 50-100mm), mid-season drain ~DOY 195-200, re-flood ~DOY
-    205 (50mm)'
+    205 (50mm), final drain ~DOY 250 (pre-harvest). These are NOT auto-generated.; [''management.xml flood/drain
+    events'']'
   remedy: Add flood/drain events to rice management.xml with correct DOY timing for the region.; ; ["Add
     <event type='flood' doy='135' depth_mm='80'/>", "Add <event type='drain' doy='195'/>", "Add <event
-    type='flood' doy='205' depth_mm='50'/>", "Add <event type='drain' doy='250'/>"]; Use write_management_harb
+    type='flood' doy='205' depth_mm='50'/>", "Add <event type='drain' doy='250'/>"]; Use write_management_harbin()
+    rice branch which auto-generates these events.
   severity: fatal
 - id: dt_v011
   symptom: 4 cells crash at startup with empty soil cache. HWSD MU 11927/11928 are water bodies (ISSOIL=0).
   diagnosis: HWSD global database contains water body entries with no soil properties. The VIC-to-LDNDC
     soil converter silently returns empty results. setup.xml and site.xml are never generated.; Cells
     V5659001, V6069001, V6359001, V7529001 in Harbin basin sit on HWSD mapping units classified as water.;
-    ['HWSD s
+    ['HWSD soil extraction', 'soil cache', 'setup.xml generation']
   remedy: 'Nearest-neighbor soil donor: find closest cell with valid soil (0.25° search), copy parameters.
     Add ISSOIL≠0 check to soil extraction pipeline.; ; [''Identify failed cells: grep for empty soil_cache
     directories'', ''Find nearest valid neighbor at same resolution'', ''Copy neighbor soil params to
-    failed c'
+    failed cell directory'', ''Regenerate setup.xml and site.xml'', ''Re-run affected scenarios'']; Filter
+    HWSD by ISSOIL=1 before extraction. Add water body check to soil extraction tool.'
   severity: fatal
 - id: dt_v012
   symptom: MeTrX solver crashes mid-run with mass balance error. o2_liq_sl reaches tiny negative value
     (~1e-20). 38 cells affected.
   diagnosis: Floating-point rounding artifact in the MeTrX solver produces epsilon-negative O2 concentration.
     The solver's physical bounds check rejects this as an error despite it being numerically insignificant.;
-    Not a real physical error. The solver lacks tolerance for machine-epsilon deviations. Typically cr
+    Not a real physical error. The solver lacks tolerance for machine-epsilon deviations. Typically crashes
+    after 17+ complete years of otherwise valid simulation.; ['soilchemistry:metrx solver', 'O2 concentration
+    tracking']
   remedy: Use nearest-neighbor temporal fill for missing years. Or set balance_check='no' in config (if
     supported). The 17+ complete years before the crash are valid and usable.; ; ['Check how many complete
     years exist before crash', 'Find nearest valid cell in same scenario', 'Append missing years from
-    neigh
+    neighbor to partial output']; Pre-screen soil parameters for extreme values. Clamp Ksat to 0.1-100
+    cm/d, porosity to 0.2-0.7.
   severity: degraded

@@ -497,7 +497,7 @@
     prevention: verify_ldndc_installation tool checks for ~/.ldndc/udunits2/ existence
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v002
   stage: s1_project_setup
   failure_domain: parameter_format
@@ -524,7 +524,7 @@
     prevention: generate_project_xml tool always writes complete source references
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v003
   stage: s2_site_config
   failure_domain: parameter_format
@@ -551,7 +551,7 @@
     prevention: run_ldndc_bengbu_ghg.py includes full mapping table
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v004
   stage: s6_management_config
   failure_domain: parameter_format
@@ -577,7 +577,7 @@
     prevention: run_ldndc_bengbu_ghg.py uses correct names
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v006
   stage: s2_site_config
   failure_domain: unit_conversion
@@ -604,7 +604,7 @@
   severity: silent
   cross_references:
   - cfp_004
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v007
   stage: s2_site_config
   failure_domain: unit_conversion
@@ -631,7 +631,7 @@
   severity: silent
   cross_references:
   - dt_003
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v008
   stage: s6_management_config
   failure_domain: silent_output
@@ -662,7 +662,7 @@
   cross_references:
   - dt_005
   - cm_021
-  verified: 2026-03-20, Harbin basin, 10633 cells fixed and re-run successfully
+  seen_at: "2026-03-20, Harbin basin"
 - id: dt_v009
   stage: s1_model_config
   failure_domain: dependency_and_order
@@ -690,7 +690,7 @@
   severity: fatal
   cross_references:
   - dt_v008
-  verified: 2026-03-20, Harbin basin
+  seen_at: "2026-03-20, Harbin basin"
 - id: dt_v010
   stage: s6_management_config
   failure_domain: parameter_format
@@ -719,7 +719,7 @@
   cross_references:
   - dt_v008
   - dt_v009
-  verified: 2026-03-20, Harbin basin, 10633 cells with paddy events
+  seen_at: "2026-03-20, Harbin basin"
 - id: dt_v011
   stage: s2_soil
   failure_domain: data_quality
@@ -780,4 +780,4 @@
       0.2-0.7.
   severity: degraded
   cross_references: []
-  verified: 2026-03-20, Harbin basin, 38/38 cells filled
+  seen_at: "2026-03-20, Harbin basin"

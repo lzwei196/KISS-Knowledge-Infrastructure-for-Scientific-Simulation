@@ -439,7 +439,7 @@
     2. Choose the correct URL for your OGGM version — check the OGGM docs for the\n   latest recommended\
     \ URL.\n3. For OGGM v1.6 with W5E5 climate: use the 2023.3/elev_bands/W5E5/ path. 4. Verify the URL\
     \ is accessible: curl -I <url>\n"
-  verified: 2026-03-20, Yarlung Tsangpo basin
+  seen_at: "2026-03-20, Yarlung Tsangpo basin"
 - id: dt_oggm_022
   stage: s5_simulation
   failure_domain: parameter_format
@@ -460,7 +460,7 @@
     \   cfg.PARAMS['store_model_geometry'] = True\n3. Note: this increases disk usage and memory footprint\
     \ because the full\n   glacier geometry is saved at each output timestep.\n4. If disk space is a concern,\
     \ set store_fl_diagnostics=False in run_with_hydro\n   to reduce output size.\n"
-  verified: 2026-03-20, Yarlung Tsangpo basin
+  seen_at: "2026-03-20, Yarlung Tsangpo basin"
 - id: dt_oggm_023
   stage: s2_preprocessing
   failure_domain: environment
@@ -481,7 +481,7 @@
     \ first:\n   apt-get install libhdf5-dev  (Ubuntu/Debian)\n   yum install hdf5-devel  (CentOS/RHEL)\n\
     3. Verify installation: python -c \"import tables; print(tables.__version__)\" 4. Add to requirements.txt:\
     \ tables>=3.7\n"
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_oggm_024
   stage: s2_preprocessing
   failure_domain: environment
@@ -500,7 +500,7 @@
   remedy: "1. Install salem: pip install salem 2. Verify: python -c \"import salem; print(salem.__version__)\"\
     \ 3. If salem installation fails due to dependency conflicts, install its\n   dependencies first:\
     \ pip install xarray matplotlib joblib\n4. Add to requirements.txt alongside oggm: salem>=0.3\n"
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_oggm_025
   stage: all
   failure_domain: environment
@@ -522,7 +522,7 @@
     \ location:\n   export PYTHONPATH=\"/actual/install/path/lib/python3.12/site-packages\"\n4. Or create\
     \ a .pth file in the venv's site-packages that points to the\n   actual install location.\n5. Long-term\
     \ fix: recreate the venv at the canonical (non-symlinked) path\n   and always activate from that path.\n"
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_oggm_degenerate_self_obs
   symptom:
     description: specific_mass_balance metrics are ~perfect (NSE≈1.0, r=1.0, RMSE≈0.003, PBIAS≈0) and
@@ -544,4 +544,4 @@
   format_spec_violated: none (dag.yaml outputs[specific_mass_balance].observability contract, not a Tier-2
     format_spec rule)
   canonical_intent: ki_local_if_pass
-  added_by_run: OGGM_retry2
+  seen_at: "date not recorded, run OGGM_retry2"

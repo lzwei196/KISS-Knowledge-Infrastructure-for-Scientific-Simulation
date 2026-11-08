@@ -756,7 +756,7 @@
     prevention: Do not rely on pyswmm Simulation object attributes for error reporting. Always parse the
       .rpt file, which is stable across pyswmm versions.
   severity: degraded
-  verified: 2026-03-20, Shunqing model (pyswmm 2.1.0)
+  seen_at: "2026-03-20, Shunqing model"
   cross_references:
   - dt_018
 - id: dt_022_swmmanywhere_offline_and_continuity_obs
@@ -779,7 +779,7 @@
   format_spec_violated: dag.yaml outputs[var=continuity_error].observability.caveats (self-diagnostic,
     not a field observation)
   canonical_intent: ki_local_if_pass
-  added_by_run: SWMM_retry1
+  seen_at: "date not recorded, run SWMM_retry1"
 - id: dt_022
   symptom:
     description: swmmanywhere-built SWMM runs to completion but Runoff Quantity Continuity Error in the
@@ -796,7 +796,7 @@
   format_spec_violated: 'KI-local: swmmanywhere INP sanitization must remove ALL x/0 overland-alpha sources
     (n=0 as well as slope=0), not only slope=0'
   canonical_intent: ki_local_if_pass
-  added_by_run: SWMM_retry1
+  seen_at: "date not recorded, run SWMM_retry1"
 - id: dt_swmmanywhere_imperv_overshoot
   symptom:
     description: swmmanywhere-built SWMM model runs but Runoff-Quantity Continuity Error in the .rpt is
@@ -813,7 +813,7 @@
       terms are finite and scorable.
   format_spec_violated: swmm.subcatchments.pct_imperv must be within [0,100]
   canonical_intent: ki_local_if_pass
-  added_by_run: SWMM_retry1
+  seen_at: "date not recorded, run SWMM_retry1"
 - id: dt_023
   stage: s3_rainfall_forcing
   failure_domain: silent_error
@@ -851,7 +851,7 @@
   cross_references:
   - dt_009
   - dt_025
-  added_by_run: SWMM_direct_rain_20261002
+  seen_at: "2026-10-02, run SWMM_direct_rain_20261002"
 - id: dt_024
   stage: s3_rainfall_forcing
   failure_domain: silent_error
@@ -889,7 +889,7 @@
   severity: silent
   cross_references:
   - dt_009
-  added_by_run: SWMM_direct_rain_20261002
+  seen_at: "2026-10-02, run SWMM_direct_rain_20261002"
 - id: dt_025
   stage: s3_rainfall_forcing
   failure_domain: protocol_gap
@@ -927,7 +927,7 @@
   cross_references:
   - dt_023
   - dt_024
-  added_by_run: SWMM_direct_rain_20261002
+  seen_at: "2026-10-02, run SWMM_direct_rain_20261002"
 - id: dt_026
   stage: s3_rainfall_forcing
   failure_domain: protocol_gap
@@ -958,7 +958,7 @@
   severity: fatal
   cross_references:
   - dt_025
-  added_by_run: SWMM_direct_rain_20261002
+  seen_at: "2026-10-02, run SWMM_direct_rain_20261002"
 - id: dt_027
   stage: s7_model_coupling
   failure_domain: protocol_gap
@@ -991,7 +991,7 @@
   cross_references:
   - dt_023
   - dt_010
-  added_by_run: SWMM_direct_rain_20261002
+  seen_at: "2026-10-02, run SWMM_direct_rain_20261002"
 
 - id: dt_snowpack_uninitialized_imelt_20261003
   stage: s6_execution
@@ -1005,8 +1005,8 @@
       every surface. NaN in a zero-area PLOWABLE surface enters the weighted impervious precipitation
       through 0*NaN. The swmmanywhere empty template gives this surface zero area.
     evidence: The real installed engine reproduces NaN final storage when only freshly allocated snowpack
-      memory is filled with NaN before engine initialization. Removing the unused template restores -0.038%
-      runoff continuity for all 23,974 Nanjing subcatchments under the same allocator condition. The regression-only
+      memory is filled with NaN before engine initialization. Removing the unused template restores finite
+      runoff continuity for every subcatchment under the same allocator condition. The regression-only
       allocator shim is not installed in production.
     supersedes_diagnosis_of:
     - dt_022
@@ -1020,7 +1020,7 @@
       the run. For real snow simulations, this engine initialization defect requires an engine fix rather
       than deleting the snow physics.
   source: https://github.com/OpenWaterAnalytics/Stormwater-Management-Model/blob/6c8120158957c8a5a5c9e39f435f0a31f63b5b8a/src/solver/snow.c
-  added_by_run: ki_fully_resolve_20261003
+  seen_at: "2026-10-03, Nanjing city model (run ki_fully_resolve_20261003)"
 
 - id: dt_empty_timeseries_export_20261003
   stage: s6_execution
@@ -1038,4 +1038,4 @@
       no element IDs are requested, labeling the link full-depth ratio explicitly.
     validation: Real official example output matches every exported CSV value across two nodes,
       two links and two subcatchments; invalid IDs, non-finite/incomplete series and empty reports fail.
-  added_by_run: ki_fully_resolve_20261003
+  seen_at: "2026-10-03, run ki_fully_resolve_20261003"

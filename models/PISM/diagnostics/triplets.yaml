@@ -573,7 +573,7 @@
       structural-mismatch handling.
   format_spec_violated: pism.outputs.primary.must_subset_dag_outputs
   canonical_intent: ki_local_if_pass
-  added_by_run: PISM_retry2
+  seen_at: "date not recorded, run PISM_retry2"
 - id: dt_023
   stage: s2_input_preparation
   failure_domain: io_environment
@@ -617,12 +617,12 @@
   notes: >
     usurf (ice surface elevation) IS a declared dag output; comparing it to
     BedMachine surface_elevation_m is a VALID spatial_snapshot / spatial_pattern_match
-    case (NOT a wrong-variable reject like dt_021/dt_022). Result GrIS 10km SIA 100yr:
-    r=0.9945 NSE=0.989 KGE=0.985 PBIAS-0.53% RMSE 82 m over ice. CAVEAT: geometry is
+    case (NOT a wrong-variable reject like dt_021/dt_022). A short geometry-hold run
+    scores very high over ice. CAVEAT: geometry is
     initialized from the same BedMachine product (short hold, not an independent
     multi-millennium spinup), so high skill is partly circular — bed errors propagate
     directly into usurf (see dag usurf caveat).
-  added_by_run: PISM_bedmachine_gris
+  seen_at: "date not recorded, Greenland (run PISM_bedmachine_gris)"
 
 - id: dt_024
   stage: s9_post_processing
@@ -631,7 +631,7 @@
     description: >
       Validating PISM surface speed (velsurf_mag) against a gridded velocity
       mosaic (MEaSUREs Antarctica/Greenland ice velocity, spatial_snapshot) gives
-      a near-zero or NEGATIVE raw Pearson r (e.g. -0.02) even though the model
+      a near-zero or NEGATIVE raw Pearson r even though the model
       clearly puts fast flow on the right outlets. Two confounders: (1) velsurf
       spans ~4 orders of magnitude (interior ~0.3 m/yr, outlets >1000 m/yr) so a
       RAW-space Pearson r is dominated by a few large values; (2) a short,
@@ -672,11 +672,9 @@
   severity: degraded
   cross_references: [dt_023]
   notes: >
-    Result Amery/Lambert (East Antarctica) 5km hybrid 1yr hold, shelf preserved:
-    log10-space spatial r=0.667, Spearman=0.707, NSE_log=-2.15, KGE_log=0.067,
-    PBIAS_log=-79% (interior too slow: cold isothermal -energy none stiffens ice;
-    pattern is right, magnitude/dynamic-range compressed). raw Pearson r=0.026
-    (artifact). GENUINE dynamical check (velocity is SOLVED, not an input) unlike
-    the usurf geometry-hold (dt_023) which is partly circular. n=25079, 205
-    non-converged cells excluded.
-  added_by_run: PISM_measures_amery
+    In a 1-year hybrid hold with the shelf kept, log10-space r and Spearman are
+    moderate while raw Pearson r stays near zero (an artifact); the magnitude is
+    compressed (interior too slow: cold isothermal -energy none stiffens ice;
+    the pattern is right). This is a GENUINE dynamical check (velocity is SOLVED,
+    not an input), unlike the usurf geometry-hold (dt_023), which is partly circular.
+  seen_at: "date not recorded, Amery/Lambert, East Antarctica (run PISM_measures_amery)"

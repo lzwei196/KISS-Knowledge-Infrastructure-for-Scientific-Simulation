@@ -34,11 +34,11 @@ tools:
 inputs:
   forcing:
   - name: rainfall (rain)
-    unit: m/hr
+    unit: m/day
   - name: potential evapotranspiration (pe)
-    unit: m/hr
+    unit: m/day
   - name: observed discharge (Qobs)
-    unit: m/hr
+    unit: m/day
   parameters:
   - name: szm
     unit: m
@@ -66,7 +66,7 @@ inputs:
     unit: m^2
   initial_conditions:
   - name: Q0
-    unit: m/hr
+    unit: m/day
   - name: sr0
     unit: m
   boundary_conditions:

@@ -34,8 +34,8 @@ simulation period, forcing data source, and output options.
    - CMFD daily 0.25°: `KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/`
    - MSWX 3-hourly: `KISSPATH_FORCING/`
 
-4. **Set time step**: TOPMODEL uses hours. Typically dt=1 for hourly, dt=24 for daily.
-   All forcing must match this time step.
+4. **Set time step**: the inputs.dat header dt is always 1.0 (the code uses it as an array index; a header of 24 mis-reads the forcing). Choose the physical step with `convert_forcing_to_topmodel.py --dt-hours` (24 = daily, the only step `calibrate_topmodel.py` accepts); one model step is then one day.
+   All forcing must be in metres per model step (the converter does this).
 
 5. **Locate observations**: Find the gauge station file for validation.
 

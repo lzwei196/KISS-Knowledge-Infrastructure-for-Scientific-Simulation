@@ -724,15 +724,14 @@
   stage: s2_soil
   failure_domain: data_quality
   symptom:
-    description: 4 cells crash at startup with empty soil cache. HWSD MU 11927/11928 are water bodies
-      (ISSOIL=0).
+    description: Some cells crash at startup with an empty soil cache. Their HWSD mapping unit is a
+      water body (ISSOIL=0).
     error_pattern: empty soil|no site.xml|segfault at startup
     detection_method: file_check
   diagnosis:
     root_cause: HWSD global database contains water body entries with no soil properties. The VIC-to-LDNDC
       soil converter silently returns empty results. setup.xml and site.xml are never generated.
-    explanation: Cells V5659001, V6069001, V6359001, V7529001 in Harbin basin sit on HWSD mapping units
-      classified as water.
+    explanation: The failed cells sit on HWSD mapping units classified as water.
     affected_components:
     - HWSD soil extraction
     - soil cache
@@ -751,7 +750,7 @@
   severity: fatal
   cross_references:
   - cm_017
-  verified: 2026-03-20, Harbin basin, 248/248 re-runs succeeded
+  seen_at: "2026-03-20, Harbin basin"
 - id: dt_v012
   stage: s5_execution
   failure_domain: runtime

@@ -705,11 +705,12 @@ known_issues:
     rice branch which auto-generates these events.
   severity: fatal
 - id: dt_v011
-  symptom: 4 cells crash at startup with empty soil cache. HWSD MU 11927/11928 are water bodies (ISSOIL=0).
+  symptom: Some cells crash at startup with an empty soil cache. Their HWSD mapping unit is a water body
+    (ISSOIL=0).
   diagnosis: HWSD global database contains water body entries with no soil properties. The VIC-to-LDNDC
-    soil converter silently returns empty results. setup.xml and site.xml are never generated.; Cells
-    V5659001, V6069001, V6359001, V7529001 in Harbin basin sit on HWSD mapping units classified as water.;
-    ['HWSD soil extraction', 'soil cache', 'setup.xml generation']
+    soil converter silently returns empty results. setup.xml and site.xml are never generated.; The failed
+    cells sit on HWSD mapping units classified as water.; ['HWSD soil extraction', 'soil cache', 'setup.xml
+    generation']
   remedy: 'Nearest-neighbor soil donor: find closest cell with valid soil (0.25° search), copy parameters.
     Add ISSOIL≠0 check to soil extraction pipeline.; ; [''Identify failed cells: grep for empty soil_cache
     directories'', ''Find nearest valid neighbor at same resolution'', ''Copy neighbor soil params to

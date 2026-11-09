@@ -675,13 +675,13 @@ known_issues:
     runoff product (GRUN, KISSPATH_DATA/obs/grun-v1-runoff).
 - id: dt_v060_offline_wb_closure_et_snapshot
   symptom: Noah-MP offline (HRLDAS) basin water-balance closure FAILS ~20-30% (ET+Q exceed P) while dStorage
-    ~= 0 and runoff pattern vs GRUN is excellent (r~0.97); a strict critic flags workflow_incomplete claiming
-    un-differenced accumulated runoff.
-  diagnosis: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (GRUN r~0.97 proves it).
-    The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
-    x86400 overstates ET because the offline daily HRLDAS build emits no accumulated ET fields. Noah-MP
-    closes water per column each timestep by construction, so the offline residual is an extraction approximation,
-    not a mass failure.'
+    ~= 0 and the runoff pattern vs a gridded runoff product such as GRUN is very good (high r); a strict
+    critic flags workflow_incomplete claiming un-differenced accumulated runoff.
+  diagnosis: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (a high r against a gridded
+    runoff product such as GRUN shows it). The residual is the ET term: prognostic ET read from an INSTANTANEOUS
+    daily flux snapshot (ECAN+EDIR+ETRAN) x86400 overstates ET because the offline daily HRLDAS build
+    emits no accumulated ET fields. Noah-MP closes water per column each timestep by construction, so
+    the offline residual is an extraction approximation, not a mass failure.'
   remedy: Do NOT gate the verdict on offline daily closure. Set verdict_metric = GRUN runoff-to-runoff
     NSE/PBIAS (regional_aggregate) and mark WB closure a soft diagnostic with ~+/-30% ET-snapshot tolerance.
     For exact closure use accumulated ET fields if emitted, else sub-daily OUTPUT_TIMESTEP + flux integration.
@@ -705,8 +705,8 @@ known_issues:
   remedy: Shift the site record by -UTC_OFFSET before writing LDASIN files. The KI converter enforces
     this - `--source fluxnet` REQUIRES `--utc_offset`, taken from the FLUXNET BADM/BIF variable UTC_OFFSET.;
     Find the LDASIN file with the daily maximum SWDOWN; its UTC hour must be within ~1 h of (12 - longitude/15)
-    mod 24. For US-MMS (lon -86.41) that is ~17-18 UTC.; Never assume a site-network timestamp is UTC.
-    Read UTC_OFFSET from the network's own metadata.
+    mod 24. For example, at longitude -86.41 that is ~17-18 UTC.; Never assume a site-network timestamp
+    is UTC. Read UTC_OFFSET from the network's own metadata.
   severity: silent
 - id: dt_020
   symptom: 'Parsed LDASOUT timeseries contains only SOIL_M_L1 / SOIL_T_L1 (layers 2..N silently missing)

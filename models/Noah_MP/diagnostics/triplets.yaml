@@ -430,11 +430,12 @@
 - id: dt_v060_offline_wb_closure_et_snapshot
   symptom:
     description: Noah-MP offline (HRLDAS) basin water-balance closure FAILS ~20-30% (ET+Q exceed P) while
-      dStorage ~= 0 and runoff pattern vs GRUN is excellent (r~0.97); a strict critic flags workflow_incomplete
+      dStorage ~= 0 and the runoff pattern vs a gridded runoff product such as GRUN is very good (high
+      r); a strict critic flags workflow_incomplete
       claiming un-differenced accumulated runoff.
   diagnosis:
-    root_cause: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (GRUN r~0.97 proves
-      it). The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
+    root_cause: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (a high r against
+      a gridded runoff product such as GRUN shows it). The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
       x86400 overstates ET because the offline daily HRLDAS build emits no accumulated ET fields. Noah-MP
       closes water per column each timestep by construction, so the offline residual is an extraction
       approximation, not a mass failure.'
@@ -447,7 +448,7 @@
   format_spec_violated: 'validation_convention.yaml runoff/regional_aggregate: headline is NSE/PBIAS;
     WB closure is only a defensibility caveat, not the verdict gate'
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_retry1
+  seen_at: "date not recorded, run Noah_MP_retry1"
 - id: dt_019
   stage: s4_forcing
   severity: silent
@@ -473,12 +474,12 @@
     action: Shift the site record by -UTC_OFFSET before writing LDASIN files. The KI converter enforces
       this - `--source fluxnet` REQUIRES `--utc_offset`, taken from the FLUXNET BADM/BIF variable UTC_OFFSET.
     verification: Find the LDASIN file with the daily maximum SWDOWN; its UTC hour must be within ~1 h
-      of (12 - longitude/15) mod 24. For US-MMS (lon -86.41) that is ~17-18 UTC.
+      of (12 - longitude/15) mod 24. For example, at longitude -86.41 that is ~17-18 UTC.
     prevention: Never assume a site-network timestamp is UTC. Read UTC_OFFSET from the network's own metadata.
   cross_references:
   - dt_009
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usmms_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usmms_20260802"
 - id: dt_020
   stage: s7_output
   severity: silent

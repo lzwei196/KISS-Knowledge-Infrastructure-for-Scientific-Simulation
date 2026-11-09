@@ -632,14 +632,14 @@ known_issues:
     cycles. A value of 0.01 (instead of ~12.0-12.5) shifts the entire diurnal cycle, making SHAW compute
     sunrise/sunset at wrong times. This causes daily precipitation to be assigned to hour 0 instead of
     the correct hour, and the radiation disaggregation produces wrong energy partitioning. Most critically,
-    precipitation may be placed at an hour that gets zero radiation, reducing snowmelt and ET. In Manitoba,
-    HRNOON=0.01 caused ZERO effective precipitation despite valid precip data in the weather file.
+    precipitation may be placed at an hour that gets zero radiation, reducing snowmelt and ET. HRNOON=0.01
+    can give ZERO effective precipitation despite valid precip data in the weather file.
 
     '
   remedy: "HRNOON = 12.0 + (standard_meridian - longitude) / 15.0 For Manitoba (100.37W, Central time\
     \ zone, std meridian=105W):\n  HRNOON = 12.0 + (105 - 100.37) / 15 = 12.3 hours\nFor Saskatchewan\
-    \ (104.7W): HRNOON = 12.0 + (105 - 104.7)/15 = 12.02 JackPine used HRNOON=12.0 which was close enough.\
-    \ Always compute from longitude — never use a placeholder value.\n"
+    \ (104.7W): HRNOON = 12.0 + (105 - 104.7)/15 = 12.02 (so 12.0 is close enough there). Always compute\
+    \ from longitude — never use a placeholder value.\n"
   severity: critical
 - id: shaw_029
   symptom: Solar radiation in MJ/m2/day not converted to W/m2 for daily mode
@@ -680,7 +680,7 @@ known_issues:
     '
   remedy: 'Use 2-digit year throughout ALL input files consistently: - .sit Line B: "   1  0 15 365  20"
     (not 2015) - .wea: "  1  15   -4.8 ..." (not 2015) - .moi: "   1   0  15 0.120 ..." (not 2015) - .tem:
-    "   1   0  15  -4.0 ..." (not 2015) Verified: switching from 2015→15 across all files fixes the 1-day
+    "   1   0  15  -4.0 ..." (not 2015) Check: switching from 2015→15 across all files fixes the 1-day
     termination.
 
     '
@@ -737,17 +737,16 @@ known_issues:
     built from CMFD NetCDF by the old tool; soil dries out, no runoff, no error printed
   diagnosis: 'The old tool had its own CMFD reader that added the eight 3-hour CMFD precipitation values
     of a day (prec_mm = sum(prec[s:e])). CMFD prec is a RATE in kg m-2 s-1, so each value must be multiplied
-    by 10800 s first. Without it daily rain is 10800 times too small. Reference check at (32.43, 115.6),
-    year 2010: load_daily_forcing("cmfd") gives 816.06 mm; the raw-rate sum would give about 0.076 mm.
-    The same block opened files with a bare xr.open_dataset (works or fails by import order on this server)
-    and hid every failure in a try/except that only printed.
+    by 10800 s first. Without it daily rain is 10800 times too small, so a normal year of several hundred
+    mm shows as well under 1 mm. The same block opened files with a bare xr.open_dataset (works or fails
+    depending on import order) and hid every failure in a try/except that only printed.
 
     '
   remedy: 'Do not read CMFD in SHAW code. Use convert_forcing_to_shaw.py --source cmfd --forcing_dir <CMFD
     3-hour store> --lat --lon; the shared loader does the rate-to-mm step. The own CMFD reader was removed
     from the tool. Always read the annual rain totals the tool prints: several hundred to about 1500 mm
-    is normal, near zero means a unit error. Tool daily records and loader total must agree (they did:
-    816.06 vs 816.06 mm; the .wea rounded to 0.1 mm/day sums to 815.4 mm).
+    is normal, near zero means a unit error. Tool daily records and loader total must agree; the .wea
+    sum can differ a little because each day is rounded to 0.1 mm.
 
     '
   severity: critical
@@ -772,14 +771,14 @@ known_issues:
   symptom: 'copy_template prints "WARNING: .../outputs/shaw_quebec_compton/compton.sit not found, skipping"
     for every file and the run later fails with FileNotFoundError on <case>.sit'
   diagnosis: 'The template registry pointed at case folders under outputs/ (shaw_quebec_compton, shaw_jackpine).
-    Those folders were lost when outputs/ moved to another disk (found missing 2026-10-02). copy_template
-    only warned and returned an empty dict, so the real cause was hidden.
+    Those folders lived outside the KI and were lost when outputs/ moved. copy_template only warned and
+    returned an empty dict, so the real cause was hidden.
 
     '
-  remedy: 'The compton template now lives inside the KI at tools/s1_site_setup/templates/compton/ (recovered
-    from the 2026-06-28 RISMA run copy; see its README.md) and copy_template looks there first. copy_template
-    raises FileNotFoundError when a template .sit/.inp is missing. The jackpine (hourly, canopy) template
-    is still missing: use Shaw303/Trial.30.* from model/shaw as the hourly example until it is restored.
+  remedy: 'The compton template now lives inside the KI at tools/s1_site_setup/templates/compton/ (where
+    it came from: its README.md) and copy_template looks there first. copy_template raises FileNotFoundError
+    when a template .sit/.inp is missing. The jackpine (hourly, canopy) template is still missing: use
+    Shaw303/Trial.30.* from model/shaw as the hourly example until it is restored.
 
     '
   severity: high

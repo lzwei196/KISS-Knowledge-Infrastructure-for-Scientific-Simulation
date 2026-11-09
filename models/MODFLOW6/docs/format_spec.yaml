@@ -531,8 +531,7 @@ known_issues:
     divided by 1000, and did not apply the dt_v004 aquifer scale.; Owner rule 2026-10-02: a model KI builds
     its input straight from the data source with its own KI tool, never from another model''s input or
     setup files. The VIC soil file is a VIC setup product; its column layout depends on the VIC options,
-    so a fixed column index can read a different parameter with no error. The option was removed; nothing
-    on this server called it.
+    so a fixed column index can read a different parameter with no error. The option was removed.
 
     ; [''s3_layer_properties'', ''NPF package'']'
   remedy: 'Take Layer-1 K straight from the soil source: assign_k_from_glhymps.py --layer1_k hwsd (HWSD
@@ -744,7 +743,7 @@ known_issues:
   symptom: 'SKILL.md''s validated-setup table listed "Grid: VIC 0.25deg basin_grid.nc" and "K (Layer 1):
     HWSD via VIC soil params", so an agent copying the validated chain ran (or looked for) VIC''s setup
     to make MODFLOW''s grid and K.'
-  diagnosis: 'The validated Bengbu chain was first built on top of VIC''s setup files and the table recorded
+  diagnosis: 'The validated chain was first built on top of VIC''s setup files and the table recorded
     those files as the source of the grid and of Layer-1 K.; The table is the first thing an agent copies.
     Sources in it must be the data sources themselves (grid from the basin outline or a lat/lon box, K
     from HWSD / GLHYMPS), not another model''s input. VIC OUT_BASEFLOW as recharge is a RESULTS coupling

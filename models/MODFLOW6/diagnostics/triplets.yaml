@@ -366,7 +366,7 @@
     explanation: 'Owner rule 2026-10-02: a model KI builds its input straight from the data source with
       its own KI tool, never from another model''s input or setup files. The VIC soil file is a VIC setup
       product; its column layout depends on the VIC options, so a fixed column index can read a different
-      parameter with no error. The option was removed; nothing on this server called it.
+      parameter with no error. The option was removed.
 
       '
     affected_components:
@@ -818,7 +818,7 @@
     error_pattern: ''
     detection_method: manual_review
   diagnosis:
-    root_cause: The validated Bengbu chain was first built on top of VIC's setup files and the table
+    root_cause: The validated chain was first built on top of VIC's setup files and the table
       recorded those files as the source of the grid and of Layer-1 K.
     explanation: 'The table is the first thing an agent copies. Sources in it must be the data sources
       themselves (grid from the basin outline or a lat/lon box, K from HWSD / GLHYMPS), not another
@@ -842,4 +842,4 @@
   cross_references:
   - dt_mf6_010
   - dt_mf6_018
-  seen_at: "2026-10-03"
+  seen_at: "2026-10-03, Bengbu case"

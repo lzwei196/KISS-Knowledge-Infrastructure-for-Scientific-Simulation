@@ -1,0 +1,46 @@
+;;; usne3_soil.dai -- US-Ne3 (Mead, NE) silty clay loam profile.
+;;; Reconstructs the validated real-case soil: 2-horizon silty clay loam,
+;;; dry bulk density 1.35 (Ap) / 1.45 (subsoil), van Genuchten-Mualem
+;;; hydraulics (literature values for a silty clay loam, Carsel & Parrish
+;;; 1988 / Rosetta class means). Explicit hydraulics are used (instead of a
+;;; pedotransfer) so the calibration run is deterministic across machines.
+
+(defhorizon "Ne3 Ap" USDA3
+  (clay 0.34 [])
+  (silt 0.55 [])
+  (sand 0.11 [])
+  (humus 0.030 [])
+  (C_per_N 11.0 [g C/g N])
+  (dry_bulk_density 1.35 [g/cm^3])
+  (hydraulic M_vG
+    (Theta_res 0.060 [cm^3 H2O/cm^3])
+    (Theta_sat 0.450 [cm^3 H2O/cm^3])
+    (alpha 0.0100 [cm^-1])
+    (n 1.30)
+    (K_sat 0.70 [cm/h])))
+
+(defhorizon "Ne3 C" USDA3
+  (clay 0.38 [])
+  (silt 0.52 [])
+  (sand 0.10 [])
+  (humus 0.008 [])
+  (C_per_N 11.0 [g C/g N])
+  (dry_bulk_density 1.45 [g/cm^3])
+  (hydraulic M_vG
+    (Theta_res 0.070 [cm^3 H2O/cm^3])
+    (Theta_sat 0.430 [cm^3 H2O/cm^3])
+    (alpha 0.0090 [cm^-1])
+    (n 1.28)
+    (K_sat 0.45 [cm/h])))
+
+(defcolumn "Ne3" default
+  (Soil (MaxRootingDepth 150 [cm])
+        (horizons (-30 [cm] "Ne3 Ap")
+                  (-250 [cm] "Ne3 C")))
+  (Groundwater deep)
+  (OrganicMatter original
+    (init (input 4000 [kg C/ha/y])
+          (root 1500 [kg C/ha/y])
+          (end -25 [cm]))))
+
+;;; usne3_soil.dai ends here

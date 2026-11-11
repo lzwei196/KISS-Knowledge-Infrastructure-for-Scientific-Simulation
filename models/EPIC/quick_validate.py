@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+sys.dont_write_bytecode = True  # importing KI tools must not write __pycache__ into the KI
 import tempfile
 
 KI_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,15 +45,16 @@ WORKSPACE_CANDIDATES = [
 def _default_workspace(for_rerun=False):
     """Where to look for (or produce) the umstead_0 example outputs.
 
-    A `--rerun` always writes into the KI-local runs/ dir so the shipped
-    reference outputs under models/EPIC/outputs/ are never overwritten.
+    A `--rerun` (or a run with no stored outputs) writes into a fresh temp
+    dir, never into the KI and never over models/EPIC/outputs/. The KI is
+    read-only; existing outputs in the candidates are only read.
     """
     if for_rerun:
-        return WORKSPACE_CANDIDATES[0]
+        return tempfile.mkdtemp(prefix="epic_qv_")
     for c in WORKSPACE_CANDIDATES:
-        if os.path.isfile(os.path.join(c, "umstead_0.ANN")):
+        if _has_outputs(c):
             return c
-    return WORKSPACE_CANDIDATES[0]
+    return tempfile.mkdtemp(prefix="epic_qv_")
 
 RUN_NAME = "umstead_0"
 EXPECTED_YIELD_RANGE = (2.0, 15.0)  # t/ha for NC corn
@@ -64,6 +66,18 @@ def _has_outputs(workspace):
     ann = os.path.join(workspace, f"{RUN_NAME}.ANN")
     acy = os.path.join(workspace, f"{RUN_NAME}.ACY")
     return os.path.isfile(ann) and os.path.isfile(acy)
+
+
+def _rerun_dir(workspace):
+    """Run destination: a path in the KI moves to a fresh temp dir (the KI is read-only)."""
+    ki = os.path.realpath(KI_DIR)
+    real = os.path.realpath(workspace)
+    if real == ki or real.startswith(ki + os.sep):
+        new = tempfile.mkdtemp(prefix="epic_qv_")
+        print(f"[quick_validate] workspace {workspace} is inside the KI (read-only); "
+              f"running in {new}", file=sys.stderr)
+        return new
+    return workspace
 
 
 def _run_epic(workspace):
@@ -206,8 +220,6 @@ def main():
                     help="Force a fresh EPIC run instead of using existing outputs")
     ap.add_argument("--workspace", default=None)
     args = ap.parse_args()
-    if args.workspace is None:
-        args.workspace = _default_workspace(for_rerun=args.rerun)
 
     result = {
         "ki_usable": False,
@@ -218,9 +230,11 @@ def main():
     }
 
     try:
+        if args.workspace is None:
+            args.workspace = _default_workspace(for_rerun=args.rerun)
         if args.rerun or not _has_outputs(args.workspace):
             print("Running EPIC umstead example via Wine...")
-            ws = _run_epic(args.workspace)
+            ws = _run_epic(_rerun_dir(args.workspace))
         else:
             print(f"Using existing outputs in {args.workspace}")
             ws = args.workspace

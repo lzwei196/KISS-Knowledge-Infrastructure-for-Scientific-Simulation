@@ -6,6 +6,7 @@ import os
 import py_compile
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -134,14 +135,15 @@ def check_binary_start(binary):
         print_result("fail", "DHSVM startup", f"cannot start {binary}", fix)
         return
     try:
-        proc = subprocess.run(
-            [str(binary)],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [os.path.abspath(str(binary))],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
     except subprocess.TimeoutExpired:
         fix = f"Investigate hung executable {subject}; check {DIAGNOSTICS}."
         add_check("run", subject, True, "fail", fix)
@@ -198,7 +200,8 @@ def check_tool_compile(path):
         print_result("fail", f"tool {path.name}", f"missing at {path}", fix)
         return
     try:
-        py_compile.compile(str(path), doraise=True)
+        with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+            py_compile.compile(str(path), cfile=os.path.join(pyc_tmp, "check.pyc"), doraise=True)
     except py_compile.PyCompileError as exc:
         fix = f"Fix Python syntax in {path}; check {DIAGNOSTICS}."
         add_check("import", path, True, "fail", fix)

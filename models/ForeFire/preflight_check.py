@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -131,14 +132,15 @@ def check_binary_starts(binary):
         return
     subject = binary.resolve()
     try:
-        result = subprocess.run(
-            [str(subject), "-v"],
-            cwd=str(KI_DIR),
-            env=runtime_env(subject),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(subject), "-v"],
+                cwd=tmp_cwd,
+                env=runtime_env(subject),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
     except subprocess.TimeoutExpired:
         add_check(
             "run",

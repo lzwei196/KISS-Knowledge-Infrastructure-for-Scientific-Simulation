@@ -127,6 +127,8 @@ def create_output_dirs():
 # COPY of the stage scripts outside this KI. Every documented step then ran the
 # unmodified KI scripts, so the "配置" step was silently a no-op.
 SCRIPTS_DIR = Path(__file__).resolve().parent
+# The KI is read-only: configured copies of the stage scripts go here instead.
+CONFIGURED_SCRIPTS_DIR = WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / "configured_scripts"
 
 
 def update_script_paths(script_rel_path, var_mapping):
@@ -141,10 +143,7 @@ def update_script_paths(script_rel_path, var_mapping):
     with open(script_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # 备份原始文件
-    backup_path = script_path.with_suffix('.py.bak')
-    with open(backup_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+    # The KI is read-only: no .bak file and no write-back into the KI.
 
     # 替换路径
     modified = False
@@ -168,10 +167,13 @@ def update_script_paths(script_rel_path, var_mapping):
         else:
             print(f"  ⚠️  未找到变量 {var_name}")
 
-    # 写回文件
+    # 写出配置好的副本 (always, even if unchanged) to the basin output folder,
+    # never into the KI. Run the stage from this copy (see main()).
+    out_path = CONFIGURED_SCRIPTS_DIR / script_rel_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8")
+    print(f"  → 副本: {out_path}")
     if modified:
-        with open(script_path, 'w', encoding='utf-8') as f:
-            f.write(content)
         print(f"✓ 已更新脚本: {script_rel_path}")
         return True
     else:
@@ -327,12 +329,12 @@ def main():
     print("\n下一步操作：")
     print("1. 检查各脚本的路径配置是否正确")
     print("2. 依次运行以下命令：")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s1_grid && python make_basin_grid_nc.py")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s2_forcing && python forcing_1d.py")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s2_forcing && python process_forcing.py")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s3_soil && python fill_parameters1.py")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s3_soil && python fill_parameters2.py")
-    print(f"   cd {WORKSPACE_ROOT}/scripts/s4_veg && python process_vegetation_detailed.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s1_grid && python make_basin_grid_nc.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s3_soil && python fill_parameters1.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s3_soil && python fill_parameters2.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s2_forcing && python forcing_1d.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s2_forcing && python process_forcing.py")
+    print(f"   cd {CONFIGURED_SCRIPTS_DIR}/s4_veg && python process_vegetation_detailed.py")
     print(f"3. 运行VIC模型：")
     print(f"   {PATH_CONFIG['vic_exe']} -g {PATH_CONFIG['global_param_output']}")
     print("\n" + "="*80)

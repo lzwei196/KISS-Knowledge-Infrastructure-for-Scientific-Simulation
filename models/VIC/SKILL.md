@@ -565,19 +565,23 @@ source /Users/yc/Desktop/project/python_env/bin/activate
 # 🔴 易错点2: shapefile命名可能是两种格式之一：
 #    - data/shp/{basin_name}_shp/{basin_name}_clip.shp (如bengbu)
 #    - data/shp/{basin_name}_shp/{basin_name}.shp (如wangjiaba)
-# 需要在config_paths.py中修改shp_file路径匹配实际文件名
+# 用环境变量 VIC_BASIN_SHP 指向实际的 .shp 文件（不要修改KI里的config_paths.py）
 
-# 2. 修改config_paths.py中的BASIN_NAME变量
+# 2. 用环境变量设置流域名称（不要修改KI里的config_paths.py）
+#    config_paths.py 和各阶段脚本副本读的是 VIC_BASIN_NAME
+export BASIN_NAME="your_basin_name"
+export VIC_BASIN_NAME="$BASIN_NAME"
+export VIC_BASIN_SHP="/path/to/your_basin.shp"
+export CONFIGURED_SCRIPTS_DIR="KISSPATH_OUTPUTS/$BASIN_NAME/vic_temp/configured_scripts"
 cd /Volumes/Expansion2t/hydro-model-workspace/scripts
-# 编辑config_paths.py: BASIN_NAME = "your_basin_name"
 
 # 3. 运行配置脚本（必须在虚拟环境中）
-# **WARNING**: config_paths.py modifies scripts in-place via regex. When switching basins,
-# verify that all scripts have correct paths after running config_paths.py.
+# **NOTE**: config_paths.py never edits the KI. It writes configured copies of the stage
+# scripts to outputs/${BASIN_NAME}/vic_temp/configured_scripts/; check the paths in those copies.
 # Check for truncated os.path.join() calls.
 python config_paths.py
 
-# 4. 手动运行VIC准备和模拟步骤
+# 4. 手动运行VIC准备和模拟步骤（运行上面写出的副本，不在KI里运行）
 # 见下方"完整流程"部分
 ```
 
@@ -625,22 +629,41 @@ cd /Volumes/Expansion2t/hydro-model-workspace
 
 # 设置流域名称（环境变量）
 export BASIN_NAME="your_basin_name"
+# config_paths.py 和所有阶段脚本读的是 VIC_BASIN_NAME，必须在配置和每个阶段之前设置
+export VIC_BASIN_NAME="$BASIN_NAME"
+
+# 按需设置（代码里真实读取的环境变量；不要修改KI里的脚本）：
+# export VIC_BASIN_SHP=/path/to/basin.shp          # 流域边界（s1_grid, config_paths.py）
+# export VIC_CMFD_DIR=/path/to/cmfd                # forcing_1d.py 的CMFD输入目录
+# export VIC_YEAR_START=1979 VIC_YEAR_END=1980     # forcing_1d.py 年份；两个都设时也写入全局参数 STARTYEAR/ENDYEAR/FORCEYEAR
+# export VIC_START_DATE=1979-01-01 VIC_END_DATE=1980-12-31   # process_forcing.py 时间段
+# export VIC_FORCING_PREFIX=huai_01dy_025deg_      # forcing 文件名前缀（process_forcing.py 和全局参数 FORCING1）
+# export VIC_RES=0.25                              # 格网分辨率（所有阶段要一致）
+# export VIC_ELEV_NC=... VIC_PREC_ANNUAL_NC=... VIC_SOIL_RASTER=...   # fill_parameters1.py 的输入
+# export VIC_GLOBAL_PARAM_TEMPLATE=...             # 全局参数模板（config_paths.py）
+# 不要设置 VIC_OUT_ROOT：config_paths.py 固定使用 KISSPATH_OUTPUTS
+
+# 配置副本目录（绝对路径，与 config_paths.py 的 CONFIGURED_SCRIPTS_DIR 相同）
+export CONFIGURED_SCRIPTS_DIR="KISSPATH_OUTPUTS/$BASIN_NAME/vic_temp/configured_scripts"
+
+# 先运行配置脚本（写出阶段脚本副本和全局参数文件；不修改KI）
+(cd scripts && python config_paths.py)
 ```
 
 ### 🔴 易错点汇总（必读）
 
 1. **Python环境**: 每次运行Python脚本前必须执行 `source /Users/yc/Desktop/project/python_env/bin/activate`
 
-2. **shapefile命名**: 检查实际文件名是 `{basin}.shp` 还是 `{basin}_clip.shp`，在config_paths.py中对应修改shp_file路径
+2. **shapefile命名**: 检查实际文件名是 `{basin}.shp` 还是 `{basin}_clip.shp`，用 `export VIC_BASIN_SHP=<实际.shp路径>` 指定（不要修改KI里的config_paths.py）
 
-3. **时间范围**: 需要在**三个位置**同步修改：
-   - `scripts/s2_forcing/forcing_1d.py`: YEAR_START, YEAR_END (第26-27行)
-   - `scripts/s2_forcing/process_forcing.py`: START_DATE, END_DATE (第85-86行)
-   - 全局参数文件: STARTYEAR, ENDYEAR, FORCEYEAR
+3. **时间范围**: 用环境变量设置（不要修改KI里的脚本），在配置和每个阶段之前 export：
+   - `VIC_YEAR_START`, `VIC_YEAR_END`: forcing_1d.py 读取；两个都设置时 config_paths.py 也用它们写全局参数的 STARTYEAR, ENDYEAR, FORCEYEAR
+   - `VIC_START_DATE`, `VIC_END_DATE`: process_forcing.py 读取
+   - 全局参数文件: 运行后检查 STARTYEAR, ENDYEAR, FORCEYEAR
 
-4. **forcing_1d.py的GRID_NC_PATH**: config_paths.py**不会**自动更新此路径，需手动修改：
-   ```python
-   GRID_NC_PATH = Path(r"/Volumes/Expansion2t/hydro-model-workspace/outputs/{basin}/vic_temp/grid/grid_{basin}_025deg.nc")
+4. **forcing_1d.py的GRID_NC_PATH**: 由 `VIC_BASIN_NAME` 和 `VIC_RES` 自动得出，不要手动修改KI里的脚本：
+   ```
+   outputs/{basin}/vic_temp/grid/grid_{basin}_025deg.nc
    ```
 
 5. **全局参数文件**: 运行config_paths.py后**必须手动检查**：
@@ -661,8 +684,7 @@ VIC后处理完成后，如需运行CaMa-Flood汇流模型，请参见 **`cama-f
 ### 步骤1: 生成流域格网 (0.25°)
 
 ```bash
-cd scripts/s1_grid
-python make_basin_grid_nc.py
+cd "$CONFIGURED_SCRIPTS_DIR/s1_grid" && python make_basin_grid_nc.py   # config_paths.py 写出的副本，KI 不被修改
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/grid/grid_${BASIN_NAME}_025deg.nc`
@@ -680,8 +702,7 @@ ls -lh outputs/${BASIN_NAME}/vic_temp/grid/
 #### 2.1 生成土壤参数框架
 
 ```bash
-cd scripts/s3_soil
-python fill_parameters1.py
+cd "$CONFIGURED_SCRIPTS_DIR/s3_soil" && python fill_parameters1.py
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/soil/SOIL_PARAM_FINAL.txt`
@@ -689,7 +710,7 @@ python fill_parameters1.py
 #### 2.2 插值填充土壤参数
 
 ```bash
-python fill_parameters2.py
+cd "$CONFIGURED_SCRIPTS_DIR/s3_soil" && python fill_parameters2.py
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/soil/SOIL_PARAM_COMPLETE.txt`
@@ -701,8 +722,7 @@ python fill_parameters2.py
 #### 3.1 裁剪CMFD数据到流域范围
 
 ```bash
-cd scripts/s2_forcing
-python forcing_1d.py
+cd "$CONFIGURED_SCRIPTS_DIR/s2_forcing" && python forcing_1d.py
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/forcing/forcing_1d/*.nc` (96个文件)
@@ -714,7 +734,7 @@ python forcing_1d.py
 #### 3.2 生成VIC forcing文件
 
 ```bash
-python process_forcing.py
+cd "$CONFIGURED_SCRIPTS_DIR/s2_forcing" && python process_forcing.py
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/forcing/forcing_final/huai_01dy_025deg_*.txt` (每个格点一个文件)
@@ -727,8 +747,7 @@ python process_forcing.py
 ### 步骤4: 生成植被参数
 
 ```bash
-cd scripts/s4_veg
-python process_vegetation_detailed.py
+cd "$CONFIGURED_SCRIPTS_DIR/s4_veg" && python process_vegetation_detailed.py
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/veg/vic_veg_param_final.txt`
@@ -736,8 +755,8 @@ python process_vegetation_detailed.py
 ### 步骤5: 配置并检查全局参数文件
 
 ```bash
-cd scripts
-python config_paths.py
+# 步骤0已运行过 config_paths.py；如果之后改了环境变量，再运行一次（只写副本和全局参数，不改KI）
+(cd /Volumes/Expansion2t/hydro-model-workspace/scripts && python config_paths.py)
 ```
 
 **输出**: `outputs/${BASIN_NAME}/vic_temp/global_param_${BASIN_NAME}.txt`
@@ -923,14 +942,12 @@ cp /path/to/your/basin.shp data/shp/${BASIN_NAME}_shp/${BASIN_NAME}_clip.shp
 # ... 其他配套文件
 ```
 
-### 2. 修改config_paths.py
+### 2. 设置流域名称（不要修改KI里的文件）
 
-编辑 `scripts/config_paths.py`:
-```python
-# 修改流域名称
-BASIN_NAME = "your_basin_name"  # 改为你的流域名
-
-# 其他配置会自动适配
+```bash
+export BASIN_NAME="your_basin_name"      # 改为你的流域名
+export VIC_BASIN_NAME="$BASIN_NAME"      # 各阶段脚本读取这个变量
+# 然后按步骤0运行 config_paths.py，生成 configured_scripts 副本
 ```
 
 ### 3. 创建VIC后处理脚本

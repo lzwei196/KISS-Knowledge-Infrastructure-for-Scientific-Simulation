@@ -45,16 +45,21 @@ source /Users/yc/Desktop/project/python_env/bin/activate
 # 🔴 Pitfall 2: Shapefile naming may follow one of two formats:
 #    - data/shp/{basin_name}_shp/{basin_name}_clip.shp (e.g., bengbu)
 #    - data/shp/{basin_name}_shp/{basin_name}.shp (e.g., wangjiaba)
-# You need to modify the shp_file path in config_paths.py to match the actual file name
+# Point the environment variable VIC_BASIN_SHP at the actual .shp file (do not edit config_paths.py in the KI)
 
-# 2. Modify the BASIN_NAME variable in config_paths.py
+# 2. Set the basin name with environment variables (do not edit config_paths.py in the KI)
+#    config_paths.py and the configured stage-script copies read VIC_BASIN_NAME
+export BASIN_NAME="your_basin_name"
+export VIC_BASIN_NAME="$BASIN_NAME"
+export VIC_BASIN_SHP="/path/to/your_basin.shp"
+export CONFIGURED_SCRIPTS_DIR="KISSPATH_OUTPUTS/$BASIN_NAME/vic_temp/configured_scripts"
 cd /Volumes/Expansion2t/hydro-model-workspace/scripts
-# Edit config_paths.py: BASIN_NAME = "your_basin_name"
 
 # 3. Run the configuration script (must be in the virtual environment)
 python config_paths.py
 
-# 4. Manually run VIC preparation and simulation steps
+# 4. Manually run VIC preparation and simulation steps from the configured copies that
+#    config_paths.py wrote to outputs/${BASIN_NAME}/vic_temp/configured_scripts/ (the KI is never changed)
 # See the "Complete Workflow" section below
 ```
 
@@ -102,22 +107,41 @@ cd /Volumes/Expansion2t/hydro-model-workspace
 
 # Set basin name (environment variable)
 export BASIN_NAME="your_basin_name"
+# config_paths.py and every stage script read VIC_BASIN_NAME; set it before configuration and every stage
+export VIC_BASIN_NAME="$BASIN_NAME"
+
+# Set as needed (environment variables the code really reads; do not edit scripts in the KI):
+# export VIC_BASIN_SHP=/path/to/basin.shp          # basin boundary (s1_grid, config_paths.py)
+# export VIC_CMFD_DIR=/path/to/cmfd                # CMFD input folder for forcing_1d.py
+# export VIC_YEAR_START=1979 VIC_YEAR_END=1980     # forcing_1d.py years; when both are set, also written to global param STARTYEAR/ENDYEAR/FORCEYEAR
+# export VIC_START_DATE=1979-01-01 VIC_END_DATE=1980-12-31   # process_forcing.py period
+# export VIC_FORCING_PREFIX=huai_01dy_025deg_      # forcing file name prefix (process_forcing.py and global param FORCING1)
+# export VIC_RES=0.25                              # grid resolution (same for all stages)
+# export VIC_ELEV_NC=... VIC_PREC_ANNUAL_NC=... VIC_SOIL_RASTER=...   # inputs of fill_parameters1.py
+# export VIC_GLOBAL_PARAM_TEMPLATE=...             # global param template (config_paths.py)
+# Do not set VIC_OUT_ROOT: config_paths.py always uses KISSPATH_OUTPUTS
+
+# Configured-copies folder (absolute path, same as CONFIGURED_SCRIPTS_DIR in config_paths.py)
+export CONFIGURED_SCRIPTS_DIR="KISSPATH_OUTPUTS/$BASIN_NAME/vic_temp/configured_scripts"
+
+# Run the configuration script first (writes the stage-script copies and the global param file; does not change the KI)
+(cd scripts && python config_paths.py)
 ```
 
 ### 🔴 Summary of Common Pitfalls (Must Read)
 
 1. **Python environment**: Must execute `source /Users/yc/Desktop/project/python_env/bin/activate` before running any Python script
 
-2. **Shapefile naming**: Check whether the actual file name is `{basin}.shp` or `{basin}_clip.shp`, and modify the shp_file path in config_paths.py accordingly
+2. **Shapefile naming**: Check whether the actual file name is `{basin}.shp` or `{basin}_clip.shp`, and set it with `export VIC_BASIN_SHP=<actual .shp path>` (do not edit config_paths.py in the KI)
 
-3. **Time range**: Must be modified synchronously in **three locations**:
-   - `scripts/s2_forcing/forcing_1d.py`: YEAR_START, YEAR_END (lines 26-27)
-   - `scripts/s2_forcing/process_forcing.py`: START_DATE, END_DATE (lines 85-86)
-   - Global parameter file: STARTYEAR, ENDYEAR, FORCEYEAR
+3. **Time range**: Set with environment variables (do not edit scripts in the KI); export them before configuration and every stage:
+   - `VIC_YEAR_START`, `VIC_YEAR_END`: read by forcing_1d.py; when both are set, config_paths.py also writes them to STARTYEAR, ENDYEAR, FORCEYEAR in the global param file
+   - `VIC_START_DATE`, `VIC_END_DATE`: read by process_forcing.py
+   - Global parameter file: check STARTYEAR, ENDYEAR, FORCEYEAR after the run
 
-4. **GRID_NC_PATH in forcing_1d.py**: config_paths.py **does not** automatically update this path; it must be modified manually:
-   ```python
-   GRID_NC_PATH = Path(r"/Volumes/Expansion2t/hydro-model-workspace/outputs/{basin}/vic_temp/grid/grid_{basin}_025deg.nc")
+4. **GRID_NC_PATH in forcing_1d.py**: built from `VIC_BASIN_NAME` and `VIC_RES`; do not edit the script in the KI:
+   ```
+   outputs/{basin}/vic_temp/grid/grid_{basin}_025deg.nc
    ```
 
 5. **Global parameter file**: After running config_paths.py, **manual verification is required**:
@@ -138,8 +162,7 @@ After VIC post-processing is complete, if you need to run the CaMa-Flood river r
 ### Step 1: Generate Basin Grid (0.25°)
 
 ```bash
-cd scripts/s1_grid
-python make_basin_grid_nc.py
+cd "$CONFIGURED_SCRIPTS_DIR/s1_grid" && python make_basin_grid_nc.py   # copy written by config_paths.py; the KI is not changed
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/grid/grid_${BASIN_NAME}_025deg.nc`
@@ -157,8 +180,7 @@ ls -lh outputs/${BASIN_NAME}/vic_temp/grid/
 #### 2.1 Generate Soil Parameter Framework
 
 ```bash
-cd scripts/s3_soil
-python fill_parameters1.py
+cd "$CONFIGURED_SCRIPTS_DIR/s3_soil" && python fill_parameters1.py
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/soil/SOIL_PARAM_FINAL.txt`
@@ -166,7 +188,7 @@ python fill_parameters1.py
 #### 2.2 Interpolation to Fill Soil Parameters
 
 ```bash
-python fill_parameters2.py
+cd "$CONFIGURED_SCRIPTS_DIR/s3_soil" && python fill_parameters2.py
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/soil/SOIL_PARAM_COMPLETE.txt`
@@ -178,8 +200,7 @@ python fill_parameters2.py
 #### 3.1 Clip CMFD Data to Basin Extent
 
 ```bash
-cd scripts/s2_forcing
-python forcing_1d.py
+cd "$CONFIGURED_SCRIPTS_DIR/s2_forcing" && python forcing_1d.py
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/forcing/forcing_1d/*.nc` (96 files)
@@ -191,7 +212,7 @@ python forcing_1d.py
 #### 3.2 Generate VIC Forcing Files
 
 ```bash
-python process_forcing.py
+cd "$CONFIGURED_SCRIPTS_DIR/s2_forcing" && python process_forcing.py
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/forcing/forcing_final/huai_01dy_025deg_*.txt` (one file per grid point)
@@ -204,8 +225,7 @@ python process_forcing.py
 ### Step 4: Generate Vegetation Parameters
 
 ```bash
-cd scripts/s4_veg
-python process_vegetation_detailed.py
+cd "$CONFIGURED_SCRIPTS_DIR/s4_veg" && python process_vegetation_detailed.py
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/veg/vic_veg_param_final.txt`
@@ -213,8 +233,8 @@ python process_vegetation_detailed.py
 ### Step 5: Configure and Check Global Parameter File
 
 ```bash
-cd scripts
-python config_paths.py
+# config_paths.py already ran in Step 0; if you changed environment variables since, run it again (it only writes copies and the global param file, never the KI)
+(cd /Volumes/Expansion2t/hydro-model-workspace/scripts && python config_paths.py)
 ```
 
 **Output**: `outputs/${BASIN_NAME}/vic_temp/global_param_${BASIN_NAME}.txt`
@@ -400,14 +420,12 @@ cp /path/to/your/basin.shp data/shp/${BASIN_NAME}_shp/${BASIN_NAME}_clip.shp
 # ... other accompanying files
 ```
 
-### 2. Modify config_paths.py
+### 2. Set the basin name (do not edit files inside the KI)
 
-Edit `scripts/config_paths.py`:
-```python
-# Modify basin name
-BASIN_NAME = "your_basin_name"  # Change to your basin name
-
-# Other configurations will adapt automatically
+```bash
+export BASIN_NAME="your_basin_name"      # Change to your basin name
+export VIC_BASIN_NAME="$BASIN_NAME"      # the stage scripts read this variable
+# then run config_paths.py as in Step 0 to write the configured_scripts copies
 ```
 
 ### 3. Create VIC Post-processing Script

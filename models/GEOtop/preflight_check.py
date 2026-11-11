@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -86,9 +87,10 @@ def check_import(module, critical=True, python_exe=None):
 
 def check_python_tool_syntax(tool_paths, critical=True):
     subject = f"{HYDRO_PYTHON}: py_compile KI tools"
-    cmd = [str(HYDRO_PYTHON), "-m", "py_compile"] + [str(p) for p in tool_paths]
     try:
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=30)
+        with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+            cmd = [str(HYDRO_PYTHON), "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile"] + [str(p) for p in tool_paths]
+            proc = subprocess.run(cmd, text=True, capture_output=True, timeout=30)
         ok = proc.returncode == 0
         err = (proc.stderr or proc.stdout).strip().splitlines()
         reason = f" ({err[-1]})" if err else ""
@@ -114,13 +116,14 @@ def check_geotop_starts(binary):
         )
         return False
     try:
-        proc = subprocess.run(
-            [str(binary), "__preflight_missing_sim_dir__"],
-            cwd=str(KI_DIR),
-            text=True,
-            capture_output=True,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [str(binary), "__preflight_missing_sim_dir__"],
+                cwd=tmp_cwd,
+                text=True,
+                capture_output=True,
+                timeout=5,
+            )
         output = (proc.stdout or "") + (proc.stderr or "")
         ok = "Geotop 3.0.0" in output or "geotop:STATEMENT" in output
         reason = " expected startup banner not found" if not ok else ""

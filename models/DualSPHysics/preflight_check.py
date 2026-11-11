@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "DualSPHysics"
@@ -108,14 +109,15 @@ def check_command_starts(path, args, label, *, critical=True, expect_text=None):
             fix_text(f"{label} cannot be started because its executable is unavailable."),
         )
     try:
-        proc = subprocess.run(
-            [path] + list(args),
-            cwd=KI_DIR,
-            env=command_env(),
-            text=True,
-            capture_output=True,
-            timeout=15,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [path] + list(args),
+                cwd=tmp_cwd,
+                env=command_env(),
+                text=True,
+                capture_output=True,
+                timeout=15,
+            )
     except subprocess.TimeoutExpired:
         return add_check(
             "run",
@@ -197,13 +199,14 @@ def check_python_compile(path, *, critical=True):
             "fail",
             fix_text(f"Required KI tool is missing: {path}."),
         )
-    proc = subprocess.run(
-        [PYTHON_ENV, "-m", "py_compile", path],
-        cwd=KI_DIR,
-        text=True,
-        capture_output=True,
-        timeout=15,
-    )
+    with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+        proc = subprocess.run(
+            [PYTHON_ENV, "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile", path],
+            cwd=KI_DIR,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
     if proc.returncode != 0:
         return add_check(
             "import",

@@ -78,6 +78,11 @@ import sqlite3
 import sys
 import traceback
 
+# Never write __pycache__ next to the modules this run loads (the KI's tools/sN builders
+# via load_tool, the model-home driver): a desktop project's KI copy is verified
+# byte-for-byte, so the KI is only read in place.
+sys.dont_write_bytecode = True
+
 import numpy as np
 import yaml
 
@@ -115,7 +120,11 @@ NMON = 12 * (len(SPINUP_YEARS) + len(EVAL_YEARS))          # 48 transient period
 CAL_MONTHS = [(y, m) for y in (2019, 2020) for m in range(1, 13)]
 HOLDOUT_MONTHS = [(2021, m) for m in range(1, 13)]
 # Cache keyed BY STATION so a sibling site's forcing can never be mistaken for this one.
-CMFD_CACHE = os.path.join(KI, "calib", f"cmfd_monthly_{STATION}.json")
+# It is written under --workdir, never in the KI: a desktop project's KI copy is verified
+# byte-for-byte, so the KI is only read in place. A cache already in the KI (the server's
+# copy, built 2026-08-01) is used READ ONLY when the workdir has none.
+CMFD_CACHE_NAME = f"cmfd_monthly_{STATION}.json"
+KI_CMFD_CACHE = os.path.join(KI, "calib", CMFD_CACHE_NAME)
 # Fixed structure (not calibrated): Jiangxi 双季稻 LATE-rice window — transplanting late
 # July through the October harvest, i.e. the 伏秋旱 summer-autumn dry spell when this
 # cell's CMFD precip collapses (2019: 26.8/6.7/25.0 mm in Aug/Sep/Oct). Only the
@@ -454,28 +463,48 @@ def read_params():
     return p, handed
 
 
-def ensure_forcing_cache():
-    """One-time CMFD prepare for THIS station's cell (~4 min); every later eval reads
-    the cache (~0 s)."""
-    os.makedirs(os.path.dirname(CMFD_CACHE), exist_ok=True)
-    if not os.path.exists(CMFD_CACHE):
-        from ki_tools_common.load_forcing import load_daily_forcing
-        years = SPINUP_YEARS + EVAL_YEARS
-        d = load_daily_forcing("cmfd", LAT, LON, min(years), max(years), forcing_dir=CMFD_DIR)
-        monthly = {}
-        for dt, p in zip(d["dates"], np.asarray(d["precip_mm"])):
-            k = (dt.year, dt.month)
-            monthly[k] = monthly.get(k, 0.0) + (0.0 if not np.isfinite(p) else float(p))
-        tmp = f"{CMFD_CACHE}.tmp.{os.getpid()}"      # os.replace is atomic: a concurrent
-        with open(tmp, "w") as fh:                   # reader sees old or new, never partial
-            fh.write(json.dumps({f"{y}-{m}": v for (y, m), v in monthly.items()}))
-        os.replace(tmp, CMFD_CACHE)
-    with open(CMFD_CACHE) as fh:
+def _read_cmfd_cache(path):
+    """Read a monthly cache; return (monthly, missing-month list)."""
+    with open(path) as fh:
         monthly = {tuple(map(int, k.split("-"))): float(v) for k, v in json.load(fh).items()}
     missing = [f"{y}-{m:02d}" for y in (SPINUP_YEARS + EVAL_YEARS) for m in range(1, 13)
                if (y, m) not in monthly]
+    return monthly, missing
+
+
+def ensure_forcing_cache(workdir):
+    """Monthly CMFD precip for THIS station's cell. Order: <workdir>/calib cache, else the
+    KI's own cache (read only, never written), else a one-time CMFD prepare (~4 min) into
+    <workdir>/calib; every later eval in that workdir reads it (~0 s). Nothing is ever
+    written into the KI."""
+    cache = os.path.join(workdir, "calib", CMFD_CACHE_NAME)
+    if os.path.exists(cache):
+        monthly, missing = _read_cmfd_cache(cache)
+        if missing:
+            raise RuntimeError(f"CMFD cache {cache} missing months {missing}")
+        return monthly
+    if os.path.exists(KI_CMFD_CACHE):
+        monthly, missing = _read_cmfd_cache(KI_CMFD_CACHE)
+        if not missing:
+            return monthly
+        print(f"calib_run: KI cache {KI_CMFD_CACHE} missing months {missing}; "
+              f"rebuilding into {cache}", file=sys.stderr, flush=True)
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    from ki_tools_common.load_forcing import load_daily_forcing
+    years = SPINUP_YEARS + EVAL_YEARS
+    d = load_daily_forcing("cmfd", LAT, LON, min(years), max(years), forcing_dir=CMFD_DIR)
+    monthly = {}
+    for dt, p in zip(d["dates"], np.asarray(d["precip_mm"])):
+        k = (dt.year, dt.month)
+        monthly[k] = monthly.get(k, 0.0) + (0.0 if not np.isfinite(p) else float(p))
+    tmp = f"{cache}.tmp.{os.getpid()}"               # os.replace is atomic: a concurrent
+    require_external(tmp)
+    with open(tmp, "w") as fh:                       # reader sees old or new, never partial
+        fh.write(json.dumps({f"{y}-{m}": v for (y, m), v in monthly.items()}))
+    os.replace(tmp, cache)
+    monthly, missing = _read_cmfd_cache(cache)
     if missing:
-        raise RuntimeError(f"CMFD cache {CMFD_CACHE} missing months {missing}")
+        raise RuntimeError(f"CMFD cache {cache} missing months {missing}")
     return monthly
 
 
@@ -818,10 +847,27 @@ def score_months(obs, sim_month, month_keys, label):
     return all_metrics(o, s), want
 
 
+def require_external(path):
+    """Reject a resolved write destination inside the read-only KI."""
+    resolved = os.path.realpath(path)
+    if os.path.commonpath([resolved, os.path.realpath(KI)]) == os.path.realpath(KI):
+        raise ValueError(f"write destination is inside KI: {path}")
+    return resolved
+
+
+def validate_destinations(args):
+    args.workdir = require_external(args.workdir)
+    args.out = require_external(args.out)
+    require_external(_out_tmp(args.out))
+    for relative in ("mf", "calib", "calib/" + CMFD_CACHE_NAME):
+        require_external(os.path.join(args.workdir, relative))
+
+
 def main(args):
     # Candidate isolation: every MF6 input, the mf6 run and gwf.hds live under the
     # per-candidate --workdir. build_and_run() rmtree's `ws` first, so a retry into a
     # dirty workdir also starts clean.
+    validate_destinations(args)
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     ws = os.path.join(workdir, "mf")
@@ -838,7 +884,7 @@ def main(args):
     if os.path.basename(db_path) != want_db:
         raise RuntimeError(f"resolved obs DB {db_path} is not the declared {want_db!r}")
     obs, obs_prov = load_obs(db_path, obsdec)
-    monthly_precip = ensure_forcing_cache()
+    monthly_precip = ensure_forcing_cache(workdir)
 
     rs = _load_module(RUNNER_PY, "mf6_real_case_runner")
     shim = pin_site(rs, params["ss"])
@@ -912,6 +958,7 @@ if __name__ == "__main__":
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--out", required=True)
     _args = ap.parse_args()
+    validate_destinations(_args)
     # Drop any previous candidate's metrics BEFORE the run, so a crash below can never
     # leave the kit reading an older success.
     _discard(_args.out)

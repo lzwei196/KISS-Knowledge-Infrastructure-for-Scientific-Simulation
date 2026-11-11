@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -112,8 +113,9 @@ def check_import(module, label, critical=True):
 
 def check_python_syntax(script, critical=True):
     script = Path(script)
-    cmd = [str(PYTHON), "-m", "py_compile", str(script)]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+        cmd = [str(PYTHON), "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile", str(script)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     subject = f"{PYTHON} -m py_compile {script.resolve() if script.exists() else script}"
     if result.returncode == 0:
         add_check("import", subject, critical, "pass")
@@ -137,14 +139,15 @@ def check_binary_starts(binary):
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = "1"
     try:
-        result = subprocess.run(
-            [str(binary.resolve())],
-            cwd=str(KI_DIR),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(binary.resolve())],
+                cwd=tmp_cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
     except subprocess.TimeoutExpired:
         add_check(
             "run",

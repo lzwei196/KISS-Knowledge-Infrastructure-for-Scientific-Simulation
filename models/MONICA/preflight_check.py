@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "MONICA"
@@ -71,13 +72,14 @@ def check_binary_starts(path):
         return make_check("run", subject, True, "fail", fix)
 
     try:
-        proc = subprocess.run(
-            [path, "--help"],
-            cwd=KI_DIR,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [path, "--help"],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
     except Exception as exc:
         fix = f"Ensure {path} can start and shared libraries are available; consult {DIAGNOSTICS}."
         report_status("MONICA binary startup", "fail", f"{subject}: {exc}", fix)
@@ -113,7 +115,7 @@ def check_tool_import(module):
     env["PYTHONPATH"] = KI_DIR + os.pathsep + env.get("PYTHONPATH", "")
     try:
         proc = subprocess.run(
-            [HYDROCRAFT_PYTHON, "-c", code],
+            [HYDROCRAFT_PYTHON, "-B", "-c", code],
             cwd=KI_DIR,
             env=env,
             capture_output=True,

@@ -7,6 +7,7 @@ tools/generate_regrid_weights.py finds them itself (same env vars and defaults),
 python_env call works; the launch-route check below asks the tool which engine it would use.
 """
 import os, sys, shutil, subprocess
+import tempfile
 
 PASS = FAIL = 0
 MODEL_NAME = "ESMF"
@@ -79,8 +80,9 @@ def check_regridweightgen(path=ESMF_REGRIDWEIGHTGEN, timeout=180):
         FAIL += 1
         return
     try:
-        proc = subprocess.run([path, "--version"], capture_output=True, text=True,
-                              timeout=timeout)
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run([os.path.abspath(path), "--version"], capture_output=True, text=True,
+                                  timeout=timeout, cwd=tmp_cwd)
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"  FAIL  {label}: --version did not finish ({path}): {exc}")
         print(f"         Fix: {fix}")

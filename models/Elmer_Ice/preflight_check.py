@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "Elmer-Ice"
@@ -255,14 +256,15 @@ def check_binary_starts(checks, binary):
     env = solver_env()
 
     try:
-        result = subprocess.run(
-            [binary, "--version"],
-            cwd=KI_DIR,
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=10,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [binary, "--version"],
+                cwd=tmp_cwd,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
     except subprocess.TimeoutExpired:
         add_check(
             checks,
@@ -315,15 +317,16 @@ def check_elmergrid_starts(checks, binary):
         )
         return False
     try:
-        result = subprocess.run(
-            [binary],
-            cwd=KI_DIR,
-            env=solver_env(),
-            stdin=subprocess.DEVNULL,
-            text=True,
-            capture_output=True,
-            timeout=10,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [binary],
+                cwd=tmp_cwd,
+                env=solver_env(),
+                stdin=subprocess.DEVNULL,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
     except (subprocess.TimeoutExpired, OSError) as exc:
         add_check(
             checks, "run", subject, True, "fail",

@@ -6,6 +6,8 @@ import json
 import os
 import subprocess
 import sys
+sys.dont_write_bytecode = True  # exec_module of KI tools must not write __pycache__ into the KI
+import tempfile
 from pathlib import Path
 
 
@@ -143,13 +145,14 @@ def check_binary_starts(binary):
         )
         return False
     try:
-        result = subprocess.run(
-            [str(binary), "--version"],
-            cwd=str(KI_DIR),
-            text=True,
-            capture_output=True,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(binary), "--version"],
+                cwd=tmp_cwd,
+                text=True,
+                capture_output=True,
+                timeout=5,
+            )
     except Exception as exc:
         add_check(
             "run",

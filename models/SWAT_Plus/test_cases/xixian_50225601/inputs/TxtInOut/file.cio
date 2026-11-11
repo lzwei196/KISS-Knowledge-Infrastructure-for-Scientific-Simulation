@@ -1,0 +1,31 @@
+file.cio: generated for xixian by SWAT+ HRU generator (HydroCraft)
+simulation        time.sim          print.prt         null              object.cnt        null
+basin             codes.bsn         parameters.bsn
+climate           weather-sta.cli   weather-wgn.cli   null              pcp.cli           tmp.cli           slr.cli           hmd.cli           wnd.cli           null
+connect           hru.con           null              rout_unit.con     null              aquifer.con       null              channel.con       null              null              null              null              null              null
+channel           initial.cha       channel.cha       hydrology.cha     sediment.cha      nutrients.cha     channel-lte.cha   hyd-sed-lte.cha   null
+reservoir         initial.res       reservoir.res     hydrology.res     sediment.res      nutrients.res     weir.res          null              null
+routing_unit      rout_unit.def     rout_unit.ele     rout_unit.rtu     null
+hru               hru-data.hru      null
+exco              null              null              null              null              null              null
+recall            null
+dr                null              null              null              null              null              null
+aquifer           initial.aqu       aquifer.aqu
+herd              null              null              null
+water_rights      null              null              null
+link              null              null
+hydrology         hydrology.hyd     topography.hyd    field.fld
+structural        tiledrain.str     septic.str        filterstrip.str   grassedww.str     bmpuser.str
+hru_parm_db       plants.plt        fertilizer.frt    tillage.til       pesticide.pst     null              null              null              urban.urb         septic.sep        snow.sno
+ops               harv.ops          graze.ops         irr.ops           chem_app.ops      fire.ops          sweep.ops
+lum               landuse.lum       management.sch    cntable.lum       cons_practice.lum ovn_table.lum
+chg               cal_parms.cal     calibration.cal   null           null                 null              null              null              null              null
+init              plant.ini         soil_plant.ini    om_water.ini      pest_hru.ini      pest_water.ini    path_hru.ini      path_water.ini    hmet_hru.ini      hmet_water.ini    salt_hru.ini     salt_water.ini
+soils             soils.sol         nutrients.sol     soils-lte.sol
+decision_table    lum.dtl           res_rel.dtl       scen_lu.dtl       flo_con.dtl
+regions           ls_unit.ele       ls_unit.def       null              null              null              null              null              null              null              null              null              null              null              null              null              null              null
+pcp_path          null
+tmp_path          null
+slr_path          null
+hmd_path          null
+wnd_path          null

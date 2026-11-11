@@ -1,0 +1,4 @@
+initial.cha: written by SWAT+ HRU generator (HydroCraft)
+       name		 org-min    pesticides    pathogens    heavy_metals    salts
+   initcha1	    low_init          null         null		       null     null
+   initcha2	   high_init          null         null		       null     null

@@ -1,0 +1,16 @@
+harv.ops: written by SWAT+ editor v1.0.0 on 2018-11-29 16:24
+name                      harv_typ      harv_idx      harv_eff   harv_bm_min  description
+grain                        grain       0.00000       0.95000       0.00000  
+grass_mulch                biomass       0.50000       0.00000    2000.00000  
+grass_bag                  biomass       0.50000       1.00000    2000.00000  
+silage                     biomass       0.90000       0.95000       0.00000  
+forest_cut                    tree       0.95000       0.99000       0.00000  
+stover_high                residue       0.90000       1.00000    1000.00000  
+stover_med                 residue       0.60000       1.00000    2000.00000  
+stover_los                 residue       0.30000       1.00000    3000.00000  
+hay_cut_high               biomass       0.80000       1.00000    3000.00000  
+hay_cut_low                biomass       0.80000       1.00000    1000.00000  
+potatoes                     tuber       1.10000       0.95000       0.00000  
+peanuts                      tuber       1.10000       0.95000       0.00000  
+cotton_picker                grain       0.00000       0.95000       0.00000  
+cotton_strip                 grain       0.00000       0.95000       0.00000  

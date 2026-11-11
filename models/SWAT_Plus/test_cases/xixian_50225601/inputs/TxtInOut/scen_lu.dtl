@@ -1,0 +1,71 @@
+scen_lu.dtl 
+  4
+
+ NAME   	CONDS	ALTS	ACTS
+1800's_landuse	  8	 8	 5
+ VAR		OBJ	 OB_NUM	LIM_VAR		LIM_OP	LIM_CONST			                                       ALT1	ALT2 ALT3 ALT4 ALT5	ALT6 ALT7 ALT8
+ year_cal	null	  0	null		 -	    1870		 		                                       >	 >	  >	   >	>	 -	 -	  -
+ year_cal	null	  0	null		 -	    1900		 		                                       <	 <	  <	   <	<	 =	 =	  =
+ prob		null	  0	null		 -	    .02		 		                                           <	 <	  <	   <	<	 -	 -	  -
+ prob		null	  0	null		 -	    .5		 		                                           >	 <	  -	   <	-	 -	 -	  -
+ land_use	hru	      0	landuse001	 -	    0.		 		                                           =	 =	  -	   -	-	 =	 -	  -
+ land_use	hru	      0	landuse002	 -	    0.		 		                                           -	 -	  =	   -	-	 -	 =	  - 
+ land_use	hru	      0	landuse003	 -	    0.		 		                                           -	 -	  -	   =	-	 -	 -	  -
+ land_use	hru	      0	landuse006	 -	    0.		 		                                           -	 -	  -	   -	=	 -	 -	  =
+ ACT_TYP    OBJ OBJ_NUM   NAME                OPTION        CONST         CONST2      FP               OUTCOMES
+ lu_change	hru	  0	      corn_noprac	      null	        0	          0           corn_noprac		y    n    n    n    n    y	  n	  n
+ lu_change	hru	  0	      oats_noprac	      null	        0	          0           oats_noprac		n    y    n    n    n	 n	  n	  n
+ lu_change	hru	  0	      past_noprac	      null	        0	          0           past_noprac		n    n    y    n    n	 n	  y	  n
+ lu_change	hru	  0	      forest_graze	      null	        0	          0           forest_graze		n    n    n    y    n	 n	  n	  n
+ lu_change	hru	  0	      farmstead	          null	        0	          0           farmstead		    n    n    n    n   	y	 n	  n	  y
+
+ NAME   	CONDS	ALTS	ACTS
+1930's_consprac	  7	 8	 4
+ VAR		OBJ	 OB_NUM	LIM_VAR		LIM_OP	LIM_CONST			                                       ALT1	ALT2 ALT3 ALT4 ALT5 ALT6 ALT7 ALT8
+ year_cal	null	  0	null		  -	    1935		 		                                       >	 >	  >	   >	-	 -	  -	   -    
+ year_cal	null	  0	null		  -	    1975		 		                                       <	 <	  <	   <	=	 =	  =	   =
+ prob		null	  0	null		  -	    .025		 		                                       <	 <	  <	   <	-	 -	  -	   -
+ land_use	hru	      0	corn_noprac	  -	    0.		 		                                           =	 -	  -	   -	=	 -	  -	   -
+ land_use	hru	      0	oats_noprac	  -	    0.		 		                                           -	 =	  -	   -	-	 =	  -	   - 
+ land_use	hru	      0	past_noprac	  -	    0.		 		                                           -	 -	  =	   -	-	 -	  =	   -
+ land_use	hru	      0	forest_graze  -	    0.		 		                                           -	 -	  -	   =	-	 -	  -	   =
+ ACT_TYP    OBJ OBJ_NUM   NAME                OPTION        CONST         CONST2      FP               OUTCOMES
+ lu_change	hru	  0	      corn_noprac	       null	        0	          0           corn_consprac	   y     n    n    n    y	 n	  n	   n
+ lu_change	hru	  0	      oats_noprac	       null	        0	          0           oats_consprac	   n     y    n    n    n	 y	  n	   n
+ lu_change	hru	  0	      past_noprac	       null	        0	          0           past_consprac	   n     n    y    n    n	 n	  y	   n
+ lu_change	hru	  0	      forest_graze	       null	        0	          0           forest_consgraze n     n    n    y    n	 n	  n	   y
+
+ NAME   	CONDS	ALTS	ACTS
+1800's_channel	  7	 8	 4
+ VAR		OBJ	 OB_NUM	LIM_VAR		LIM_OP	LIM_CONST			                                       ALT1	ALT2 ALT3 ALT4 ALT5	ALT6 ALT7 ALT8
+ year_cal	null	  0	null		  -	    1870		 		                                       >	 >	  >	   >	-	 -	  -	   -
+ year_cal	null	  0	null		  -	    1900		 		                                       <	 <	  <	   <	=	 =	  =	   =
+ prob		null	  0	null		  -	    .02		 		                                           <	 <	  <	   <	-	 -	  -	   -
+ ch_use		cha	      0	gully	 	  -	    0.		 		                                           =	 -	  -	   -	=	 -	  -	   -
+ ch_use		cha	      0	tributary	  -	    0.		 		                                           -	 =	  -	   -	-	 =	  -    -
+ ch_use		cha	      0	main_upper	  -	    0.		 		                                           -	 -	  =	   -	-	 -	  =	   -
+ ch_use		cha	      0	main_lower	  -	    0.		 		                                           -	 -	  -	   =	-	 -	  -	   =
+ ACT_TYP    OBJ OBJ_NUM   NAME                OPTION        CONST         CONST2      FP               OUTCOMES
+ ch_change	cha	  0	      gully_c		       null	        0.2           0	          gully_c		   y      n   n    n    n	 y	  n	   n
+ ch_change	cha	  0	      tributary_c   	   null	        0.4	          0           tributary_c      n      y   n    n    n	 n	  n	   n
+ ch_change	cha	  0	      main_upper_c  	   null	        0.6	          0           main_upper_c     n      n   y    n    n	 n	  y	   n
+ ch_change	cha	  0	      main_lower_c  	   null	        0.6	          0           main_lower_c     n      n   n    y    n	 n	  n	   n
+
+ NAME   	CONDS	ALTS	ACTS
+1930's_channel	  7	 8	 4
+ VAR		OBJ	 OB_NUM	LIM_VAR		LIM_OP	LIM_CONST			                                      ALT1 ALT2	ALT3 ALT4 ALT5 ALT6	ALT7 ALT8
+ year_cal	null	  0	null		  -	    1870		 		                                      >	    >	 >	  >	   -	-	 -	  -
+ year_cal	null	  0	null		  -	    1900		 		                                      <	    <	 <	  <	   =	=	 =	  =
+ prob		null	  0	null		  -	    .02		 		                                          <	    <	 <	  <	   -	-	 -	  -
+ ch_use		cha	      0	gully_c	 	  -	    0.		 		                                          =	    -	 -	  -	   =	-	 -	  -
+ ch_use		cha	      0	tributary_c	  -	    0.		 		                                          -	    =	 -	  -	   -	=	 - 	  -
+ ch_use		cha	      0	main_upper_c  -	    0.		 		                                          -	    -	 =	  -	   -	-	 =	  -
+ ch_use		cha	      0	main_lower_c  -	    0.		 		                                          -	    -	 -	  =	   -	-	 -	  =
+ ACT_TYP    OBJ OBJ_NUM   NAME                OPTION        CONST         CONST2      FP              OUTCOMES
+ ch_change	cha	  0	      gully		          null	        0.95          0           gully			  y     n    n    n    n	y	 n	  n
+ ch_change	cha	  0	      tributary   	      null	        0.95	      0           tributary       n     y    n    n    n	n	 n	  n
+ ch_change	cha	  0	      main_upper  	      null	        0.95	      0           main_upper  	  n     n    y    n    n	n	 y	  n
+ ch_change	cha	  0	      main_lower  	      null	        0.95	      0           main_lower  	  n     n    n    y    n	n	 n	  n
+
+
+ 

@@ -1,0 +1,14 @@
+chem_app.ops: written by SWAT+ editor v1.0.0 on 2018-11-29 16:24
+name                     chem_form           app_typ       app_eff    foliar_eff     inject_dp     surf_frac     drift_pot   aerial_unif  description
+broadcast                    solid            spread       0.90000       0.00000       0.00000       1.00000       0.00000       1.00000  
+band                         solid            spread       0.90000       0.00000       0.00000       1.00000       0.00000       0.50000  
+foliar                      liquid             spray       0.80000       0.70000       0.00000       1.00000       0.00000       1.00000  
+inject                      liquid            inject       0.95000       0.00000     150.00000       0.20000       0.00000       1.00000  
+aerial_liquid               liquid             spray       0.70000       0.70000       0.00000       1.00000       0.50000       1.00000  
+aerial_solid                 solid            spread       0.90000       0.00000       0.00000       1.00000       0.10000       1.00000  
+drill                        solid            inject       0.95000       0.00000      50.00000       0.05000       0.00000       1.00000  
+side_dress                   solid            spread       0.90000       0.00000       0.00000       1.00000       0.00000       0.50000  
+fertigate                   liquid             spray       0.90000       0.50000       0.00000       1.00000       0.20000       1.00000  
+basal                       liquid            spread       0.90000       0.00000       0.00000       1.00000       0.00000       0.10000  
+rope_wick                   liquid            direct       1.00000       0.95000       0.00000       1.00000       0.00000       1.00000  
+tree_inject                 liquid            inject       0.95000       0.00000     300.00000       0.00000       0.00000       0.01000  

@@ -1,0 +1,47 @@
+print.prt: written by SWAT+ editor v1.0.0 on 2018-11-29 16:24
+nyskip      day_start  yrc_start  day_end   yrc_end   interval
+     2              0          0        0         0          1
+aa_int_cnt
+         0
+csvout        dbout         cdfout
+     n            n              n
+soilout       mgtout        hydcon        fdcout
+      n            n             n             n
+objects                  daily       monthly        yearly         avann
+basin_wb                     n             n             y             n
+basin_nb                     n             n             n             n
+basin_ls                     n             n             n             n
+basin_pw                     n             n             n             n
+basin_aqu                    n             n             n             n
+basin_res                    n             n             n             n
+basin_cha                    n             n             n             n
+basin_sd_cha                 n             n             n             n
+basin_psc                    n             n             n             n
+region_wb                    n             n             n             n
+region_nb                    n             n             n             n
+region_ls                    n             n             n             n
+region_pw                    n             n             n             n
+region_aqu                   n             n             n             n
+region_res                   n             n             n             n
+region_cha                   n             n             n             n
+region_sd_cha                n             n             n             n
+region_psc                   n             n             n             n
+lsunit_wb                    n             n             n             n
+lsunit_nb                    n             n             n             n
+lsunit_ls                    n             n             n             n
+lsunit_pw                    n             n             n             n
+hru_wb                       n             n             n             n
+hru_nb                       n             n             n             n
+hru_ls                       n             n             n             n
+hru_pw                       n             n             n             n  
+hru-lte_wb                   n             n             n             n
+hru-lte_nb                   n             n             n             n
+hru-lte_ls                   n             n             n             n
+hru-lte_pw                   n             n             n             n
+channel                      y             n             n             n
+channel_sd                   n             n             n             n
+aquifer                      n             n             n             n
+reservoir                    n             n             n             n
+recall                       n             n             n             n
+hyd                          n             n             n             n
+ru                           n             n             n             n

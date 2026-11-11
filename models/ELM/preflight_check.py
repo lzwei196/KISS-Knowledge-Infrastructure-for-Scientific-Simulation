@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -152,9 +153,10 @@ def check_tool_syntax(checks):
             fix_hint(f"HydroCraft Python interpreter not found: {PYTHON_ENV}."),
         )
         return False
-    cmd = [str(PYTHON_ENV), "-m", "py_compile"] + [str(p) for p in tools]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+            cmd = [str(PYTHON_ENV), "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile"] + [str(p) for p in tools]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except subprocess.TimeoutExpired:
         add_check(
             checks,
@@ -194,13 +196,14 @@ def check_binary_smoke_start(checks, binary):
         return False
 
     try:
-        proc = subprocess.run(
-            [str(binary), "--help"],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [os.path.abspath(str(binary)), "--help"],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
     except subprocess.TimeoutExpired:
         add_check(
             checks,

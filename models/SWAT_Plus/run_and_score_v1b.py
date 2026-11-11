@@ -3,23 +3,31 @@
 SWAT+ Bengbu VERIFIER runner+scorer.
 
 Runs the SWAT+ rev59 binary FRESH on the validated calibrated Bengbu deck
-(calib/run_txtinout: 11-param calibration.cal, Huai @ 51080, 121330 km2),
-extracts outlet discharge via the KI's s9 extract_discharge tool, scores
-against the Bengbu gauge, closes the water balance, writes the VERIFIER JSON.
+(calib/run_txtinout: 11-param calibration.cal, Huai @ 51080, 121330 km2) --
+on a fresh copy of that deck at detached/verify_1/run_txtinout in the model
+home (~789 MB per run), never inside the KI -- extracts outlet discharge via
+the KI's s9 extract_discharge tool, scores against the Bengbu gauge, closes
+the water balance, writes the VERIFIER JSON.
 """
-import sys, os, json, subprocess, time
+import sys, os, json, shutil, subprocess, time, stat
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 ROOT      = "KISSPATH_ROOT"
-TXTINOUT  = Path(ROOT) / "models/SWAT+/knowledge_infrastructure/calib/run_txtinout"
+DECK      = Path(ROOT) / "models/SWAT+/knowledge_infrastructure/calib/run_txtinout"
 BINARY    = Path(ROOT) / "models/SWAT+/bin/swatplus_rev59"
 OBS       = Path(ROOT) / "data/obs/BB/51080_bengbu.txt"
 KI        = Path(ROOT) / "models/SWAT+/knowledge_infrastructure"
 OUTDIR    = Path(ROOT) / "models/SWAT+/detached/verify_1"
 RESULT    = OUTDIR / "result.json"
+# SWAT+ writes its outputs into its cwd, so it runs on a fresh copy of the deck
+# beside the result. The KI deck is read in place, never written: a desktop
+# project's KI copy is verified byte-for-byte.
+TXTINOUT  = OUTDIR / "run_txtinout"
 
+# Importing the KI's s9 tool must not leave tools/s9/__pycache__ in the KI.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(KI / "tools/s9"))
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED")
@@ -30,8 +38,31 @@ from ki_tools_common.validation import validate_water_balance
 from auto_dissect_multi_agent.validators.standard_calval import compute_calval_metrics
 
 
+def require_external(path):
+    """Reject a resolved write destination inside the read-only KI."""
+    resolved = os.path.realpath(path)
+    if os.path.commonpath([resolved, os.path.realpath(KI)]) == os.path.realpath(KI):
+        raise ValueError(f"write destination is inside KI: {path}")
+    return resolved
+
+
 def run_binary():
-    # force a genuine fresh run: clear stale channel output
+    # force a genuine fresh run: a new copy of the deck, minus stale channel output
+    if TXTINOUT.is_symlink():
+        raise ValueError(f"run directory must not be a symlink: {TXTINOUT}")
+    require_external(TXTINOUT)
+    if TXTINOUT.exists():
+        # A failed copytree may have already restored read-only source modes.
+        # Restore traversal/write permission on the copy only, before retrying.
+        for directory, _, _ in os.walk(TXTINOUT, followlinks=False):
+            os.chmod(directory, os.stat(directory).st_mode | stat.S_IRWXU)
+        shutil.rmtree(TXTINOUT)
+    # copyfile, not copy2: a read-only KI deck must not make the run copy read-only
+    # (SWAT+ rewrites its output files in place).
+    shutil.copytree(DECK, TXTINOUT, copy_function=shutil.copyfile)
+    # copytree applies source directory modes even with copyfile.
+    for directory, _, _ in os.walk(TXTINOUT):
+        os.chmod(directory, os.stat(directory).st_mode | stat.S_IRWXU)
     for n in ("channel_sd_day.txt", "channel_day.txt"):
         p = TXTINOUT / n
         if p.exists():
@@ -74,6 +105,8 @@ def water_balance():
 
 
 def main():
+    require_external(OUTDIR)
+    require_external(RESULT)
     OUTDIR.mkdir(parents=True, exist_ok=True)
     run_binary()
 

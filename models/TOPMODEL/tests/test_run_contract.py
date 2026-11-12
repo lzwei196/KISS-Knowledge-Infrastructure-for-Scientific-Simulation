@@ -21,4 +21,14 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(errors,[])
     def test_short_first_line_is_an_error(self):
         errors,out=self.check('1 0.000100\n');self.assertTrue(any('expected 3' in e for e in errors))
+class ParamsDefaultTests(unittest.TestCase):
+    def test_hourly_defaults_need_explicit_hourly_step(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=os.path.join(d,'params.dat')
+            for kw in ({},{'step_hours':24}):
+                with self.subTest(kw=kw),self.assertRaises(ValueError):r.write_params_dat(p,**kw)
+            self.assertFalse(os.path.exists(p))
+            with redirect_stdout(io.StringIO()):r.write_params_dat(p,step_hours=1)
+            self.assertIn('3600.0',Path(p).read_text())
+            with redirect_stdout(io.StringIO()):r.write_params_dat(p,dict(szm=1,t0=2,td=3,chv=4,rv=5,srmax=6,Q0=7,sr0=8,infex=0,xk0=9,hf=10,dth=11))
 if __name__=='__main__':unittest.main()

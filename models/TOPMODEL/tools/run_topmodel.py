@@ -104,7 +104,7 @@ def write_topmod_run(output_dir, stand_alone=1, title="TOPMODEL Simulation",
     return config_path
 
 
-def write_params_dat(output_file, params=None, basin_name="Basin"):
+def write_params_dat(output_file, params=None, basin_name="Basin", step_hours=None):
     """
     Write TOPMODEL params.dat file.
 
@@ -113,9 +113,15 @@ def write_params_dat(output_file, params=None, basin_name="Basin"):
       srmax=0.05, Q0=0.0000328, sr0=0.002, infex=0,
       xk0=1.0, hf=0.02, dth=0.1
 
-    ALL units must be in meters and hours.
+    These defaults are HOURLY values (t0, td, chv, rv, Q0, xk0 per hour). They are
+    used only when the caller says the run is hourly (step_hours=1); on the KI's
+    daily route pass params (daily starting values: docs/s3_parameter_setup.md).
     """
     if params is None:
+        if step_hours != 1:
+            raise ValueError("write_params_dat: the default params are the hourly Taegu demo values; "
+                             "pass step_hours=1 for an hourly run, or pass params (daily route: "
+                             "see docs/s3_parameter_setup.md)")
         params = {
             'szm': 0.032,
             't0': 5.0,

@@ -159,8 +159,9 @@ cd source/repo/
 > and the table below is then a per-step-depth misnomer.
 > - **Dimensionless metrics (NSE/KGE/r) are unaffected** by this relabeling.
 > - **Only the m³/s conversion cares**: use the TRUE seconds-per-step
->   (86400 for daily), i.e. `parse_topmodel_output` must convert with
->   `--dt-hours 24`. Using 3600 makes reported m³/s 24× too high.
+>   (86400 for daily). `parse_topmodel_output` reads the step length from the
+>   converter's `inputs.dat.provenance.json` (or needs `--dt-hours 24` without it).
+>   Using 3600 makes reported m³/s 24× too high.
 > - Forcing depths: divide CMFD mm/day by **1000** (mm→m), NOT by 24000, when
 >   the step is a day. `convert_forcing_to_topmodel` handles this; verify with
 >   the forcing preflight + water-balance closure.
@@ -198,7 +199,7 @@ Rate parameters (t0, td, chv, rv, xk0) are per model step too. On the daily rout
 | UT-04 | PE left as mm/day | ET massively too high, no runoff | Divide: `mm_day / 1000 / steps_per_day` (÷1,000 on the daily route) |
 | UT-05 | Qobs in m³/s, not per-step depth | NSE meaningless | Q_step = Q_m3s × physical_seconds_per_step / area_m2 (86400 on the daily route) |
 | UT-06 | Channel distance in km not m | Routing delay wrong | Multiply by 1,000 |
-| UT-07 | inputs.dat header dt set to the step length (24, 3600, 86400) instead of 1.0 | Forcing rows skipped and rates mis-scaled; all fluxes wrong | Keep the header dt = 1.0 always. Set the physical step with `convert_forcing_to_topmodel.py --dt-hours` (24 on the daily route) and pass the same `--dt-hours` to `parse_topmodel_output.py` |
+| UT-07 | inputs.dat header dt set to the step length (24, 3600, 86400) instead of 1.0 | Forcing rows skipped and rates mis-scaled; all fluxes wrong | Keep the header dt = 1.0 always. Set the physical step with `convert_forcing_to_topmodel.py --dt-hours` (24 on the daily route); `parse_topmodel_output.py` reads it from the converter's `inputs.dat.provenance.json` |
 | UT-08 | TWI distribution doesn't sum to 1 | Water balance error | Normalize |
 
 ## Unit Table — source/model conversions
@@ -214,7 +215,7 @@ seconds per step during post-processing.
 | precipitation / `rain` | CMFD/MSWX mm/day | `m/day` (per-step depth; daily route) | `rain_step = mm_day / 1000 / steps_per_day`: ÷1000 on the daily route, ÷24000 only at `--dt-hours 1`; `convert_forcing_to_topmodel` does this | `inputs.dat` |
 | potential evapotranspiration / `pe` | computed PE, commonly mm/day | `m/day` (per-step depth; daily route) | Compute PE externally, then `pe_step = mm_day / 1000 / steps_per_day` (÷1000 on the daily route); do not leave PE in mm/day; `convert_forcing_to_topmodel` does this | `inputs.dat` |
 | observed discharge / `Qobs` | m^3/s | `m/day` (per-step depth; daily route) | `Q_step = Q_m3s * physical_seconds_per_step / basin_area_m2` (86400 on the daily route; 3600 only at `--dt-hours 1`); `convert_forcing_to_topmodel` does this | `inputs.dat`, scoring |
-| `Q (simulated discharge)` | model routed outlet flow | `m/day` (per-step depth; daily route) | This is the dag rank-1 output unit string; `Q_m3s = Q * basin_area_m2 / physical_seconds_per_step`, so post-processing must use `--dt-hours 24` on the daily route | `hyd.out`, parsed outputs |
+| `Q (simulated discharge)` | model routed outlet flow | `m/day` (per-step depth; daily route) | This is the dag rank-1 output unit string; `Q_m3s = Q * basin_area_m2 / physical_seconds_per_step`, so post-processing must use the true step (24 h on the daily route); `parse_topmodel_output.py` reads it from the converter's `inputs.dat.provenance.json` | `hyd.out`, parsed outputs |
 | `qb (baseflow)` | model state/output | `m/day` (per-step depth) | Baseflow component contributing to routed discharge | `topmod.out` |
 | `qof (saturation/Hortonian overland flow)` | model state/output | `m/day` (per-step depth) | Overland-flow component contributing to routed discharge | `topmod.out` |
 | `sbar (mean saturation deficit)` | model state/output | m | Mean catchment saturation deficit | `topmod.out` |
@@ -483,8 +484,8 @@ use the physical seconds per step (`physical_dt_hours` × 3600, from
 Q_m3s = Q_step * basin_area_m2 / physical_seconds_per_step   # 86400 on the daily route
 ```
 
-`parse_topmodel_output.py --dt-hours <physical step hours> --basin-area-km2 <area>`
-does this.
+`parse_topmodel_output.py --basin-area-km2 <area>` does this, with the step length
+from `data/inputs.dat.provenance.json` (`--dt-hours <hours>` only when that file is missing).
 
 ---
 

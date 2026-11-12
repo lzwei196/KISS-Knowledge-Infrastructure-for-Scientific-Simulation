@@ -106,8 +106,15 @@ q_obs_m3s = obs['Q'].values
 python tools/parse_topmodel_output.py \
   --hyd-file run/hyd.out \
   --topmod-file run/topmod.out \
-  --start-date 1980-01-01 --dt-hours 24 \
+  --start-date 1980-01-01 \
   --basin-area-km2 121330 \
-  --spinup-steps 365 \
+  --spinup-steps 366 \
   --output-csv results.csv
 ```
+
+The step length (24 h on the daily route) is read from `run/data/inputs.dat.provenance.json`,
+which the converter writes. `--dt-hours` and `--start-date` must agree with it if given.
+Without that file, `--dt-hours` is required for m³/s or dates. A stale or hand-made sidecar
+(no `output_sha256`, wrong `steps`, or not matching `inputs.dat`) is refused even for metrics only:
+regenerate `inputs.dat` with `convert_forcing_to_topmodel.py`, or move the old sidecar away.
+`--spinup-steps 366` above is one full year from 1980-01-01 (1980 has 366 days).

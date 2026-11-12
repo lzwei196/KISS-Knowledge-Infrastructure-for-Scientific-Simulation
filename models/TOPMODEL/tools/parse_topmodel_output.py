@@ -17,6 +17,9 @@ import argparse
 import numpy as np
 from datetime import datetime, timedelta
 import csv
+import hashlib
+import json
+import math
 import re
 
 # Qobs written by convert_forcing_to_topmodel.py on missing observed days.
@@ -240,7 +243,8 @@ def write_csv(output_file, timesteps, q_sim, q_obs, start_date=None, dt_hours=1.
         for i in range(len(timesteps)):
             row = [int(timesteps[i])]
             if start_date:
-                dt = start_date + timedelta(hours=dt_hours * i)
+                # date of model step it (step 1 = start_date), also after a spin-up cut
+                dt = start_date + timedelta(hours=dt_hours * (int(timesteps[i]) - 1))
                 row.append(dt.strftime('%Y-%m-%d %H:%M'))
             # A missing-day placeholder Qobs is written as an empty cell.
             missing = q_obs[i] == OBS_PLACEHOLDER
@@ -273,17 +277,99 @@ def validate_metrics(metrics):
     return warnings
 
 
+def find_provenance(hyd_file, inputs_file=None):
+    """Path of the converter's inputs.dat.provenance.json for this run, or None.
+
+    The converter writes it next to inputs.dat; the run layout is <run>/hyd.out and
+    <run>/data/inputs.dat. An explicit --inputs-file must have its sidecar."""
+    if inputs_file:
+        side = inputs_file + '.provenance.json'
+        if not os.path.isfile(side):
+            raise ValueError(f"--inputs-file {inputs_file} has no provenance sidecar {side}")
+        return side
+    run = os.path.dirname(os.path.abspath(hyd_file))
+    for cand in (os.path.join(run, 'data', 'inputs.dat.provenance.json'),
+                 os.path.join(run, 'inputs.dat.provenance.json')):
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def resolve_step_hours(hyd_file, dt_hours, inputs_file, start_date, needs_step, nrows):
+    """Hours in one model step. The converter's sidecar (physical_dt_hours) wins;
+    an explicit --dt-hours or --start-date must agree with it. Without a sidecar,
+    --dt-hours is required whenever the step length matters (m3/s or dates):
+    a silent 1-hour default made daily-route m3/s 24x too high."""
+    side = find_provenance(hyd_file, inputs_file)
+    if side is None:
+        if dt_hours is not None:
+            return dt_hours, None
+        if needs_step:
+            raise ValueError("no inputs.dat.provenance.json found next to hyd.out (run/data/ or run/); "
+                             "pass --dt-hours (24 on the daily route, 1 for the hourly Taegu demo) "
+                             "or --inputs-file")
+        return None, None
+    try:
+        with open(side) as f:
+            info = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read provenance sidecar {side}: {exc}")
+    if not isinstance(info, dict):
+        raise ValueError(f"provenance sidecar {side} is not a JSON object")
+    inputs = side[:-len('.provenance.json')]
+    want = info.get('output_sha256')
+    if not want or not os.path.isfile(inputs):
+        raise ValueError(f"cannot check {side} against its inputs.dat (no output_sha256, or {inputs} "
+                         "missing); regenerate inputs.dat with convert_forcing_to_topmodel.py")
+    with open(inputs, 'rb') as f:
+        have = hashlib.sha256(f.read()).hexdigest()
+    if have != want:
+        raise ValueError(f"{inputs} does not match its provenance sidecar (output_sha256); "
+                         "the sidecar is stale, regenerate inputs.dat with the converter")
+    steps = info.get('steps')
+    if not isinstance(steps, int) or isinstance(steps, bool) or steps < 1:
+        raise ValueError(f"{side} has no valid steps count ({steps!r}); regenerate inputs.dat with the converter")
+    if steps != nrows:
+        raise ValueError(f"hyd.out has {nrows} rows but {side} says steps={steps}; "
+                         "hyd.out is not from this inputs.dat")
+    try:
+        raw = info['physical_dt_hours']
+        if isinstance(raw, bool):
+            raise TypeError
+        side_dt = float(raw)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(f"{side} has no usable physical_dt_hours")
+    if not (math.isfinite(side_dt) and side_dt > 0):
+        raise ValueError(f"{side} has physical_dt_hours={side_dt}")
+    if dt_hours is not None and abs(dt_hours - side_dt) > 1e-9:
+        raise ValueError(f"--dt-hours {dt_hours:g} disagrees with {side} "
+                         f"(physical_dt_hours {side_dt:g})")
+    if start_date and info.get('start_date') and \
+            datetime.strptime(start_date, "%Y-%m-%d").date() != \
+            datetime.strptime(str(info['start_date'])[:10], "%Y-%m-%d").date():
+        raise ValueError(f"--start-date {start_date} disagrees with {side} "
+                         f"(start_date {info['start_date']})")
+    return side_dt, side
+
+
 def main():
     parser = argparse.ArgumentParser(description="Parse TOPMODEL output and compute metrics")
     parser.add_argument('--hyd-file', default='hyd.out', help='Path to hyd.out')
     parser.add_argument('--topmod-file', default=None, help='Path to topmod.out')
     parser.add_argument('--output-csv', default='results.csv', help='Output CSV path')
     parser.add_argument('--start-date', default=None, help='Start date YYYY-MM-DD')
-    parser.add_argument('--dt-hours', type=float, default=1.0, help='Time step hours')
+    parser.add_argument('--dt-hours', type=float, default=None,
+                        help='Hours per model step. Read from inputs.dat.provenance.json when '
+                             'present (must agree if given); required without it for m3/s or dates')
+    parser.add_argument('--inputs-file', default=None,
+                        help='inputs.dat of this run (default: <hyd.out dir>/data/inputs.dat, '
+                             'then <hyd.out dir>/inputs.dat)')
     parser.add_argument('--basin-area-km2', type=float, default=None, help='Basin area km²')
     parser.add_argument('--spinup-steps', type=int, default=0, help='Steps to discard as spinup')
 
     args = parser.parse_args()
+    if args.dt_hours is not None and not (math.isfinite(args.dt_hours) and args.dt_hours > 0):
+        raise ValueError(f"--dt-hours must be a finite number > 0, got {args.dt_hours}")
 
     # Step 1: Validate inputs
     print("=== Step 1: Validating inputs ===")
@@ -297,6 +383,12 @@ def main():
     print("=== Step 2: Parsing output files ===")
     timesteps, q_sim, q_obs = parse_hyd_out(args.hyd_file)
     print(f"  Read {len(timesteps)} timesteps from hyd.out")
+    step_hours, side = resolve_step_hours(args.hyd_file, args.dt_hours, args.inputs_file,
+                                          args.start_date,
+                                          needs_step=bool(args.basin_area_km2 or args.start_date),
+                                          nrows=len(timesteps))
+    if step_hours is not None:
+        print(f"  Step length: {step_hours:g} h ({'from ' + side if side else 'from --dt-hours'})")
 
     if args.topmod_file:
         topmod_results = parse_topmod_out(args.topmod_file)
@@ -344,7 +436,7 @@ def main():
     print(f"  r    = {metrics['r']:.4f}")
 
     if args.basin_area_km2:
-        seconds_per_step = args.dt_hours * 3600.0
+        seconds_per_step = step_hours * 3600.0
         q_sim_m3s = convert_depth_per_step_to_m3s(q_sim[~placeholder], args.basin_area_km2, seconds_per_step)
         q_obs_m3s = convert_depth_per_step_to_m3s(q_obs[~placeholder], args.basin_area_km2, seconds_per_step)
         metrics_m3s = compute_all_metrics(q_sim_m3s, q_obs_m3s)
@@ -368,7 +460,7 @@ def main():
         start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
 
     write_csv(args.output_csv, timesteps, q_sim, q_obs,
-              start_date=start_date, dt_hours=args.dt_hours,
+              start_date=start_date, dt_hours=step_hours if step_hours is not None else 1.0,
               basin_area_km2=args.basin_area_km2)
 
     return metrics

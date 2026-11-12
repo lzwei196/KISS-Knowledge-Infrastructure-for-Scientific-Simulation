@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -170,7 +171,7 @@ def check_tool_import(checks, relpath):
         "mod=importlib.util.module_from_spec(spec); "
         "spec.loader.exec_module(mod)"
     )
-    result = run_subprocess([PYTHON_ENV, "-c", code], timeout=15)
+    result = run_subprocess([PYTHON_ENV, "-B", "-c", code], timeout=15)
     passed = not isinstance(result, Exception) and result.returncode == 0
     add_check(
         checks,
@@ -188,7 +189,8 @@ def check_tool_import(checks, relpath):
 
 def check_binary_startup(checks):
     binary = BINARY.resolve(strict=False)
-    result = run_subprocess([binary, "--help"], timeout=5)
+    with tempfile.TemporaryDirectory() as tmp_cwd:
+        result = run_subprocess([binary, "--help"], timeout=5, cwd=tmp_cwd)
     output = getattr(result, "stdout", "") if not isinstance(result, FileNotFoundError) else ""
     if isinstance(result, subprocess.TimeoutExpired):
         passed = False

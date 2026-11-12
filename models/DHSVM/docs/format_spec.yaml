@@ -160,8 +160,9 @@ inputs:
 outputs:
   primary:
   - name: Streamflow
-    unit: m3/s
-    description: Channel discharge per stream segment at network outlets
+    unit: m3
+    description: Water volume leaving each saved stream segment in one model time step (m3 per step, not
+      m3/s; m3/s = value / step length in seconds)
     validation_rank: 1
     emitted_in: Stream.Flow
     observability:
@@ -174,6 +175,8 @@ outputs:
         determining_metric: nse
         caveats:
         - Gauge location must map to the correct stream segment ID
+        - 'Stream.Flow values are m3 per model step: divide by the step length in seconds before comparing
+          with gauge m3/s'
         - Skip the spin-up period; first year(s) reflect initialization
       detrending_options:
       - none
@@ -295,7 +298,7 @@ known_issues:
     per timestep. Global datasets like CMFD provide mm/hr or mm/3hr. If you skip the /1000 conversion,
     a 0.5 mm rain event becomes 0.5 m (500 mm), flooding the basin.
 
-    ; [''MakeLocalMetData'', ''MassEnergyBalance'','
+    ; [''MakeLocalMetData'', ''MassEnergyBalance'', ''RouteSubSurface'']'
   remedy: 'Divide precipitation by 1000 in forcing converter; convert_forcing.py; [''Check precip values
     in forcing files: should be < 0.05 m/step'', ''Rerun convert_forcing.py with correct --source-format''];
     Always verify precip range < 0.1 m/step after conversion'
@@ -437,7 +440,7 @@ known_issues:
     profile adjustment that includes log(ref_height / veg_height). If veg_height < ref_height, the argument
     is > 1, producing positive log. But if veg_height approaches zero, the log goes to infinity/NaN.
 
-    ; [''Make'
+    ; [''MakeLocalMetData'', ''MassEnergyBalance'']'
   remedy: Set Reference Height below minimum vegetation height; ['Check Reference Height in [CONSTANTS]',
     'Check all vegetation heights in [VEGETATION]', 'Reference Height should be < minimum veg height'];
     Config generator validates height constraints
@@ -448,7 +451,7 @@ known_issues:
     expects MM/DD/YYYY-HH format. If ISO format is used, dates are parsed incorrectly. For example, 2020-01-15
     might be interpreted as month 2020, causing failure or wrong data association.
 
-    ; [''InitMetSources'', ''InitN'
+    ; [''InitMetSources'', ''InitNewStep'']'
   remedy: 'Reformat dates to MM/DD/YYYY-HH; convert_forcing.py; [''Check first line of a forcing file'',
     ''Format must be: 01/15/2020-00'']; Forcing converter always writes DHSVM format'
   severity: silent
@@ -481,10 +484,13 @@ known_issues:
   diagnosis: DHSVM has no Linux-native tool to build flat-binary terrain maps (DEM/mask/slope/aspect),
     the veg type map, or the stream.map/network/class triple. The only shipped stream-network builder
     (createstreamnetwork.py) hard-imports arcpy (ArcGIS, Windows-only, line 18); legacy path is ESRI ArcInfo
-    .aml. k
+    .aml. ki_tools_common emits none of these DHSVM formats. Without a basin grid + channel network, forcing
+    cannot be interpolated and no streamflow reaches the gauge.
   remedy: 'OUT OF SCOPE for self-improve loop (requires_human_engineering, >1 day): port arcpy/AML channel-delineation
     + segment hydraulic-class logic to a Linux geospatial stack (GDAL + pysheds/whitebox/richdem) to emit
-    stream.map.dat/network/class, plus numpy writers for the flat-binary terrain/veg maps. Unt'
+    stream.map.dat/network/class, plus numpy writers for the flat-binary terrain/veg maps. Until built,
+    DHSVM is ki_usable ONLY for basins shipping a precomputed input set (e.g. Chiwawa). Do NOT classify
+    as a quick tool_build — terrain-map authoring alone does not unblock the gauge comparison.'
 - id: dt_019
   symptom: Null metrics / no valid DHSVM run on a large, low-relief, regulated lowland basin (Huai ~121,000
     km2, DEM 34-238 m)

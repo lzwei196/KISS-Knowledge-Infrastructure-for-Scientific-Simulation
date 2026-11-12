@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -65,13 +66,14 @@ def check_binary(path: Path) -> list[dict]:
         return checks
 
     try:
-        proc = subprocess.run(
-            [str(path)],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            proc = subprocess.run(
+                [str(path)],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
         output = (proc.stdout + proc.stderr).strip()
         starts = "FATAL ERROR" in output or "world file" in output.lower()
         checks.append(
@@ -97,12 +99,13 @@ def check_binary(path: Path) -> list[dict]:
 
 
 def check_tool_syntax(tool: Path) -> dict:
-    proc = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(tool)],
-        cwd=str(KI_DIR),
-        capture_output=True,
-        text=True,
-    )
+    with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+        proc = subprocess.run(
+            [sys.executable, "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile", str(tool)],
+            cwd=str(KI_DIR),
+            capture_output=True,
+            text=True,
+        )
     fix = (
         f"Fix Python syntax/import-time errors in {tool.relative_to(KI_DIR)}; "
         f"check {DIAGNOSTICS} for recovery."

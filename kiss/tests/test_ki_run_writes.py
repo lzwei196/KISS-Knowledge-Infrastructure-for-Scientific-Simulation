@@ -92,11 +92,18 @@ def test_modflow6_forcing_cache_stays_out_of_the_ki(tmp_path, monkeypatch):
         "dates": list(days.to_pydatetime()), "precip_mm": np.ones(len(days))}
     monkeypatch.setitem(sys.modules, loader.__name__, loader)
     workdir = tmp_path / "project" / "calibration" / "runs" / "r1"
+    cache = workdir / "calib" / f"cmfd_monthly_{run.STATION}.json"
 
+    # The KI ships this station's cache: it is read in place and nothing is written.
+    shipped = run.ensure_forcing_cache(str(workdir))
+    assert len(shipped) == 48
+    assert Path(run.KI_CMFD_CACHE) == ki / "calib" / cache.name and not cache.exists()
+
+    # Without a shipped cache, the one-time prepare writes under the workdir only.
+    monkeypatch.setattr(run, "KI_CMFD_CACHE", str(tmp_path / "no-shipped-cache.json"))
     monthly = run.ensure_forcing_cache(str(workdir))
-
-    assert len(monthly) == 48
-    assert (workdir / "calib" / f"cmfd_monthly_{run.STATION}.json").is_file()
+    assert len(monthly) == 48 and monthly[(2019, 1)] == 31.0
+    assert cache.is_file()
     assert ki_verification.content_digest(ki) == before
 
 

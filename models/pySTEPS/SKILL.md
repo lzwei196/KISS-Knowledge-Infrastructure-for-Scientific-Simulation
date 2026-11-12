@@ -168,9 +168,12 @@ python3 preflight_check.py
 python3 diagnostics/run_synthetic_advection.py
 ```
 
-The synthetic runner writes `diagnostics/last_run.json` with per-lead CSI/POD/FAR/FSS
-scores plus timing. A `tester_result.json` is also written to the KI root for the
-orchestrator.
+The synthetic runner writes `last_run.json` with per-lead CSI/POD/FAR/FSS
+scores plus timing, and a `tester_result.json` for the orchestrator, into the current
+folder. The KI is read-only: when started inside the KI (as above) it uses a new temp
+folder instead and prints that folder on stderr. `OUTPUT_JSON` sets the
+`tester_result.json` path; a path inside the KI is moved to that output folder
+(same file name) with a note on stderr.
 
 Expected runtime is the local runtime of the synthetic analytical test on a 200x200 grid
 with 4 past frames and 5 lead times.
@@ -199,7 +202,7 @@ judged by):
 | Tool | Purpose | Inputs | Outputs |
 |------|---------|--------|---------|
 | `preflight_check.py` | Verify environment, package, and required KI data | KI directory | Machine-readable `PREFLIGHT_REPORT=` line |
-| `diagnostics/run_synthetic_advection.py` | Run the synthetic analytical validation path | Synthetic advected precipitation sequence | `diagnostics/last_run.json`, `tester_result.json`, stdout JSON |
+| `diagnostics/run_synthetic_advection.py` | Run the synthetic analytical validation path | Synthetic advected precipitation sequence | `last_run.json`, `tester_result.json` (current folder, or a temp folder if started inside the KI), stdout JSON |
 | `tools/` | Executable pipeline stages | Radar frames, metadata, stage arguments | Model-ready inputs, motion fields, nowcasts, verification outputs |
 
 ### Stage Docs
@@ -335,7 +338,7 @@ checks, not convention pass-bands for `motion_field`.
 | Radar forcing | Synthetic analytical sequence | Validated for the default KI test | Real radar archive is not mounted |
 | Motion field | pySTEPS Proesmans optical flow | Validated by the synthetic runner | Rank-1 dag output is `motion_field` |
 | Nowcast frames | pySTEPS extrapolation nowcast | Validated by the synthetic runner | Writes per-lead verification outputs |
-| Verification | pySTEPS `det_cat_fct` and `fss` | Validated by the synthetic runner | Writes `diagnostics/last_run.json` |
+| Verification | pySTEPS `det_cat_fct` and `fss` | Validated by the synthetic runner | Writes `last_run.json` (outside the KI) |
 
 ---
 

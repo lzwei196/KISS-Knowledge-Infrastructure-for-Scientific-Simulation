@@ -1,0 +1,2 @@
+reservoir.con: written by SWAT+ HRU generator (HydroCraft)
+      id  name                      gis_id        area         lat         lon        elev     res             wst     cst    ovfl    rule   out_tot     obj_typ    obj_id     hyd_typ          frac  

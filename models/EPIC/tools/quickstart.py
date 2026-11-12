@@ -32,6 +32,7 @@ carry that label (SKILL.md, triplet EPIC_022).
 import argparse
 import os
 import sys
+sys.dont_write_bytecode = True  # importing KI tools must not write __pycache__ into the KI
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS_DIR)
@@ -223,6 +224,45 @@ def _fresh_output(ext, run_name, workspace, pre_run):
     return best
 
 
+def _in_ki(path):
+    """True if `path` (normalized) is the KI folder or inside it."""
+    ki = os.path.realpath(os.path.join(TOOLS_DIR, ".."))
+    real = os.path.realpath(path)
+    return real == ki or real.startswith(ki + os.sep)
+
+
+def _outside_parent():
+    """The system temp folder (real path), checked to be outside the KI BEFORE
+    anything is made in it."""
+    import tempfile
+    tmp = os.path.realpath(tempfile.gettempdir())
+    if _in_ki(tmp):
+        raise RuntimeError(f"temp folder {tmp} is inside the KI; nowhere outside to write")
+    return tmp
+
+
+def _run_base():
+    """Folder outside the KI for this run (the KI is read-only). Checked BEFORE any
+    write: the current dir, unless it or its runs/ resolves into the KI (e.g. a
+    symlink); then a new temp dir under a checked temp parent."""
+    base = os.path.realpath(os.getcwd())
+    if _in_ki(base) or _in_ki(os.path.join(base, "runs")):
+        import tempfile
+        base = tempfile.mkdtemp(prefix="epic_run_", dir=_outside_parent())
+    return base
+
+
+def _seed_cache(src, dst):
+    """Copy cache files missing in `dst` from the KI cache `src` (KI is only read)."""
+    import shutil
+    if os.path.isdir(src):
+        os.makedirs(dst, exist_ok=True)
+        for fn in sorted(os.listdir(src)):
+            s, d = os.path.join(src, fn), os.path.join(dst, fn)
+            if fn.endswith(".json") and os.path.isfile(s) and not os.path.exists(d):
+                shutil.copyfile(s, d)
+
+
 def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
                run_name=None, irrigation="dryland", verbose=True, ppop=None,
                ppop_source=None):
@@ -312,7 +352,9 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd", workspace=None,
     if run_name is None:
         run_name = f"EPIC_{epic_crop_name}"
     if workspace is None:
-        workspace = os.path.join(TOOLS_DIR, "..", "runs",
+        # Run folder lives OUTSIDE the KI (the KI is read-only knowledge):
+        # ./runs/<name> under the current dir, or a temp dir if cwd is in the KI.
+        workspace = os.path.join(_run_base(), "runs",
                                  f"{run_name}_{lat:.2f}_{lon:.2f}")
     workspace = os.path.abspath(workspace)
     output_dir = os.path.join(workspace, "output")
@@ -632,8 +674,45 @@ def main():
     args = ap.parse_args()
 
     try:
+        # The KI is read-only: a --workspace or $EPIC_FORCING_CACHE inside it
+        # moves outside (cwd, or a temp dir if cwd is in the KI) to a NEW folder
+        # made for this run only, so two KI sources never share one outside
+        # folder. A moved cache is first filled from the KI cache files (copied,
+        # KI only read). Every parent is checked BEFORE anything is made in it, so
+        # no folder is ever created inside the KI (even via a symlinked runs/).
+        import tempfile
+        workspace, base, old_default_cache = args.workspace, None, None
+        if workspace is not None and _in_ki(workspace):
+            base = _run_base()                 # checked: base and base/runs are outside
+            runs = os.path.realpath(os.path.join(base, "runs"))
+            if _in_ki(runs):                   # check before the writes below
+                base = tempfile.mkdtemp(prefix="epic_run_", dir=_outside_parent())
+                runs = os.path.join(base, "runs")
+            os.makedirs(runs, exist_ok=True)
+            moved = tempfile.mkdtemp(
+                prefix=os.path.basename(os.path.realpath(workspace)) + "_", dir=runs)
+            if _in_ki(moved):
+                raise RuntimeError(f"moved workspace {moved} is inside the KI")
+            print(f"[quickstart] workspace {workspace} is inside the KI (read-only); "
+                  f"using {moved}", file=sys.stderr)
+            old_default_cache = os.path.join(os.path.abspath(workspace), ".forcing_cache")
+            workspace = moved
+        env_cache = os.environ.get("EPIC_FORCING_CACHE")
+        if env_cache and _in_ki(env_cache):
+            cbase = os.path.realpath(base or _run_base())
+            if _in_ki(cbase):                  # check before the write below
+                cbase = _outside_parent()
+            moved = tempfile.mkdtemp(prefix="epic_cache_", dir=cbase)
+            if _in_ki(moved):
+                raise RuntimeError(f"moved forcing cache {moved} is inside the KI")
+            print(f"[quickstart] EPIC_FORCING_CACHE {env_cache} is inside the KI "
+                  f"(read-only); using {moved}", file=sys.stderr)
+            _seed_cache(env_cache, moved)
+            os.environ["EPIC_FORCING_CACHE"] = moved
+        elif env_cache is None and old_default_cache:
+            _seed_cache(old_default_cache, os.path.join(workspace, ".forcing_cache"))
         quickstart(args.lat, args.lon, args.crop, args.start, args.end,
-                   source=args.source, workspace=args.workspace,
+                   source=args.source, workspace=workspace,
                    run_name=args.run_name, irrigation=args.irrigation,
                    ppop=args.ppop, ppop_source=args.ppop_source)
     except Exception as exc:

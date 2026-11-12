@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 MODEL_ID = "CRHM"
@@ -151,8 +152,9 @@ def check_import(module):
 def check_binary_starts():
     subject = Path(os.path.realpath(str(CRHM_EXE)))
     try:
-        result = subprocess.run([str(CRHM_EXE), "-h"], cwd=str(KI_DIR),
-                                capture_output=True, text=True, timeout=10)
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run([str(CRHM_EXE), "-h"], cwd=tmp_cwd,
+                                    capture_output=True, text=True, timeout=10)
         output = f"{result.stdout}\n{result.stderr}"
         # CRHM deliberately returns 1 for -h. A banner preceding a crash must
         # not pass (Windows NTSTATUS may be reported signed or unsigned).
@@ -168,9 +170,10 @@ def check_binary_starts():
 
 
 def check_py_compile():
-    cmd = [str(PYTHON_ENV), "-m", "py_compile"] + [str(KI_DIR / p) for p in TOOL_FILES]
     try:
-        result = subprocess.run(cmd, cwd=str(KI_DIR), capture_output=True, text=True, timeout=60)
+        with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+            cmd = [str(PYTHON_ENV), "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile"] + [str(KI_DIR / p) for p in TOOL_FILES]
+            result = subprocess.run(cmd, cwd=str(KI_DIR), capture_output=True, text=True, timeout=60)
         ok = result.returncode == 0
         detail = (result.stderr or result.stdout or "py_compile failed").strip().splitlines()
         msg = detail[-1] if detail else "py_compile failed"

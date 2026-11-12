@@ -537,7 +537,7 @@
   format_spec_violated: EF5 control NAME date-token convention — substituted tokens must not exceed the
     forcing FREQ resolution (DatedName::ProcessName loop bound).
   canonical_intent: ki_local_if_pass
-  added_by_run: EF5_real_case_20260623_05CG004
+  seen_at: "2026-06-23, run EF5_real_case_20260623_05CG004"
 - id: dt_029_spatial_flood_extent_out_of_contract
   symptom:
     description: Obs is per-event flood EXTENT (e.g. Global Flood Database GeoTIFFs), variable=flood_inundation_extent,
@@ -557,4 +557,4 @@
   format_spec_violated: EF5 output contract — dag identity.model_id must equal 'EF5'; scorer metric_family
     must match obs_shape (temporal metrics only valid for point_time_series, not spatial_snapshot)
   canonical_intent: ki_local_if_pass
-  added_by_run: EF5_retry1
+  seen_at: "date not recorded, run EF5_retry1"

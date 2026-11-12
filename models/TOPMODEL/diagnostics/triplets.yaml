@@ -13,42 +13,42 @@
   stage: s1_forcing
   failure_domain: unit_conversion
   severity: silent
-  symptom: Simulated discharge is ~24,000× too high compared to observed
-  diagnosis: Precipitation left in mm/day instead of converting to m/hr
-  remedy: Divide precipitation by 24,000 (mm→m = ÷1000, day→hr = ÷24)
-  detection: max(rain) in inputs.dat should be < 0.01 m/hr (10 mm/hr is extreme)
+  symptom: 'Simulated discharge is ~1,000× too high on the daily route (~24,000× at --dt-hours 1)'
+  diagnosis: 'Precipitation left in mm/day instead of converting to metres per model step'
+  remedy: 'Convert precipitation as mm/day / 1000 / steps_per_day (÷1000 on the daily route --dt-hours 24, ÷24,000 at --dt-hours 1); convert_forcing_to_topmodel.py does this'
+  detection: 'max(rain) in inputs.dat above 1 means mm, not m (the converter refuses rain above 0.5 m/step); a heavy day is about 0.05-0.3 m on the daily route, a heavy hour about 0.01 m at --dt-hours 1'
 - id: dt_002
   stage: s1_forcing
   failure_domain: unit_conversion
   severity: silent
-  symptom: Simulated discharge is ~24× too high
-  diagnosis: Precipitation converted to m/day but not to m/hr
-  remedy: Divide precipitation by 24 to convert from m/day to m/hr
-  detection: max(rain) should be < 0.01; if 0.01–0.1 likely m/day
+  symptom: 'Simulated discharge is steps_per_day times too high (~24× at --dt-hours 1; sub-daily runs only)'
+  diagnosis: 'On a sub-daily run (--dt-hours below 24), precipitation left as a daily depth (m/day) instead of metres per step. On the daily route m/day is the correct per-step depth'
+  remedy: 'Divide precipitation by steps_per_day (24 at --dt-hours 1). Do not divide on the daily route'
+  detection: 'Check physical_dt_hours in inputs.dat.provenance.json; the rain of all steps of one day should add up to the daily depth, not steps_per_day times it'
 - id: dt_003
   stage: s1_forcing
   failure_domain: unit_conversion
   severity: silent
   symptom: Simulated discharge ~1000× too high
-  diagnosis: Precipitation in mm/hr instead of m/hr
-  remedy: Divide precipitation by 1,000 (mm→m)
-  detection: If max(rain) > 0.1 but < 10, likely in mm/hr
+  diagnosis: 'Precipitation in mm per step instead of metres per step'
+  remedy: 'Divide precipitation by 1,000 (mm→m)'
+  detection: 'If max(rain) is above 0.5 (the converter ceiling in m/step), the column is likely mm; on the daily route this is the same error as dt_001'
 - id: dt_004
   stage: s1_forcing
   failure_domain: unit_conversion
   severity: silent
   symptom: No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%
   diagnosis: PE (potential evapotranspiration) set to zero or not provided
-  remedy: Compute PET from temperature/radiation using Hargreaves or Penman-Monteith, convert to m/hr
+  remedy: 'Compute PET from temperature/radiation using Hargreaves or Penman-Monteith, convert to metres per model step (÷1000 ÷ steps_per_day; ÷1000 on the daily route)'
   detection: sumae in topmod.out should be > 0; PE column in inputs.dat should be non-zero
 - id: dt_005
   stage: s1_forcing
   failure_domain: unit_conversion
   severity: silent
   symptom: ET too large, no runoff produced, extremely negative water balance
-  diagnosis: PE left in mm/day instead of m/hr
-  remedy: Divide PE by 24,000
-  detection: max(pe) in inputs.dat should be < 0.001 m/hr; if > 0.01, likely mm/day
+  diagnosis: 'PE left in mm/day instead of metres per model step'
+  remedy: 'Convert PE as mm/day / 1000 / steps_per_day (÷1000 on the daily route, ÷24,000 at --dt-hours 1)'
+  detection: 'max(pe) in inputs.dat should be below about 0.015 m/step on the daily route (15 mm/day) or 0.001 at --dt-hours 1; values above 1 are mm'
 - id: dt_006
   stage: s1_forcing
   failure_domain: unit_conversion
@@ -62,8 +62,8 @@
   failure_domain: unit_conversion
   severity: silent
   symptom: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
-  diagnosis: Comparing simulated Q in m/hr with observed Q in m³/s
-  remedy: 'Convert both to same units: Q_m3s = Q_mhr × basin_area_m² / 3600'
+  diagnosis: Comparing simulated Q (depth per model step) with observed Q in m³/s
+  remedy: 'Convert both to same units: Q_m3s = Q_step × basin_area_m² / physical_seconds_per_step (86400 on the daily route, 3600 only for hourly steps)'
   detection: Simulated and observed Q should be same order of magnitude
 - id: dt_008
   stage: s2_twi
@@ -167,4 +167,4 @@
       a tool bug. Do not apply ×1000/×86400 corrections (triplets dt_001–dt_007 do NOT apply).
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: TOPMODEL_retry1
+  seen_at: "date not recorded, run TOPMODEL_retry1"

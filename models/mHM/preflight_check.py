@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -194,14 +195,15 @@ def check_tool_syntax():
             diagnostics_fix(f"Restore HydroCraft Python interpreter at {PYTHON_ENV}"),
         )
     files = [str(KI_DIR / rel) for rel in TOOL_FILES]
-    proc = subprocess.run(
-        [str(PYTHON_ENV), "-m", "py_compile", *files],
-        cwd=str(KI_DIR),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=60,
-    )
+    with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+        proc = subprocess.run(
+            [str(PYTHON_ENV), "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile", *files],
+            cwd=str(KI_DIR),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+        )
     return add_check(
         "import",
         f"py_compile {len(TOOL_FILES)} KI tools via {PYTHON_ENV}",
@@ -221,14 +223,15 @@ def check_binary_starts():
             False,
             diagnostics_fix(f"Restore executable mHM binary at {MHM_BINARY}"),
         )
-    proc = subprocess.run(
-        [str(MHM_BINARY), "--version"],
-        cwd=str(KI_DIR),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=5,
-    )
+    with tempfile.TemporaryDirectory() as tmp_cwd:
+        proc = subprocess.run(
+            [os.path.abspath(str(MHM_BINARY)), "--version"],
+            cwd=tmp_cwd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+        )
     output = (proc.stdout + proc.stderr).strip()
     passed = proc.returncode == 0 and "5.13" in output
     return add_check(

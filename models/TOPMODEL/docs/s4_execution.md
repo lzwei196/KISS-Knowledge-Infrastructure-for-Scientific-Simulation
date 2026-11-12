@@ -101,7 +101,7 @@ head -5 hyd.out
 | Config not named `data/topmod.run` | File not found | Hardcoded in main.c line 31; copy to right path |
 | Binary built in wrong dir | Missing in run_dir | Copy run_bmi to run directory |
 | stand_alone = 0 | No output produced | Set to 1 for standalone mode |
-| nstep very large | Long runtime or memory issue | Use daily (dt=24h) instead of hourly |
+| nstep very large | Long runtime or memory issue | Use the daily route (`--dt-hours 24`; the header dt stays 1.0) instead of hourly |
 | Segfault | Array overflow | Check nstep matches data lines in inputs.dat |
 
 ## Example

@@ -12,7 +12,7 @@ streamflow to observations.
 | Input | Format | Description |
 |-------|--------|-------------|
 | Aggregated.Values | DHSVM ASCII | Basin-averaged time series |
-| Stream.Flow | DHSVM ASCII | Per-segment streamflow |
+| Stream.Flow | DHSVM ASCII | Per-segment water volumes, m3 per model step (not m3/s) |
 | Mass.Balance | DHSVM ASCII | Running water balance |
 | Mass.Final.Balance | Text (stderr) | End-of-simulation balance |
 | Observed streamflow | CSV | Gauge data for validation |
@@ -53,6 +53,7 @@ streamflow to observations.
    ```bash
    python tools/parse_output.py \
      --streamflow output/Stream.Flow \
+     --segment <SAVE name of the gauge segment> \
      --observed gauge_data.csv \
      --metrics nse,kge,pbias,rmse,r \
      --output validation.json
@@ -69,9 +70,13 @@ streamflow to observations.
 
 ## Verification
 
-- **Parsed record count** matches expected timesteps
+- **Parsed record count** matches expected timesteps (Stream.Flow: steps - 1 rows
+  per saved segment, because the first model step has only a `Totals` row)
 - **No NaN values** in parsed output
-- **Streamflow units**: DHSVM outputs m3/s for channel flow
+- **Streamflow units**: Stream.Flow and Streamflow.Only hold water VOLUMES in m3 per
+  model time step, not m3/s (channel.c: `outflow * deltat`). For m3/s divide by the
+  step length in seconds (Time Step hours x 3600). Only with no channel network
+  (unit hydrograph mode) is Stream.Flow one m3/s value per step.
 - **Date alignment**: Ensure observed and simulated dates overlap
 - **Mass balance closure** < 1% of total inflow
 
@@ -83,6 +88,8 @@ streamflow to observations.
 | Wrong segment for validation | Metrics computed at wrong location | Use outlet segment (check "name" field) |
 | Aggregated vs pixel | Wrong spatial scale for comparison | Use pixel output for point comparisons |
 | Unit mismatch in obs | PBIAS hundreds of percent | Verify both are in m3/s (or both mm) |
+| Stream.Flow read as m3/s | Simulated flow too high by a factor equal to the step length in seconds (10800 for a 3 h step) | Stream.Flow is m3 per model step: divide by (Time Step hours x 3600) first |
+| Wrong Stream.Flow column | Simulated flow is upstream inflow or a network total | Use OUTFLOW (5th field) of the gauge segment rows; skip `Totals` rows |
 | Spinup included in metrics | Poor metrics due to initialization | Skip first year(s) from metrics |
 
 ## Example
@@ -91,21 +98,23 @@ streamflow to observations.
 # Quick validation analysis
 import numpy as np
 
-# Parse simulated streamflow
+STEP_HOURS = 3        # placeholder: use the TIME section "Time Step" of your config
+SEGMENT = "OUTLET"    # placeholder: the SAVE "name" of the gauge segment
+
+# Stream.Flow segment rows: date id inflow lateral_inflow OUTFLOW storage_change "name"
+# Values are m3 per model step. "Totals" rows use another column order: skip them.
+vol = []
 with open("output/Stream.Flow") as f:
-    lines = f.readlines()
+    for line in f:
+        parts = line.split()
+        if len(parts) >= 5 and f'"{SEGMENT}"' in line:
+            vol.append(float(parts[4]))
 
-# Extract outlet flow (last segment typically)
-sim_flow = []
-for line in lines:
-    parts = line.split()
-    if len(parts) > 2 and '"OUTLET"' in line:
-        sim_flow.append(float(parts[2]))
-
-sim = np.array(sim_flow)
-print(f"Mean Q: {sim.mean():.4f} m3/s")
-print(f"Peak Q: {sim.max():.4f} m3/s")
-print(f"Total volume: {sim.sum() * 3600 * 3 / 1e6:.2f} million m3")
+vol = np.array(vol)                  # m3 per model step
+q = vol / (STEP_HOURS * 3600)        # m3/s, mean over each step
+print(f"Mean Q: {q.mean():.4f} m3/s")
+print(f"Peak Q: {q.max():.4f} m3/s")
+print(f"Total volume: {vol.sum() / 1e6:.2f} million m3")
 ```
 
 ## Key Variables in Aggregated.Values

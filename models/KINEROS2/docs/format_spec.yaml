@@ -249,7 +249,7 @@ known_issues:
   remedy: Multiply Ks by 24 when converting from mm/h to mm/d. For cm/h sources, multiply by 240. Verify
     Ks falls within [1, 80] mm/d for the lumped daily model parameter range, or within physically realistic
     bounds for the soil texture class (e.g., sandy loam approximately 262 mm/d, clay approximately 7.2
-    mm
+    mm/d).
 - id: dt_kineros2_005
   symptom: Wetting front suction appears 10x too low; Green-Ampt infiltration is insensitive to soil moisture
     deficit and behaves as though the soil has minimal capillary pull
@@ -325,7 +325,7 @@ known_issues:
   diagnosis: The real KINEROS2 is an EVENT model for small watersheds (hectares to a few km2; WG11 = 6.3
     km2 contributing) solved on a cascade of planes and channels at minute steps. Daily runs on large
     basins (e.g. the Huai River at Bengbu, 121330 km2) were made only with the Python SURROGATE; they
-    are not a va
+    are not a valid KINEROS2 use and their peak timing errors say nothing about KINEROS2.
   remedy: Do not apply KINEROS2 to large basins or daily forcing. For a small watershed build an element
     cascade (AGWA or by hand) and run single storms with tools/run_kineros2_engine.py. Never cite surrogate
     Bengbu metrics as KINEROS2 skill.
@@ -335,18 +335,18 @@ known_issues:
   diagnosis: The saturated hydraulic conductivity (Ks) is very small while the wetting front suction (psi_f)
     is very large. When soil moisture deficit (theta_def) drops below 0.01, infiltration capacity collapses
     abruptly from a high suction-driven rate to just Ks. This threshold behavior is physically correct
-    b
+    but numerically sensitive in the daily model.
   remedy: Verify that the Ks and psi_f combination is physically consistent for the soil texture class
     (e.g., clay has low Ks around 7.2 mm/d and high psi_f around 316 mm, but these should not be mixed
     with values from a different texture). Check the soil texture lookup table in Section 8 of SKILL.md
-    for cons
+    for consistent parameter pairs.
 - id: dt_kineros2_015
   symptom: Routing exponent (alpha) calibrates to values outside [1.0, 2.0]; hydrograph shape is either
     too peaked or too diffuse compared to observations
   diagnosis: The kinematic wave exponent alpha should theoretically be 5/3 (1.667) for Manning's equation.
     Values outside the [1.0, 2.0] range in calibration indicate overfitting, compensating for structural
     model errors (such as the lumped approximation on a large basin), or that other parameters (Ks, Smax)
-    are
+    are poorly constrained.
   remedy: Constrain alpha to [1.0, 2.0] in the calibration bounds. If alpha consistently hits a bound,
     investigate whether the runoff generation parameters (Ks, psi_f, Smax) are physically reasonable first.
     Fix unit errors in those parameters before recalibrating.
@@ -392,17 +392,18 @@ known_issues:
   diagnosis: The ARS-SWRC/KINEROS2 GitHub repo has no makefile. Modules k2mods.for and kinsed.f90 must
     compile first; fmt10_new.for, pond_dcg.for, sedbf.for and inject.for.bak are duplicates/fragments
     and must be left out; gfortran rejects a rank mismatch at kinsed_wepp.for:155 that Intel Fortran accepts.
-    Source
+    Sources are CRLF.
   remedy: Use KISSPATH_HOME/engine_builds_20261006/KINEROS2/build.sh <srcdir> <outdir> on the patched copy
     src_patched/ (CRLF stripped, reshape (/5,1/)->(/5/)); flags -O2 -fno-automatic -ffixed-line-length-none
-    -ffree-line-length-none -std=legacy -fallow-argument-mismatch. Then python3 preflight_check.py. Neve
+    -ffree-line-length-none -std=legacy -fallow-argument-mismatch. Then python3 preflight_check.py. Never
+    fall back to the Python surrogate as if it were the model.
 - id: dt_kineros2_021
   symptom: Output (or stdout) ends with 'error - K2shell' / "Can't open <file>" and the run has no event
     summary, while the exit status is 0
-  diagnosis: 'A file named in kin.fil (parameter, rainfall, multiplier) does not exist relative to the
+  diagnosis: A file named in kin.fil (parameter, rainfall, multiplier) does not exist relative to the
     run folder, or the name carries a leading space (a space after a comma in kin.fil), or a FILE= name
     was upper-cased by the reader. K2shell reads three files only (parameter, rainfall, multiplier) --
-    there is no '
+    there is no control or geometry file.
   remedy: 'Use tools/run_kineros2_engine.py: it copies inputs under short names into the workspace and
     writes kin.fil without spaces. For PRINT=3/INJECT files make the on-disk name upper case. Check status
     in run_result.json, never the exit code (dt_kineros2_027).'
@@ -430,7 +431,7 @@ known_issues:
   diagnosis: 'KINEROS2 has no RECEIVER tag. Topology is declared by the RECEIVING element: a CHANNEL lists
     UPSTREAM (<=10) and LATERAL (<=2 planes) ids, a PLANE may list one UPSTREAM plane. An element no later
     block references is computed but its water never reaches the outlet; the event summary Outflow is
-    the LA'
+    the LAST element only.'
   remedy: 'Run tools/edit_kineros2_par.py validate case.par: it lists every element not referenced downstream
     and every reference to an undefined or later element. Add the missing id to the receiving element''s
     UPSTREAM/LATERAL list.'
@@ -449,7 +450,7 @@ known_issues:
   diagnosis: 'KINEROS2 never defaults SA: a pervious element with G > 0 and no saturation stops the run.
     The value comes, in order of precedence, from the GLOBAL SAT (all elements), from the rain gages''
     SAT (interpolated to the element; then the element''s own SA is IGNORED), or from the element''s SA.
-    Event mode c'
+    Event mode carries no moisture between runs.'
   remedy: 'Give every pervious element an initial relative saturation, from antecedent rain or soil moisture
     data (WG11 4 Aug 1980 gages: 0.09-0.13). Decide where it lives: gage SAT for gage-driven antecedent
     patterns, element SA otherwise -- not both (dt_kineros2_030).'
@@ -459,7 +460,7 @@ known_issues:
   diagnosis: 'errxit() in K2shell.f90 writes '' error - <id>'' and ''<message>'' then executes stop ''
     ''; other aborts are stop '' error - ...'' (sed00, rain.for, infilt). gfortran returns status 0 for
     all of them. Verified: missing SA, missing file, space in kin.fil, missing particle density, decreasing
-    rain depth -> a'
+    rain depth -> all exit 0.'
   remedy: 'Judge success from the output text: ''Event Volume Summary'' present and no ''error -'', ''STOP
     error'', ''zero multiplier'', ''neg stor values'' or Fortran runtime message (tools/_k2lib.engine_failures).
     Use tools/run_kineros2_engine.py, which returns 3 on such failures.'
@@ -537,7 +538,7 @@ known_issues:
   diagnosis: 'KINEROS2 runoff is infiltration-excess: it depends on minute-scale intensity exceeding infiltration
     capacity. A 0.1-0.5 degree hourly or 3-hourly product averages a convective cell over a large cell
     and many minutes (NASA POWER at Walnut Gulch, 2006: wettest hour 1.87 mm, while WGEW gages record
-    ten'
+    tens of mm/h; a 12-h EX1 test with it gave 0 runoff).'
   remedy: Use recording-gage breakpoints whenever they exist (fetch_wgew_dap.py precip). Gridded rain
     (build_kineros2_rainfall.py --from-gridded) is a last resort and its runs must be labelled as such.
   severity: degraded
@@ -609,8 +610,8 @@ known_issues:
     validate warns on long lines.
   severity: silent
 - id: dt_kineros2_046
-  symptom: KINEROS2 'results' are daily discharge series for a large basin, or quote NSE 0.851 / KGE 0.882
-    (Huaihe, Bengbu)
+  symptom: KINEROS2 'results' are daily discharge series for a large basin, or quote a high daily NSE/KGE
+    (above 0.8) for a large basin such as the Huaihe at Bengbu
   diagnosis: tools/run_kineros2.py is a Python lumped daily stand-in (Green-Ampt + two reservoirs, Hamon
     PET) written before the real engine existed on this server. The models DB still carries its metrics.
   remedy: Use tools/run_kineros2_engine.py for every KINEROS2 result; check run_result.json 'engine' and
@@ -659,9 +660,9 @@ known_issues:
   severity: fatal
 - id: dt_kineros2_053
   symptom: Runoff from a run parameterised from HWSD/Table 1 is much larger than observed at Walnut Gulch
-  diagnosis: Rawls (1982) class Ks for HWSD's sandy clay loam at 31.72N 110.06W is 0.43 cm/hr -> 0.135
-    in/hr after the 20 % gravel factor; the ARS WG11 file uses 0.40-0.52 in/hr (and then a 0.5 multiplier)
-    -- the class value is a starting point, not a site value.
+  diagnosis: Rawls (1982) class Ks for HWSD's sandy clay loam is 0.43 cm/hr -> 0.135 in/hr after the 20
+    % gravel factor; the ARS WG11 file uses 0.40-0.52 in/hr (and then a 0.5 multiplier) -- the class value
+    is a starting point, not a site value.
   remedy: Calibrate the Ks multiplier on an observed event (calibrate_kineros2_multipliers.py) or use
     field-derived values; report which.
   severity: degraded

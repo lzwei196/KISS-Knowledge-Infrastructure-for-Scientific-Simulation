@@ -1,0 +1,6 @@
+irr.ops: written by SWAT+ editor v1.0.0 on 2018-11-29 16:24
+name                   irr_eff      surq_rto       irr_amt      irr_salt      irr_no3n      irr_po4n  description
+surface                0.50000       0.40000       0.00000       0.00000       0.00000       0.00000  
+sprinkler              0.70000       0.10000       0.00000       0.00000       0.00000       0.00000  
+drip                   0.90000       0.00000       0.00000       0.00000       0.00000       0.00000  
+subsurface             1.00000       0.00000     150.00000       0.00000       0.00000       0.00000  

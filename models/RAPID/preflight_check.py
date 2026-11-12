@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -81,13 +82,14 @@ def check_file(path, label, critical=True, executable=False):
 def check_binary_start(binary):
     subject = binary.resolve()
     try:
-        result = subprocess.run(
-            [str(subject), "--help"],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(subject), "--help"],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
     except subprocess.TimeoutExpired:
         return check(
             "run",
@@ -134,13 +136,14 @@ def check_import(module, remedy):
 
 def check_py_compile():
     tools = [str(KI_DIR / item) for item in REQUIRED_KI_FILES if item.startswith("tools/")]
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", *tools],
-        cwd=str(KI_DIR),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+        result = subprocess.run(
+            [sys.executable, "-X", f"pycache_prefix={pyc_tmp}", "-m", "py_compile", *tools],
+            cwd=str(KI_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
         suffix = f": {detail[-1]}" if detail else ""

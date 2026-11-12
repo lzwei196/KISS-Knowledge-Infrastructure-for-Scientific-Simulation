@@ -397,8 +397,8 @@
 - id: dt_022_nasa_power_lst_vs_utc_and_climatology_proxy
   symptom:
     description: WRF T2 (or any sub-daily field) scored against NASA POWER hourly appears anti-correlated
-      (r~-0.05, NSE~-0.9) despite a physically reasonable simulation; OR a deterministic weather snapshot
-      scored against a multi-year monthly climatology gives structurally poor NSE (-7..-10) with a large
+      (r near zero or below, NSE negative) despite a physically reasonable simulation; OR a deterministic weather snapshot
+      scored against a multi-year monthly climatology gives structurally poor NSE (far below zero) with a large
       warm/cold bias and near-circular spatial CSI.
   diagnosis:
     root_cause: 'Two compounding errors: (1) NASA POWER hourly defaults to LST (local solar time) while
@@ -413,11 +413,11 @@
       See run_and_score_realcase_t2_pointts.py.
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: WRF_retry1
+  seen_at: "date not recorded, run WRF_retry1"
 - id: dt_wrf_snapshot_vs_climatology_spatial_csi
   symptom:
-    description: WRF T2 spatial_field_comparison gives CSI ~0.50 with a large uniform warm/cool bias (e.g.
-      +3.8 K) and the pre-retry gate REJECTS with wrong-metric-for-obs-shape (nse/kge/r reported for obs_shape=spatial_time_series).
+    description: WRF T2 spatial_field_comparison gives a middling CSI (around 0.5) with a large uniform warm/cool
+      bias (several K) and the pre-retry gate REJECTS with wrong-metric-for-obs-shape (nse/kge/r reported for obs_shape=spatial_time_series).
   diagnosis:
     root_cause: A single short WRF weather realization was scored against a multi-year monthly CLIMATOLOGY
       (temporal-support mismatch), CSI used one ABSOLUTE threshold on both fields so the uniform anomaly
@@ -431,4 +431,4 @@
   format_spec_violated: 'dag.yaml observability for T2 spatial_time_series: metric_families=[spatial_pattern_match,
     magnitude_accuracy]'
   canonical_intent: ki_local_if_pass
-  added_by_run: WRF_retry1
+  seen_at: "date not recorded, run WRF_retry1"

@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -20,7 +21,7 @@ MODEL_ID = "LISFLOOD"
 KI_DIR = Path(__file__).resolve().parent
 MANIFEST = KI_DIR / "knowledge_infrastructure.yaml"
 DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
-DEFAULT_BINARY = Path("KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood")
+DEFAULT_BINARY = Path("KISSPATH_HOME/miniconda3/envs/lisflood_pd2/bin/lisflood")
 # Separate env built from LISFLOOD's own environment.yml (py3.7, old xarray/dask);
 # needed ONLY for the official chunked-NetCDF test case inputs. GeoForge runs use
 # the env above, so this is a non-critical info check.
@@ -116,7 +117,8 @@ def check_tool_syntax(checks):
         if not path.is_file():
             continue
         try:
-            py_compile.compile(str(path), doraise=True)
+            with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+                py_compile.compile(str(path), cfile=os.path.join(pyc_tmp, "check.pyc"), doraise=True)
             add_check(checks, "import", path, False, True)
         except py_compile.PyCompileError as exc:
             add_check(
@@ -205,13 +207,14 @@ def check_binary_starts(checks, binary):
     # "Version:") and the usage text ("settings.xml"), then exits 1.
     subject = f"{binary} (no arguments: banner + usage)"
     try:
-        result = subprocess.run(
-            [str(binary)],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=PROBE_TIMEOUT,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(binary)],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT,
+            )
     except subprocess.TimeoutExpired:
         add_check(checks, "run", subject, True, False, diagnostic_fix(
             f"Make the LISFLOOD CLI start cleanly; `{binary}` with no arguments did not finish within {PROBE_TIMEOUT}s"))

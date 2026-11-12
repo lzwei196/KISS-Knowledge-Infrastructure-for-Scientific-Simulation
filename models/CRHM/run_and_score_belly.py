@@ -29,12 +29,12 @@ if not (os.path.isfile(OUT) and os.path.getsize(OUT) > 1_000_000):
            "--crhm_exe", EXE, "--prj_path", PRJ, "--output_path", OUT,
            "--time_format", "YYYYMMDD"]
     print("RUN:", " ".join(cmd), flush=True)
-    r = subprocess.run(cmd, cwd=KI, capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=STATE, capture_output=True, text=True)  # KI read-only
     print((r.stdout or "")[-2000:]); print((r.stderr or "")[-2000:])
     if not (os.path.isfile(OUT) and os.path.getsize(OUT) > 1_000_000):
         cmd2 = [EXE, "-f", "STD", "-t", "YYYYMMDD", "-o", OUT, PRJ]
         print("FALLBACK:", " ".join(cmd2), flush=True)
-        subprocess.run(cmd2, cwd=KI, capture_output=True, text=True)
+        subprocess.run(cmd2, cwd=STATE, capture_output=True, text=True)  # KI read-only
 else:
     print("RESUME: using existing", OUT, flush=True)
 

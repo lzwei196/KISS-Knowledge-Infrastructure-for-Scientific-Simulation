@@ -1,0 +1,10 @@
+lum.dtl
+ 1
+
+ NAME   	        CONDS	ALTS	ACTS
+sat_buffer	         1	 1	 1
+ VAR		        OBJ	OB_NUM	LIM_VAR		LIM_OP		LIM_CONST	      		ALT1
+tile_flo 	        hru	  0	  null		  -	  	   0.0		        	>
+ ACT_TYP    	        OBJ    OBJ_NUM   NAME            OPTION    CONST    CONST2      FP         	OUTCOMES
+flow_control	        hru	  1	 buffer_tile	 min_flo    5.0	      0         null	 	y
+

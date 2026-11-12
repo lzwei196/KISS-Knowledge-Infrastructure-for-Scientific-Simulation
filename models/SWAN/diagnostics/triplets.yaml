@@ -508,8 +508,8 @@
 - id: dt_swan_openocean_constant_swell_ceiling
   symptom:
     description: Open-ocean deep-water SWAN forced by local buoy wind on a box with a CONSTANT swell open-boundary
-      reaches good wind-sea correlation in calm-swell windows (r~0.70) but full-year Hsig r stays ~0.34
-      / NSE~0.05 against the buoy.
+      reaches good wind-sea correlation in calm-swell windows but full-year Hsig r stays low (around 0.3)
+      and NSE near zero against the buoy.
   diagnosis:
     root_cause: A constant climatological swell boundary (BOUN SIDE CONSTANT PAR) adds a near-static swell
       component that cannot create time-varying covariance with the buoy's remotely-propagated swell;
@@ -536,7 +536,7 @@
       See dt_swan_tpar_file_reopened_by_second_boundspec for the file-per-side rule.'
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_retry4
+  seen_at: "date not recorded, run SWAN_retry4"
 - id: dt_swan_tpar_file_reopened_by_second_boundspec
   symptom:
     error_pattern: 'File is already opened: .*\.tpar'
@@ -568,7 +568,7 @@
       tools/run_swan.validate_outputs_after_run, which scans PRINT for ERROR.'
   format_spec_violated: SWAN BOUNDSPEC boundary-data file handling
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_real_case_ndbc46050
+  seen_at: "date not recorded, run SWAN_real_case_ndbc46050"
 - id: dt_swan_proj_nr_max_4_chars
   symptom:
     error_pattern: 'too long string given for: NR'
@@ -594,7 +594,7 @@
       "No start of computation".'
   format_spec_violated: SWAN PROJ [nr] is CHARACTER*4
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_real_case_ndbc46050
+  seen_at: "date not recorded, run SWAN_real_case_ndbc46050"
 - id: dt_swan_inpgrid_row_count_off_by_one
   symptom:
     description: 'A 2-D bottom or wind field written by
@@ -636,7 +636,7 @@
       (n_times * 2 * (my+1) rows by (mx+1) columns).'
   format_spec_violated: SWAN INPGRID mxinp/myinp count MESHES, not values
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_real_case_ndbc46050
+  seen_at: "date not recorded, run SWAN_real_case_ndbc46050"
 - id: dt_swan_pyswan_not_importable_outside_python_env
   symptom:
     error_pattern: No module named 'oceanwaves'
@@ -665,7 +665,7 @@
       (appended, not prepended, so a real source/repo checkout still wins).'
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_real_case_ndbc46050
+  seen_at: "date not recorded, run SWAN_real_case_ndbc46050"
 - id: dt_swan_ndbc_offshore_anemometer_outage
   symptom:
     description: 'A multi-station SWAN wind field built from NDBC stdmet passes every shape
@@ -699,4 +699,4 @@
       wind was dropped may still supply the boundary TPAR from its wave record.'
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: SWAN_real_case_ndbc46050
+  seen_at: "date not recorded, run SWAN_real_case_ndbc46050"

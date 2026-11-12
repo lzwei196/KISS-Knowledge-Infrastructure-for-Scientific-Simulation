@@ -457,7 +457,7 @@
   format_spec_violated: dhsvm.SKILL.md.pipeline_stages.s1_s4_s5 (no implementing tool); dhsvm.format_spec.flat_binary
     / stream_network_files
   canonical_intent: ki_local_if_pass
-  added_by_run: DHSVM_retry1
+  seen_at: "date not recorded, run DHSVM_retry1"
 - id: dt_019
   symptom:
     description: Null metrics / no valid DHSVM run on a large, low-relief, regulated lowland basin (Huai
@@ -470,4 +470,4 @@
       native domain, or record a wrong-domain SKIP'
   format_spec_violated: none (domain-of-validity scope, not a format rule)
   canonical_intent: ki_local_if_pass
-  added_by_run: DHSVM_retry1
+  seen_at: "date not recorded, run DHSVM_retry1"

@@ -27,7 +27,7 @@
   # === ENVIRONMENT ===
   # === PHYSICS COMPARISON ===
   # === DOMAIN SETUP SILENT ERROR ===
-  # === BUGS FOUND DURING WANGJIABA KI TEST (2026-04-02) ===
+  # === BUGS FOUND DURING A REAL-BASIN KI TEST ===
 # Field names normalised to the controlled vocabulary 2026-08-12
 # (see ki_vocabulary.py). Values unchanged; only keys were renamed.
 
@@ -721,7 +721,7 @@
       \ low.\nVariables in m/s:  scalarTotalRunoff, scalarRainPlusMelt, scalarInfiltration,\n        \
       \           scalarSoilDrainage, scalarSurfaceRunoff, averageRoutedRunoff\nVariables in kg/m²/s:\
       \ scalarThroughfallRain, scalarThroughfallSnow, scalarTotalET,\n                      scalarCanopyEvaporation,\
-      \ scalarGroundEvaporation, pptrate\n\nThis cost 2 days of debugging (2026-04-11 to 2026-04-12).\
+      \ scalarGroundEvaporation, pptrate\n\nThis cost 2 days of debugging.\
       \ The model was producing realistic runoff (508 mm/yr) the entire time.\n"
     affected_components:
     - parse_summa_output.py discharge calculation
@@ -740,6 +740,7 @@
   severity: silent
   cross_references:
   - cm_001
+  seen_at: "2026-04-11"
 - id: dt_024
   stage: s1_domain_setup
   failure_domain: classification_mismatch
@@ -830,7 +831,7 @@
       is HVT 1.1 m with LAI 0.0 in Dec-Feb. Mislabelling shrubland as forest therefore evaporates water
       all dry season. At Jinghong (Lancang, 142,695 km2) an elevation rule did exactly this to 42% of
       basin area -- the wettest 42% -- producing scalarTotalET 766.8 mm/yr against a P - Q_obs ceiling
-      of 555 mm/yr and PBIAS -66.5%. Routing is a mass-conserving redistribution in time and can NEVER
+      of 555 mm/yr and a large negative PBIAS. Routing is a mass-conserving redistribution in time and can NEVER
       repair this; three rounds of routing work were spent before the vegetation was checked. The tell
       is that r stays high (the model gets the monsoon timing right) while PBIAS stays stuck and the water
       balance closes: the water is not lost by the numerics, it is genuinely evaporated.
@@ -1004,11 +1005,7 @@
       and prints veg_class_counts + veg_area_fraction so the class mix is auditable at a glance.
 
       '
-    verified: 'Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 2026-07-20. Before: 65.1% class 1 Evergreen
-      Needleleaf Forest (HVT 20 m). After: 83.3% class 10 Grassland, 8.4% class 7 Open Shrubland, 7.9%
-      class 9 Savanna -- i.e. alpine meadow, which is what the basin actually is.
-
-      '
+  seen_at: "2026-07-20, Upper Yellow above Tangnaihai"
   severity: silent
   cross_references:
   - dt_024
@@ -1063,11 +1060,7 @@
       in its stdout JSON.
 
       '
-    verified: 'Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 2026-07-20. Before: elevation 0.0 on 74/74
-      GRUs, soilTypeIndex 11145-11741. After: elevation 3221.6-4768.4 m (mean 4160 m), 0 failures; soil
-      categories [1,3,6,7,9,12] with 74/74 resolved via HWSD texture.
-
-      '
+  seen_at: "2026-07-20, Upper Yellow above Tangnaihai"
   severity: silent
   cross_references:
   - dt_018
@@ -1124,12 +1117,7 @@
       the next author does not ''fix'' it by moving the list themselves.
 
       '
-    verified: 'Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 11 forcing years, 2026-08-02. Before:
-      validate_file_manager exit 2, "forcingListFile: file not found at ''.../work/settings/forcingFileList.txt''"
-      with all 11 forcing_YYYY.nc and the list present in work/forcing/. After: list copied to settings/,
-      11 entries, 0 missing, validation passes and SUMMA reads the forcing.
-
-      '
+  seen_at: "2026-08-02, Upper Yellow above Tangnaihai"
   severity: fatal
   cross_references:
   - dt_001
@@ -1179,12 +1167,7 @@
       and the available timestamps and the value to use.
 
       '
-    verified: 'Upper Yellow above Tangnaihai, 74 GRUs, 2026-08-02. simStartTime ''1980-01-01 00:00'' ->
-      SUMMA STOP 1 in 0.9 s. Validator now reports "forcing time axis: 1980-01-01 03:00 .. 1991-01-01
-      00:00" and errors with "Set simStartTime to ''1980-01-01 03:00'' or later". With 03:00 the run proceeds
-      and reads forcing normally.
-
-      '
+  seen_at: "2026-08-02, Upper Yellow above Tangnaihai"
   severity: fatal
   cross_references:
   - dt_005
@@ -1247,12 +1230,7 @@
       was not supplied.
 
       '
-    verified: 'Upper Yellow above Tangnaihai, 74 GRUs, 9-month cold-start smoke, 2026-08-02. Before: head
-      flat -100 m, first-step theta 0.164-0.187, Jan-Sep runoff 0.33 mm against P 630 mm. After: head
-      -2.35..-3.36 m from per-HRU field capacity, theta 0.071-0.413, Jan-Sep runoff 67.1 mm (runoff coefficient
-      0.106) and still rising into autumn. Same forcing, same parameters, same decisions.
-
-      '
+  seen_at: "2026-08-02, Upper Yellow above Tangnaihai"
   severity: silent
   cross_references:
   - dt_011

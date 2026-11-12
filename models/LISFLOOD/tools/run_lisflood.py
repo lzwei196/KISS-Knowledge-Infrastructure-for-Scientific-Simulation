@@ -21,7 +21,7 @@ Usage:
         --check_only
 
 Engine: --lisflood-bin -> $LISFLOOD_BIN -> server default
-KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood (same as preflight_check.py);
+KISSPATH_HOME/miniconda3/envs/lisflood_pd2/bin/lisflood (same as preflight_check.py);
 only if that default does not exist, `lisflood` on PATH (announced). An explicit
 engine that is not an executable file is an error; no other engine is tried.
 """
@@ -43,7 +43,7 @@ except ImportError:
     np = None
 
 # Server default engine (same as preflight_check.py DEFAULT_BINARY / manifest binary.path)
-SERVER_LISFLOOD = "KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood"
+SERVER_LISFLOOD = "KISSPATH_HOME/miniconda3/envs/lisflood_pd2/bin/lisflood"
 TAIL_CHARS = 3000
 
 _VAR = re.compile(r"\$\(([^)]+)\)")

@@ -16,8 +16,8 @@
   # --- Build Errors (5 triplets) ---
   # --- Runtime Errors (10 triplets) ---
   # --- Silent Errors (8 triplets) ---
-  # --- Validated Routing Errors (3 triplets, Bengbu 2026-03-24) ---
-  # --- Validated at Wangjiaba (51030), 2026-07-09 -----------------------------
+  # --- Routing Errors found in a real-basin run (3 triplets) ---
+  # --- Errors found in a real-basin run ----------------------------------------
 
 - id: dt_b01
   stage: installation
@@ -545,9 +545,7 @@
     - Ensure resolution_Hydrology and resolution_Routing are in degrees (e.g., 0.25)
     prevention: 'Fixed in generate_mhm_namelists.py: coord_sys = 1 if is_geo else 0'
   severity: fatal
-  validated: true
-  validated_basin: Bengbu
-  validated_date: '2026-03-24'
+  seen_at: "2026-03-24, Bengbu"
 - id: dt_v002
   stage: s7_execute
   failure_domain: silent_error
@@ -560,10 +558,9 @@
     root_cause: Gauge L0 cell maps to an L11 cell with zero upstream drainage
     explanation: 'The highest flow-accumulation cell at L0 (fine resolution) may map to an L11 cell (coarse
       routing resolution) that has no upstream L11 drainage cells. This happens when the L0 outlet sits
-      right at the boundary between two L11 cells: the L0 cell with facc=904 at (33.225N, 116.025E) maps
-      to L11 cell (8,18) which has zero Qrouted, while the adjacent L11 cell (7,17) at (33.375N, 115.875E)
-      carries all the routed discharge (mean 177 m3/s). The gauge is 0.025 deg south of the L11 cell boundary,
-      causing it to land on the wrong L11 cell.
+      right at the boundary between two L11 cells: the highest-facc L0 cell maps to an L11 cell with zero
+      Qrouted, while the adjacent L11 cell carries all the routed discharge. A gauge only 0.025 deg from the
+      L11 cell boundary can land on the wrong L11 cell.
 
       '
     affected_components:
@@ -581,9 +578,7 @@
     - Re-run mHM
     prevention: Use move_gauge.py (updated version) which reads mRM output to find correct L11 cell
   severity: fatal
-  validated: true
-  validated_basin: Bengbu
-  validated_date: '2026-03-24'
+  seen_at: "2026-03-24, Bengbu"
 - id: dt_v003
   stage: s2_morphology
   failure_domain: silent_error
@@ -611,9 +606,7 @@
     - Or use np.gradient with different dx/dy for each row (accounting for latitude)
     prevention: This only affects aspect-driven PET correction (processCase(5)=0), not routing
   severity: degraded
-  validated: true
-  validated_basin: Bengbu
-  validated_date: '2026-03-24'
+  seen_at: "2026-03-24, Bengbu"
 - id: dt_r11
   stage: s2_morphology
   failure_domain: silent_error
@@ -645,9 +638,7 @@
     - dst[dst <= -9990] = -9999
     prevention: Assert dem.min() is physically plausible before writing dem.asc
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_r12
   stage: s1_domain
   failure_domain: runtime
@@ -678,9 +669,7 @@
     - Then xllOut = xll0 + N*cs0 - (N/R)*cs1 = xll0 for either reading
     prevention: setup_mhm_domain.py enforces the square-L0 constraint; the extra cells are nodata
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_r13
   stage: s2_morphology
   failure_domain: runtime
@@ -715,9 +704,7 @@
     - Run a 3-state DFS on the MASKED grid; fdir=0 is an outlet, not a cycle
     prevention: prepare_morpho_data.py aborts if the upscaled network contains a cycle
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_r14
   stage: s9_calibration
   failure_domain: silent_error
@@ -744,9 +731,7 @@
     - 'Never trust mHM''s exit code alone: assert FinalParam.nml exists afterwards'
     prevention: generate_mhm_namelists.py and setup_mhm_calibration.py both reject n_iterations < 6
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_r15
   stage: s9_calibration
   failure_domain: runtime
@@ -775,9 +760,7 @@
     - Only use 10-13/15/17/27-30 with an &optional_data namelist AND the obs files
     prevention: setup_mhm_calibration.py rejects objectives that require &optional_data
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_r16
   stage: s9_calibration
   failure_domain: silent_error
@@ -805,9 +788,7 @@
     prevention: 'Fixed in setup_mhm_calibration.py: the rewrite is skipped when --execute/--parse_results
       is given'
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_s09
   stage: s1_domain
   failure_domain: silent_error
@@ -837,9 +818,7 @@
     - ALWAYS cross-check the shapefile area against the gauge's published drainage area first
     prevention: delineate_basin_merit.py refuses to emit a basin more than 10% from --target_area_km2
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_s10
   stage: s4_forcing
   failure_domain: silent_error
@@ -869,9 +848,7 @@
     prevention: convert_forcing_to_mhm.py hard-fails when basin-mean precipitation is outside 200-4000
       mm/yr
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_s11
   stage: s4_forcing
   failure_domain: silent_error
@@ -901,9 +878,7 @@
     prevention: convert_forcing_to_mhm.py refuses --pet_method 1 when the mean diurnal range is < 0.1
       K
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_s12
   stage: s2_morphology
   failure_domain: silent_error
@@ -932,9 +907,7 @@
     - 'Wangjiaba: 23.8% forest, 74.6% pervious, 1.6% sealed, 7 LAI classes'
     prevention: landcover_to_mhm_luse.py now exits 1 rather than emitting a uniform grid
   severity: degraded
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"
 - id: dt_s13
   stage: s5_gauge
   failure_domain: silent_error
@@ -964,6 +937,4 @@
     prevention: prepare_mhm_gauge.py writes the header; it also exits 2 rather than emitting an all-nodata
       gauge
   severity: fatal
-  validated: true
-  validated_basin: Wangjiaba
-  validated_date: '2026-07-09'
+  seen_at: "2026-07-09, Wangjiaba (51030)"

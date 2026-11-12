@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 
 MODEL_ID = "CISM"
@@ -103,13 +104,14 @@ def check_binary_starts(path, critical=True):
         return add_check("run", subject, critical, "fail", fix)
 
     try:
-        result = subprocess.run(
-            [path],
-            cwd=KI_DIR,
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [path],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
     except subprocess.TimeoutExpired:
         fix = f"CISM driver did not reach its usage path within 8s; consult {TRIPLETS}."
         return add_check("run", subject, critical, "fail", fix)

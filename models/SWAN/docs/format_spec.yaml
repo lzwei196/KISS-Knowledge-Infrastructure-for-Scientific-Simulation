@@ -264,7 +264,7 @@ known_issues:
     wave height in meters. Buoy data from some Japanese and Chinese networks report Hs in centimeters.
     If cm values are written directly as Hs in TPAR or spectral files, waves are 100x too large.
 
-    ; [''conver'
+    ; [''convert_boundary_spectra'', ''tpar_file'']'
   remedy: Divide Hs values by 100 using hs_cm_to_m(); convert_boundary_spectra; ['Check max Hs in boundary
     file — should be < 20m for most locations', 'If Hs > 30, divide by 100']; validate_inputs() checks
     for Hs > 30 and warns
@@ -282,13 +282,15 @@ known_issues:
   severity: silent
 - id: dt_003
   symptom: Waves propagate in opposite direction to expected. Shoreline on wrong side receives energy.
-  diagnosis: Cartesian direction convention used where nautical expected, or vice versa; SWAN with SET
+  diagnosis: 'Cartesian direction convention used where nautical expected, or vice versa; SWAN with SET
     NAUTICAL expects direction FROM which waves come, measured CW from North (270° = from west). Cartesian
     convention gives direction TO which waves propagate, measured CCW from East. Mixing conventions rotates
-    wav
+    wave field by 180°. Conversion: nautical = (270 - cartesian) mod 360.
+
+    ; [''convert_boundary_spectra'', ''swn_file'']'
   remedy: Convert direction using cartesian_to_nautical() or add 180° and mod 360; convert_boundary_spectra;
     ['Check SET command in .swn (NAUTICAL or CARTESIAN)', 'Verify boundary direction convention matches',
-    '270° nautical = from west; 0° nautical = from north']; Document direction convention in .swn comme
+    '270° nautical = from west; 0° nautical = from north']; Document direction convention in .swn comments
   severity: silent
 - id: dt_004
   symptom: Hm0 from 2D spectrum differs from input Hs by factor ~57. Spectral integration gives wrong
@@ -297,16 +299,19 @@ known_issues:
     ERA5 and WW3 provide spectra in m²/Hz/rad. The factor is π/180 ≈ 0.01745. If rad-based spectra are
     loaded without conversion, integrating over degrees gives values too large by 180/π ≈ 57.3.
 
-    ; [''convert_'
+    ; [''convert_boundary_spectra'', ''oceanwaves'']'
   remedy: Multiply energy by π/180 when loading from m²/Hz/rad sources; convert_boundary_spectra; ["Check
     energy_units attribute — should be 'm2/Hz/deg'", 'If source is in rad, multiply energy array by np.pi/180',
-    'Verify Hm0 after conversion matches expected Hs']; Always check energy_units before spectral in
+    'Verify Hm0 after conversion matches expected Hs']; Always check energy_units before spectral integration
   severity: silent
 - id: dt_005
   symptom: Directional spreading too narrow or too broad. JONSWAP shape looks wrong.
-  diagnosis: Angular spread σ (degrees) used instead of cos^ms power; SWAN TPAR and PySWaN's from_jonswap()
+  diagnosis: 'Angular spread σ (degrees) used instead of cos^ms power; SWAN TPAR and PySWaN''s from_jonswap()
     expect the spreading parameter ms as the power in cos^ms(θ-θ_peak). Common sources give directional
-    spread σ in degrees (e.g., σ=30°). Using σ=30 as ms gives extremely narrow spreading (cos^30). Conversion
+    spread σ in degrees (e.g., σ=30°). Using σ=30 as ms gives extremely narrow spreading (cos^30). Conversion:
+    ms ≈ 2/σ_rad² - 1.
+
+    ; [''convert_boundary_spectra'', ''directional_spreading'']'
   remedy: 'Convert σ to ms using spreading_deg_to_power(); convert_boundary_spectra; [''If ms > 20 and
     source data is in degrees, convert'', ''Typical ms values: 2 (broad swell) to 20 (narrow wind sea)''];
     validate_inputs() warns when ms > 100'
@@ -317,7 +322,7 @@ known_issues:
     expects depth as positive values for water. GEBCO provides elevation where ocean is negative. If GEBCO
     values are used directly, all ocean points have negative depth and SWAN treats them as land (dry points).
 
-    ; ['
+    ; [''convert_bathymetry'', ''bot_file'']'
   remedy: 'Multiply elevation by -1: depth = -elevation; convert_bathymetry; [''Check sign of values in
     .bot file'', ''Ocean depths should be positive in SWAN'', "Use unit_conversion=''elevation_to_depth''"];
     validate_inputs() checks for negative mean depth'
@@ -328,7 +333,7 @@ known_issues:
     sources provide wind in knots. 1 knot = 0.5144 m/s. Using knots as m/s gives winds ~2x too strong,
     and since wave energy scales with ~U^4, wave heights are significantly overestimated.
 
-    ; [''wind_forcing'', ''swn_fil'
+    ; [''wind_forcing'', ''swn_file'']'
   remedy: Multiply wind speed by 0.5144 to convert knots to m/s; ['Check wind source units — common trap
     with NOAA/met data', 'If max wind > 50, likely in knots']; Check wind units before writing to SWAN
   severity: silent
@@ -349,7 +354,7 @@ known_issues:
     [NDIR/CDIR for 2D], QUANT. Any deviation (missing newline, extra space, wrong keyword) causes a read
     error.
 
-    ; ['
+    ; [''swan_io'', ''to_file1D'', ''to_file2D'']'
   remedy: Use PySWaN to_file1D/to_file2D to generate correctly formatted files; ["Verify file starts with
     'SWAN 1'", 'Check each header section exists in correct order', 'Ensure no trailing whitespace issues'];
     Always use PySWaN write functions rather than manual formatting
@@ -360,27 +365,31 @@ known_issues:
     can have three keywords per location per timestep: FACTOR (with energy data), ZERO (all zero energy),
     NODATA (no valid data). The current PySWaN code prints an error and may crash on ZERO or NODATA.
 
-    ; [''swa'
+    ; [''swan.from_file2D'', ''swan.from_file1D'']'
   remedy: Pre-filter spectral file to remove ZERO/NODATA blocks, or patch from_file2D; ['Check output
     spectral file for ZERO or NODATA keywords', 'If present, add handling code or extract only FACTOR
     locations']; Ensure output points are within the active wet domain
   severity: error
 - id: dt_011
   symptom: timecoding error. Time stamps garbled or missing in spectral file.
-  diagnosis: timecoding value not 1 — only timecoding=1 (YYYYMMDD.HHMMSS) is fully supported; PySWaN only
-    fully supports timecoding=1 which uses the YYYYMMDD.HHMMSS format. Other timecoding values (e.g.,
+  diagnosis: 'timecoding value not 1 — only timecoding=1 (YYYYMMDD.HHMMSS) is fully supported; PySWaN
+    only fully supports timecoding=1 which uses the YYYYMMDD.HHMMSS format. Other timecoding values (e.g.,
     2 for Julian day) are not implemented and result in time strings being stored as raw text instead
-    of datetime
+    of datetime objects.
+
+    ; [''swan.from_swan_header'', ''from_file1D'', ''from_file2D'']'
   remedy: Convert time format to YYYYMMDD.HHMMSS before writing spectral files; ["Ensure TIME header is
     followed by '1' on next line", 'All timestamps must be in format YYYYMMDD.HHMMSS']; Always use timecoding=1
     when writing with to_file1D/to_file2D
   severity: warning
 - id: dt_012
   symptom: Stationary file treated as non-stationary or vice versa. Only first timestep used.
-  diagnosis: TIME header present/absent mismatch with MODE NONSTAT/STAT in .swn; If the .swn file uses
+  diagnosis: 'TIME header present/absent mismatch with MODE NONSTAT/STAT in .swn; If the .swn file uses
     MODE NONSTAT but the spectral file lacks a TIME header (stationary format), SWAN only uses the single
     spectrum for all timesteps. Conversely, if MODE STAT but spectral file has TIME, there may be a format
-    misma
+    mismatch.
+
+    ; [''swan_io'', ''swn_file'']'
   remedy: Match spectral file TIME header with .swn MODE command; ['MODE NONSTAT → spectral file must
     have TIME header', 'MODE STAT → spectral file should be stationary (no TIME header)', 'Use timecoding=None
     in to_file1D/to_file2D for stationary']; Check MODE in .swn and TIME in spectral file before running
@@ -391,7 +400,7 @@ known_issues:
     must fully cover the computational grid (CGRID). If the bottom grid is even slightly smaller, SWAN
     reports an error. The test cases use xpinp=-1 to ensure the bottom grid extends past CGRID origin.
 
-    ; [''con'
+    ; [''convert_bathymetry'', ''swn_file'']'
   remedy: Extend INPGRID BOTTOM to cover or exceed CGRID extent; ['Compare INPGRID and CGRID extents',
     'INPGRID should start at or before CGRID origin', 'INPGRID should end at or past CGRID far corner'];
     Add buffer to INPGRID extents (e.g., 1 cell extra on each side)
@@ -403,36 +412,42 @@ known_issues:
     produces zero or exception values. The TABLE/SPEC output only has valid data within the active wet
     grid.
 
-    ;'
+    ; [''swn_file'']'
   remedy: Verify CURVE coordinates are within CGRID extent; ['CGRID xpc,ypc to xpc+xlenc,ypc+ylenc defines
     the domain', 'All CURVE points must fall within this box']; Auto-generate CURVE from CGRID parameters
   severity: warning
 - id: dt_015
   symptom: SWAN takes extremely long to run. Hours for a simple domain.
-  diagnosis: Grid resolution too fine or COMPUTE time range too long for the timestep; SWAN computation
+  diagnosis: 'Grid resolution too fine or COMPUTE time range too long for the timestep; SWAN computation
     time scales with mx*my*mdc*msc*nsteps. For nearshore domains, a 1m grid with 36 directions, 40 frequencies,
     and hourly output over months can take days. The 1D test cases use coarse resolution and 10-minute
-    si
+    simulations.
+
+    ; [''swn_file'']'
   remedy: 'Reduce grid resolution, frequency/direction bins, or simulation period; [''Start with coarse
     grid (100-500m) for testing'', ''Reduce mdc to 24, msc to 30 for faster runs'', ''Use short COMPUTE
     period for verification'']; Estimate runtime: N_cells × N_dirs × N_freqs × N_steps / 1e6 ≈ seconds'
   severity: warning
 - id: dt_016
   symptom: No wave growth despite strong wind. Hs stays at boundary value everywhere.
-  diagnosis: Wind generation disabled with OFF WINDG; The command 'OFF WINDG' disables wind-wave generation
+  diagnosis: 'Wind generation disabled with OFF WINDG; The command ''OFF WINDG'' disables wind-wave generation
     in SWAN. This is correct for boundary-driven tests (like the PySWaN flume cases) but wrong when wind
     forcing should generate waves. GEN3 enables third-generation physics, but OFF WINDG overrides the
-    wind i
+    wind input component.
+
+    ; [''swn_file'']'
   remedy: Remove 'OFF WINDG' from .swn file; ['Check for OFF WINDG in .swn', 'Ensure GEN3 is present for
     wind-wave generation', 'Ensure WIND command or INPGRID WIND provides wind data']; Only use OFF WINDG
     for boundary-forced simulations without wind
   severity: warning
 - id: dt_017
   symptom: Quadruplet wave-wave interactions unrealistically redistribute energy. Very slow.
-  diagnosis: OFF QUAD not set for simple propagation tests; quadruplets add computation and change spectra;
+  diagnosis: 'OFF QUAD not set for simple propagation tests; quadruplets add computation and change spectra;
     Nonlinear quadruplet wave-wave interactions (Snl4) are enabled by GEN3 and are the most expensive
     SWAN computation. For simple shoaling/propagation tests, they add unnecessary computation and can
-    modify sp
+    modify spectral shape. The PySWaN test cases use ''OFF QUAD'' to disable them.
+
+    ; [''swn_file'']'
   remedy: 'Add ''OFF QUAD'' for simple propagation tests; remove it for full physics; [''For testing:
     add OFF QUAD after GEN3'', ''For production: keep quadruplets enabled (remove OFF QUAD)'']; Document
     whether OFF QUAD is intentional'
@@ -442,17 +457,21 @@ known_issues:
   diagnosis: 'NUM ACCUR tolerances too tight or iteration limit too low; SWAN uses iterative solvers.
     The NUM ACCUR command sets convergence criteria: drel (relative), dhoval (Hs change), dtoval (direction
     change), npnts (% converged), and NONSTAT timestep. If criteria are too strict, SWAN may not converge
-    within'
+    within the iteration limit.
+
+    ; [''swn_file'']'
   remedy: 'Relax NUM ACCUR tolerances or increase iteration limit; [''Default: NUM ACCUR 0.02 0.02 0.02
     100'', ''For difficult cases: NUM ACCUR 0.05 0.05 0.05 95'', ''NONSTAT timestep: reduce to 1-5 minutes
     for nearshore'']; Start with default tolerances; tighten only if needed'
   severity: warning
 - id: dt_019
   symptom: All NaN in energy array. Spectral integration returns NaN for all parameters.
-  diagnosis: Energy array dimensions do not match [t, xy, f, dir] shape; PySWaN's Spec1 and Spec2 classes
+  diagnosis: 'Energy array dimensions do not match [t, xy, f, dir] shape; PySWaN''s Spec1 and Spec2 classes
     require energy arrays with exact shape matching [len(t), max(len(x),len(lon)), len(f), len(direction)].
     If shape is wrong, the constructor initializes energy with NaN and raises an Exception. If caught
-    silen
+    silently, all downstream computations return NaN.
+
+    ; [''oceanwaves.Spec1'', ''oceanwaves.Spec2'']'
   remedy: 'Ensure energy array shape matches [nt, nxy, nf, nd]; [''Check: energy.shape == (len(t), max(len(x),len(lon)),
     len(f), len(direction))'', ''Common fix: wrap scalar/1D arrays in extra list brackets [[data]]''];
     PySWaN raises Exception on dimension mismatch — don''t catch it silently'
@@ -464,26 +483,43 @@ known_issues:
     line. If the parser includes % lines in data, float conversion fails. If it skips too many lines,
     data is missed.
 
-    '
+    ; [''parse_swan_output'', ''parse_table'']'
   remedy: Ensure parser skips all lines starting with % and starts data at first non-% line; ['Open .crv
     file and count header lines (starting with %)', 'Data should start immediately after last % line'];
     parse_table() handles this correctly — use it instead of manual parsing
   severity: warning
 - id: dt_swan_openocean_constant_swell_ceiling
   symptom: Open-ocean deep-water SWAN forced by local buoy wind on a box with a CONSTANT swell open-boundary
-    reaches good wind-sea correlation in calm-swell windows (r~0.70) but full-year Hsig r stays ~0.34
-    / NSE~0.05 against the buoy.
+    reaches good wind-sea correlation in calm-swell windows but full-year Hsig r stays low (around 0.3)
+    and NSE near zero against the buoy.
   diagnosis: A constant climatological swell boundary (BOUN SIDE CONSTANT PAR) adds a near-static swell
     component that cannot create time-varying covariance with the buoy's remotely-propagated swell; full-year
     r is capped by the wind-sea correlation alone. Tuning the constant PAR shifts PBIAS/NSE bias but cannot
+    lift r above ~0.5.
   remedy: 'This is a data limitation, not calibration: impose TIME-VARYING boundary spectra via BOUNDNEST1
     (nesting from a global WW3/WAM hindcast) or time-varying TPAR/BOUNDSPEC. Requires a global directional-wave
-    hindcast covering the site/period; if only NDBC buoy stdmet wind is on disk, the constant-swell '
+    hindcast covering the site/period; if only NDBC buoy stdmet wind is on disk, the constant-swell run
+    is the exhausted-data result. Separately: validate_swn_inputs must skip SWAN OUTPUT commands (TABLE/BLOCK/SPEC/SPECOUT/NESTOUT)
+    — only READ*/BOUNNEST quote required input files; flagging an OUTPUT .crv as a missing input wrongly
+    FAILs preflight (already fixed in tools/run_swan.py lines 98-105).; The remedy WORKS with buoy data
+    alone and no hindcast: a nearby deep-ocean
+
+    NDBC buoy can stand in for the parent model. Build an hourly TPAR from that
+
+    buoy''s WVHT/DPD/MWD with tools/convert_boundary_spectra.convert_to_tpar and
+
+    apply it to the up-wave sides with BOUNDSPEC SIDE ... CONSTANT FILE. The
+
+    scored station must be a DIFFERENT instrument from the boundary station.
+
+    See dt_swan_tpar_file_reopened_by_second_boundspec for the file-per-side rule.'
 - id: dt_swan_tpar_file_reopened_by_second_boundspec
   symptom: "A .swn that applies the SAME time-varying TPAR file to more than one open\nside (BOUNDSPEC\
     \ SIDE W / N / S ... FILE 'bnd.tpar') aborts at command-parse\ntime. PRINT shows, for the SECOND and\
     \ later sides:\n  ** Error        : File is already opened: bnd.tpar\n  ** Severe error : unsupported\
-    \ boundary data "
+    \ boundary data file\nfollowed by \"** No start of computation because of error level: 3\".\nSWAN\
+    \ still exits with return code 0 and writes an EMPTY .crv, so a runner\nthat gates only on the exit\
+    \ status reports success with no data."
   diagnosis: 'SWAN attaches each boundary data file to a dedicated I/O unit and refuses to
 
     reopen a filename that is already attached to another BOUNDSPEC command. One
@@ -499,12 +535,14 @@ known_issues:
 
     shutil.copy it per side. Independently, never trust SWAN''s exit status: gate
 
-    on '
+    on the .crv existing and being non-empty, and keep using
+
+    tools/run_swan.validate_outputs_after_run, which scans PRINT for ERROR.'
 - id: dt_swan_proj_nr_max_4_chars
   symptom: "PROJ 'name' 'run_id' with a run identifier longer than 4 characters\n(e.g. PROJ 'NDBC46050'\
     \ 'ORNEST') prints:\n  ** Error : too long string given for: NR\n  name=NR string=ORNEST\nAlone this\
     \ is only an error-level-2 warning, but it counts against [maxerr]\nand combines with any other error\
-    \ to abort the w"
+    \ to abort the whole run."
   diagnosis: 'The second string of the SWAN PROJ command is the run identifier [nr],
 
     declared CHARACTER*4. The project NAME may be up to 16 characters but [nr]
@@ -528,7 +566,9 @@ known_issues:
 
     silently scrambled (every row shifted, and for a NONSTATIONARY field every
 
-    later time level shifted further), or'
+    later time level shifted further), or the run dies with an unexpected
+
+    end-of-file on the last time level. Nothing in the .bot itself looks wrong.'
   diagnosis: 'interpolate_to_grid built the x axis with np.arange(mx + 1) but the y axis
 
     with np.arange(max(my, 1)), and convert_bathymetry set n_rows = max(my, 1).
@@ -537,7 +577,9 @@ known_issues:
 
     carries (mxinp+1) x (myinp+1) VALUES - the +1 applies to BOTH axes.
 
-    docs/'
+    docs/01_bathymetry_preparation.md repeats the same wrong rule in its
+
+    verification checklist ("Number of values = (mx+1) x max(my,1)").'
   remedy: 'Use (my + 1) rows by (mx + 1) columns for every 2-D SWAN input grid; my == 0
 
     is the 1-D case and still yields exactly one row. Fixed in
@@ -546,7 +588,11 @@ known_issues:
 
     convert_bathymetry n_rows). Verify after writing with
 
-    np.loadtxt(bot).shape == (my+1, mx+1); tools/co'
+    np.loadtxt(bot).shape == (my+1, mx+1); tools/convert_wind_forcing
+
+    validate_outputs asserts the same rule for wind fields
+
+    (n_times * 2 * (my+1) rows by (mx+1) columns).'
 - id: dt_swan_pyswan_not_importable_outside_python_env
   symptom: 'Importing tools/convert_boundary_spectra.py or tools/run_swan.py under the
 
@@ -578,7 +624,7 @@ known_issues:
 
     WVHT values but ZERO wind hours in January-April; its wave record is
 
-    complete '
+    complete all year.'
   diagnosis: 'An NDBC hull can lose its anemometer independently of the wave sensor, so
 
     wave and wind coverage must be checked SEPARATELY per station. Persistence
@@ -594,4 +640,6 @@ known_issues:
 
     caller must do the dropping. One surviving station still gives a spatially
 
-    uni'
+    uniform, time-varying field, which is the validated fallback. A station whose
+
+    wind was dropped may still supply the boundary TPAR from its wave record.'

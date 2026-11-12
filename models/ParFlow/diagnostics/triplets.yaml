@@ -31,11 +31,11 @@
   # COUPLING TRAPS (ParFlow <-> HydroCraft)
   # ============================================================
   # ============================================================
-  # VALIDATED ERRORS FROM CHAOHE TEST (2026-03-22)
+  # ERRORS FOUND IN REAL-BASIN TESTS (where and when: each entry's seen_at)
   # Promoted from error_log err_001 through err_006
   # ============================================================
   # ============================================================
-  # BENGBU VALIDATION TRIPLETS (discovered 2026-03-22)
+  # MORE ERRORS FOUND IN REAL-BASIN TESTS (where and when: each entry's seen_at)
   # ============================================================
 
 - id: dt_pf_001
@@ -747,7 +747,7 @@
     prevention: generate_parflow_script.py must use BCPressure.Type, never Solver.OverlandKinematic
   cross_references:
   - dt_pf_v004
-  validated_in: chaohe_parflow_test
+  seen_at: "2026-03-22, Chaohe (run chaohe_parflow_test)"
 - id: dt_pf_v005
   severity: fatal
   failure_domain: domain_setup
@@ -770,7 +770,7 @@
 
       error or warning, but silently produces a single-layer simulation regardless
 
-      of NZ setting. This was confirmed in the Chaohe basin test: 5-layer runs with
+      of NZ setting. This was confirmed in a real-basin test: 5-layer runs with
 
       nzList showed valid data only in layer 0, while uniform DZ correctly activated
 
@@ -795,7 +795,7 @@
     prevention: generate_parflow_script.py must not combine Box geometry with dzScale nzList
   cross_references:
   - dt_pf_014
-  validated_in: chaohe_cmfd_july2005
+  seen_at: "2026-03-22, Chaohe (run chaohe_cmfd_july2005)"
 - id: dt_pf_v002
   severity: fatal
   failure_domain: missing_key
@@ -831,7 +831,7 @@
     prevention: generate_parflow_script.py must include PhaseSources block. Also add KnownSolution = NoKnownSolution.
   cross_references:
   - dt_pf_v003
-  validated_in: chaohe_parflow_test
+  seen_at: "2026-03-22, Chaohe (run chaohe_parflow_test)"
 - id: dt_pf_v003
   severity: fatal
   failure_domain: api_usage
@@ -872,7 +872,7 @@
     prevention: generate_parflow_script.py must output Cycle block before BCPressure block
   cross_references:
   - dt_pf_v004
-  validated_in: chaohe_parflow_test
+  seen_at: "2026-03-22, Chaohe (run chaohe_parflow_test)"
 - id: dt_pf_v004
   severity: degraded
   failure_domain: api_usage
@@ -917,7 +917,7 @@
   cross_references:
   - dt_pf_v001
   - dt_pf_v003
-  validated_in: chaohe_parflow_test
+  seen_at: "2026-03-22, Chaohe (run chaohe_parflow_test)"
 - id: dt_pf_v006
   severity: silent
   failure_domain: scale_mismatch
@@ -958,7 +958,7 @@
     prevention: define_parflow_domain.py should warn when DX > 5000m for overland flow runs
   cross_references:
   - dt_pf_012
-  validated_in: bengbu_parflow_test_v1_v2_v3
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v1_v2_v3)"
 - id: dt_pf_v007
   severity: silent
   failure_domain: unit_conversion
@@ -1003,7 +1003,7 @@
     prevention: build_subsurface_properties.py should use Rosetta/Carsel, flag VIC Ksat as incompatible
   cross_references:
   - dt_pf_001
-  validated_in: bengbu_parflow_test_v1
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v1)"
 - id: dt_pf_v008
   severity: silent
   failure_domain: ic_setup
@@ -1044,7 +1044,7 @@
     prevention: generate_initial_conditions.py should auto-adjust Value for bottom RefPatch
   cross_references:
   - dt_pf_004
-  validated_in: bengbu_parflow_test_v1_v2
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v1_v2)"
 - id: dt_pf_v009
   severity: silent
   failure_domain: boundary_setup
@@ -1089,7 +1089,7 @@
     prevention: generate_parflow_script.py should auto-detect outlet direction from slope
   cross_references:
   - dt_pf_012
-  validated_in: bengbu_parflow_test_v2_v3
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v2_v3)"
 - id: dt_pf_v010
   severity: degraded
   failure_domain: parameter_choice
@@ -1131,7 +1131,7 @@
     prevention: build_subsurface_properties.py should recommend depth based on soil texture
   cross_references:
   - dt_pf_v007
-  validated_in: bengbu_parflow_test_v4_v5
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v4_v5)"
 - id: dt_pf_v011
   severity: silent
   failure_domain: pedotransfer
@@ -1174,7 +1174,7 @@
   cross_references:
   - dt_pf_v007
   - dt_pf_001
-  validated_in: bengbu_parflow_test_v1
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v1)"
 - id: dt_pf_v012
   severity: degraded
   failure_domain: domain_setup
@@ -1219,4 +1219,4 @@
     prevention: Pipeline should default to spatially variable properties; uniform only for testing
   cross_references:
   - dt_pf_012
-  validated_in: bengbu_parflow_test_v2_v3
+  seen_at: "2026-03-22, Bengbu (run bengbu_parflow_test_v2_v3)"

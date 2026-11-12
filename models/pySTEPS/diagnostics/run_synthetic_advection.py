@@ -11,6 +11,10 @@ This exercises the real pysteps code paths (proesmans motion, extrapolation
 nowcast, det_cat_fct, fss). It is not a scientific skill-score benchmark.
 
 Writes a test-result JSON to the path given by $OUTPUT_JSON (default: ./tester_result.json).
+last_run.json and the default tester_result.json go to the current dir, or to a
+temp dir if the current dir is inside the KI (the KI is read-only).
+A relative $OUTPUT_JSON is placed in that same folder; a path inside the KI is moved
+to that same folder too (same file name, note on stderr).
 """
 from __future__ import annotations
 
@@ -87,8 +91,12 @@ def synth_sequence(
 
 
 def main() -> int:
-    out_dir = Path(__file__).resolve().parent
-    ki_dir = out_dir.parent
+    ki_real = Path(__file__).resolve().parent.parent
+    out_dir = Path.cwd().resolve()
+    if out_dir == ki_real or ki_real in out_dir.parents:
+        import tempfile
+        out_dir = Path(tempfile.mkdtemp(prefix="pysteps_diag_"))
+    print(f"[run_synthetic_advection] writing last_run.json to {out_dir}", file=sys.stderr)
     t_start = time.time()
 
     n_past = 4
@@ -188,7 +196,13 @@ def main() -> int:
             }
         ],
     }
-    tester_path = os.environ.get("OUTPUT_JSON", str(ki_dir / "tester_result.json"))
+    tester_path = Path(os.environ.get("OUTPUT_JSON", "tester_result.json"))
+    tester_path = (out_dir / tester_path).resolve()  # relative OUTPUT_JSON is taken from out_dir
+    if tester_path == ki_real or ki_real in tester_path.parents:
+        # The KI is read-only: put the file in out_dir (outside the KI) instead.
+        tester_path = out_dir / (tester_path.name or "tester_result.json")
+        print(f"[run_synthetic_advection] OUTPUT_JSON is inside the KI; writing {tester_path} instead",
+              file=sys.stderr)
     with open(tester_path, "w") as f:
         json.dump(tester, f, indent=2)
 

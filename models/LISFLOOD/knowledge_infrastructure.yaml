@@ -12,7 +12,7 @@ package:
   scientific_reference_version: EC-JRC LISFLOOD (Van Der Knijff et al. 2010; Burek et al. 2013 Revised
     User Manual, JRC EUR 26162 EN) — distributed rainfall-runoff core of EFAS/GloFAS
   binary:
-    path: KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood
+    path: KISSPATH_HOME/miniconda3/envs/lisflood_pd2/bin/lisflood
     type: work_dir
 pipeline:
   stages: []

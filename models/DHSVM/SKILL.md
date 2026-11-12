@@ -188,13 +188,13 @@ Source for this section: `dag.yaml`. If this section and `dag.yaml` disagree,
 
 **Headline output** (`validation_rank: 1`):
 
-> `Streamflow` — Channel discharge per stream segment at network outlets (`m3/s`)
+> `Streamflow` — Water volume leaving each saved stream segment in one model time step (`m3` per model step, not m3/s; m3/s = value / step length in seconds)
 
 ### Output Unit Table
 
 | Output variable (dag `var`) | Unit | Description / status |
 |-----------------------------|------|----------------------|
-| `Streamflow` | `m3/s` | Channel discharge per stream segment at network outlets |
+| `Streamflow` | `m3` (per model step) | Water volume leaving each saved stream segment in one model time step; m3/s = value / (Time Step hours x 3600) |
 | `Swq` | see `dag.yaml` | dag output |
 | `TotalET` | see `dag.yaml` | dag output |
 | `SoilMoist` | see `dag.yaml` | dag output |
@@ -237,6 +237,10 @@ and `diagnostics/triplets.yaml`.
 | Elevation (DEM) | feet | m | `ft * 0.3048` | dt_009 |
 | Slope | degrees | radians | `deg * pi/180` | dt_010 |
 | Lapse Rate | C/km | C/m | `C/km / 1000` | dt_011 |
+
+This table is for model INPUTS. The model OUTPUT goes the other way:
+Stream.Flow OUTFLOW is m3 per model step; to compare it with a gauge in m3/s use
+`m3/s = OUTFLOW / (dt_hr * 3600)`.
 
 ---
 
@@ -417,12 +421,24 @@ Date,Precip(m),Snow(m),IExcess(m),HasSnow,Swq,Melt,ET,...
 
 ### 8.2 Stream.Flow
 
-Tab-separated stream discharge per segment:
+One row per saved segment per MODEL time step (space-separated), plus one
+network `Totals` row per step with a different column order:
 
 ```
-TIMESTAMP  SEGMENT_ID  FLOW(m3/s)  ...  "NAME"
-10.01.1970-00:00:00  0  0.00034  15  0  0  15  "Totals"
+DATE  SEGMENT_ID  INFLOW  LATERAL_INFLOW  OUTFLOW  STORAGE_CHANGE  "NAME"
+DATE  0  TOTAL_LATERAL_INFLOW  TOTAL_OUTFLOW  TOTAL_STORAGE  STORAGE_CHANGE  ERROR  "Totals"
 ```
+
+INFLOW, LATERAL_INFLOW, OUTFLOW and the storage-change columns are water
+VOLUMES in m3 per model step (channel.c: `outflow * deltat`), not m3/s;
+TOTAL_STORAGE is the m3 held in the channels. For gauge comparison use the
+OUTFLOW column (5th field) of the gauge segment rows and skip the `Totals`
+rows; m3/s = OUTFLOW / (Time Step hours x 3600). `Streamflow.Only` holds the
+same OUTFLOW values, one column per saved segment. Only segments flagged
+`SAVE "name"` in the stream network file are written. With no channel
+network (unit hydrograph mode) Stream.Flow is instead one m3/s value per step.
+The first model step writes only a `Totals` row (no segment rows), so expect
+(steps - 1) rows per saved segment.
 
 ### 8.3 Mass.Balance
 
@@ -550,7 +566,8 @@ python tools/parse_output.py \
 
 # 6. Validate against observations
 python tools/parse_output.py \
-  --aggregated output/Aggregated.Values \
+  --streamflow output/Stream.Flow \
+  --segment <SAVE name of the gauge segment> \
   --observed /path/to/obs_streamflow.csv \
   --metrics nse,kge,pbias \
   --output validation.json

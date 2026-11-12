@@ -529,7 +529,7 @@
       layers; do NOT run with initial_snowheight=0 on a 1x1 point column.
   format_spec_violated: none (model robustness bug in surfaceTemperature.py, not a format-spec violation)
   canonical_intent: ki_local_if_pass
-  added_by_run: COSIPY_retry1
+  seen_at: "date not recorded, run COSIPY_retry1"
 - id: dt_022
   symptom:
     error_pattern: 'OSError: [Errno -101] NetCDF: HDF error'
@@ -550,7 +550,7 @@
       open helper (default -> h5netcdf -> netcdf4). Just use the system python3 — no special venv needed.
   format_spec_violated: none (environment/backend regression, not a format-spec violation)
   canonical_intent: ki_local_if_pass
-  added_by_run: COSIPY_verify_20260621
+  seen_at: "2026-06-21, run COSIPY_verify_20260621"
 - id: dt_023
   symptom:
     error_pattern: 'ERROR: Input file not found: ./data/input/.*'
@@ -571,4 +571,4 @@
       absolute data_path in config.toml or run from inside source_dir.)
   format_spec_violated: none (tool path-resolution bug)
   canonical_intent: ki_local_if_pass
-  added_by_run: COSIPY_real_case_20260622_mtfidelity
+  seen_at: "2026-06-22, run COSIPY_real_case_20260622_mtfidelity"

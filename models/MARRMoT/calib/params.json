@@ -1,0 +1,7 @@
+{
+  "_comment": "MARRMoT m_07_gr4j_4p_2s theta, addressed per-scalar by calibration.yaml (json_path). Seeded with the validated Bengbu-51080 calibrated theta so a default-param calib_run reproduces the validated NSE 0.7516; the kit tunes these in place.",
+  "x1": 395.385601,
+  "x2": 2.733195,
+  "x3": 145.275789,
+  "x4": 6.523232
+}

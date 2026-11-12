@@ -55,7 +55,7 @@ assert 'mean_scores' in scores
 PY
 ```
 
-For a fully offline analytical check, run `python3 diagnostics/run_synthetic_advection.py`; it uses `pysteps.verification.det_cat_fct` and `pysteps.verification.fss` directly and writes `diagnostics/last_run.json`.
+For a fully offline analytical check, run `python3 diagnostics/run_synthetic_advection.py`; it uses `pysteps.verification.det_cat_fct` and `pysteps.verification.fss` directly and writes `last_run.json` into the current folder (a temp folder if started inside the KI).
 
 ## Traps
 
@@ -67,12 +67,12 @@ For a fully offline analytical check, run `python3 diagnostics/run_synthetic_adv
 ## Example
 
 ```bash
-cd KISSPATH_KI_ROOT/pySTEPS/knowledge_infrastructure
-python3 diagnostics/run_synthetic_advection.py
+mkdir -p ~/pysteps_diag && cd ~/pysteps_diag   # work folder outside the KI (the KI is read-only)
+python3 KISSPATH_KI_ROOT/pySTEPS/knowledge_infrastructure/diagnostics/run_synthetic_advection.py
 python3 - <<'PY'
 import json
 from pathlib import Path
-p = Path('diagnostics/last_run.json')
+p = Path('last_run.json')
 run = json.loads(p.read_text())
 print(run['mean_CSI'], run['mean_FSS'])
 PY

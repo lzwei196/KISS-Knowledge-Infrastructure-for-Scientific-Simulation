@@ -1,0 +1,38 @@
+;;; main_template.dai -- US-Ne3 maize ET simulation, one target year.
+;;; calib_run.py substitutes __SPINUP_START__ and __STOP_YEAR__ per run.
+;;; Pipeline reproduces the validated real case: 1-year spinup + 1 maize
+;;; season, daily Actual evapotranspiration logged to field_water.dlf and
+;;; compared with FLUXNET US-Ne3 energy-balance-closed LE_CORR.
+
+(input file "fertilizer.dai")
+(input file "crop.dai")    ; pulls in maize.dai (Maize / Silage Maize)
+(input file "tillage.dai")
+(input file "log-std.dai")
+(input file "usne3_soil.dai")
+(input file "crop_params.dai")
+
+;; One maize season, repeated each year (covers spinup + target year).
+(defaction "Ne3 Maize Season" activity
+  (wait_mm_dd 4 20)
+  (plowing)
+  (fertilize (AmmoniumNitrate (weight 180 [kg N/ha])))
+  (wait_mm_dd 5 5)
+  (seed_bed_preparation)
+  (sow "Ne3 Maize")
+  (wait (or (crop_ds_after "Ne3 Maize" 2.0)
+            (mm_dd 10 25)))
+  (harvest "Ne3 Maize" (stub 10 [cm]) (stem 0.9) (leaf 0.9) (sorg 1.0))
+  (wait_mm_dd 11 15))
+
+(defprogram "Ne3 ET" Daisy
+  "US-Ne3 rainfed maize ET, FLUXNET verifier."
+  (column "Ne3")
+  (weather default "usne3.dwf")
+  (time __SPINUP_START__ 1 2 1)
+  (stop __STOP_YEAR__ 12 31 23)
+  (manager activity (repeat "Ne3 Maize Season"))
+  (output ("Field water" (when daily))))
+
+(run "Ne3 ET")
+
+;;; main_template.dai ends here

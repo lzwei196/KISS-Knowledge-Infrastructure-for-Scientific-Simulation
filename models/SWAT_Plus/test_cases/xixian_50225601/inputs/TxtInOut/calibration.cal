@@ -1,0 +1,5 @@
+calibration.cal: written by SWAT+ knowledge infrastructure
+2
+NAME          CHG_TYP             VAL    CONDS     LYR1     LYR2    YEAR1    YEAR2     DAY1     DAY2  OBJ_TOT
+cn2           absval           25.000        0        0        0        0        0        0        0        0
+esco          absval            0.150        0        0        0        0        0        0        0        0

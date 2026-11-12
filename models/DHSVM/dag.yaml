@@ -382,8 +382,8 @@ states:
 outputs:
   - var: "Streamflow"
     validation_rank: 1
-    unit: "m3/s"
-    description: "Channel discharge per stream segment at network outlets"
+    unit: "m3"
+    description: "Water volume leaving each saved stream segment in one model time step (m3 per step, not m3/s; m3/s = value / step length in seconds)"
     emitted_in: "Stream.Flow"
     observability:
       comparable_obs_shapes:
@@ -393,6 +393,7 @@ outputs:
           determining_metric: "nse"
           caveats:
             - "Gauge location must map to the correct stream segment ID"
+            - "Stream.Flow values are m3 per model step: divide by the step length in seconds before comparing with gauge m3/s"
             - "Skip the spin-up period; first year(s) reflect initialization"
       detrending_options: ["none"]
   - var: "Swq"

@@ -1,0 +1,22 @@
+ovn_table.lum: written by SWAT+ editor v1.0.0 on 2018-11-29 16:24
+name                  ovn_mean       ovn_min       ovn_max  description
+fallow_nores           0.01000       0.00800       0.01200  Fallow_no_residue
+convtill_nores         0.09000       0.06000       0.12000  Conventional_tillage_no_residue
+convtill_res           0.19000       0.16000       0.22000  Conventional_tillage_residue
+chisplow_nores         0.09000       0.06000       0.12000  Chisel_plow_no_residue
+chisplow_res           0.13000       0.10000       0.16000  Chisel_plow_residue
+falldisk_res           0.40000       0.30000       0.50000  Fall_disking_residue
+notill_nores           0.07000       0.04000       0.10000  No_till_no_residue
+notill_0.5-1res        0.12000       0.07000       0.17000  No_till_0.5-1_t/ha_residue
+notill_2-9res          0.30000       0.17000       0.47000  No_till_2-9_t/ha_residue
+range_sparse           0.13000       0.13000       0.13000  Rangeland_sparse_cover
+range_20cover          0.60000       0.60000       0.60000  Rangeland_20%_cover
+shortgrass             0.15000       0.10000       0.20000  Short_grass_prairie
+densegrass             0.24000       0.17000       0.30000  Dense_grass
+bermudagrass           0.41000       0.30000       0.48000  Bermudagrass
+forest_light           0.40000       0.30000       0.50000  Forest_light_fair
+forest_med             0.60000       0.50000       0.70000  Forest_medimum_good
+forest_heavy           0.80000       0.70000       0.90000  Forest_heavy
+urban_asphalt          0.11000       0.11000       0.11000  Urban_asphalt
+urban_concrete         0.01200       0.01200       0.01200  Urban_concrete
+urban_rubble           0.02400       0.02400       0.02400  Urban_rubble

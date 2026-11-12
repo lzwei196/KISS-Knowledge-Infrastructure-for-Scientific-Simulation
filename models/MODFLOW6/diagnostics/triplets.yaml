@@ -42,11 +42,11 @@
   # --- dt_mf6_014: IDOMAIN not set for basin boundary ---
   # --- dt_mf6_015: Budget sign convention error in coupling ---
   # ===========================================================================
-  # VERIFIED ERRORS (found during HydroCraft integration testing 2026-03-19)
+  # ERRORS FOUND IN INTEGRATION TESTS (when: each entry's seen_at)
   # ===========================================================================
   # --- dt_mf6_016: RIV rbot below cell bottom ---
   # ===========================================================================
-  # VERIFIED ERRORS (found during re-validation 2026-03-22)
+  # MORE ERRORS FOUND IN RE-VALIDATION (when: each entry's seen_at)
   # ===========================================================================
   # --- dt_mf6_017: FloPy strt/sy array is 2D not 3D ---
 
@@ -366,7 +366,7 @@
     explanation: 'Owner rule 2026-10-02: a model KI builds its input straight from the data source with
       its own KI tool, never from another model''s input or setup files. The VIC soil file is a VIC setup
       product; its column layout depends on the VIC options, so a fixed column index can read a different
-      parameter with no error. The option was removed; nothing on this server called it.
+      parameter with no error. The option was removed.
 
       '
     affected_components:
@@ -391,7 +391,7 @@
   cross_references:
   - dt_mf6_004
   - dt_v004
-  verified: '2026-10-03'
+  seen_at: "2026-10-03"
 - id: dt_mf6_011
   stage: s5_stress_periods
   failure_domain: dependency_mismatch
@@ -580,7 +580,7 @@
     prevention: extract_heads and extract_budget tools always try double first, fall back to single
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_mf6_016
   stage: s4_boundary_conditions
   failure_domain: parameter_format
@@ -617,6 +617,7 @@
   severity: fatal
   cross_references:
   - dt_mf6_005
+  seen_at: "2026-03-19"
 - id: dt_v002
   stage: s7_execution
   failure_domain: environment
@@ -649,7 +650,7 @@
   severity: fatal
   cross_references:
   - dt_mf6_007
-  verified: '2026-03-22'
+  seen_at: "2026-03-22"
 - id: dt_v003
   stage: s6_solver
   failure_domain: runtime
@@ -676,7 +677,7 @@
   cross_references:
   - dt_mf6_001
   - dt_mf6_009
-  verified: '2026-03-22'
+  seen_at: "2026-03-22"
 - id: dt_v004
   stage: s3_layer_properties
   failure_domain: silent_error
@@ -705,7 +706,7 @@
   severity: silent
   cross_references:
   - dt_mf6_010
-  verified: '2026-03-22'
+  seen_at: "2026-03-22"
 - id: dt_v005
   stage: s4_boundary_conditions
   failure_domain: silent_error
@@ -732,7 +733,7 @@
   severity: silent
   cross_references:
   - dt_mf6_003
-  verified: '2026-03-22'
+  seen_at: "2026-03-22"
 - id: dt_mf6_017
   stage: s5_stress_periods
   failure_domain: parameter_format
@@ -768,6 +769,7 @@
   severity: fatal
   cross_references:
   - dt_mf6_005
+  seen_at: "2026-03-22"
 - id: dt_mf6_018
   stage: s2_grid_discretization
   failure_domain: dependency_mismatch
@@ -783,8 +785,7 @@
       it. create_grid_from_basin.py only printed a JSON summary and wrote no NetCDF.
     explanation: 'The s2/s3/s4 tools only need the cell-centre lat/lon axes and an active mask. Taking them
       from VIC''s basin_grid.nc made MODFLOW depend on running VIC''s setup first (owner rule 2026-10-02:
-      a KI builds its input straight from the data source with its own tool). The FrenchPiezo run scripts
-      worked around it with an inline build_grid_nc().
+      a KI builds its input straight from the data source with its own tool).
 
       '
     affected_components:
@@ -801,13 +802,12 @@
       <case>/grid.nc'
     - Check the printed JSON (nrow, ncol, active_cells) before s2 layers
     - The file is NETCDF3_64BIT with lat (row 0 = north), lon and mask (int32); mask becomes IDOMAIN
-    prevention: 'Never point --grid_nc at a VIC setup file. Verified 2026-10-03: the tool''s box output for
-      the FrenchPiezo 30x40 box is byte-identical to the inline grid the run scripts used.'
+    prevention: Never point --grid_nc at a VIC setup file.
   severity: fatal
   cross_references:
   - dt_mf6_005
   - dt_mf6_019
-  verified: '2026-10-03'
+  seen_at: "2026-10-03, FrenchPiezo case"
 - id: dt_mf6_019
   stage: s2_grid_discretization
   failure_domain: protocol_gap
@@ -818,7 +818,7 @@
     error_pattern: ''
     detection_method: manual_review
   diagnosis:
-    root_cause: The validated Bengbu chain was first built on top of VIC's setup files and the table
+    root_cause: The validated chain was first built on top of VIC's setup files and the table
       recorded those files as the source of the grid and of Layer-1 K.
     explanation: 'The table is the first thing an agent copies. Sources in it must be the data sources
       themselves (grid from the basin outline or a lat/lon box, K from HWSD / GLHYMPS), not another
@@ -842,4 +842,4 @@
   cross_references:
   - dt_mf6_010
   - dt_mf6_018
-  verified: '2026-10-03'
+  seen_at: "2026-10-03, Bengbu case"

@@ -8,6 +8,7 @@ import os
 import py_compile
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -123,13 +124,14 @@ def check_binary_starts(checks: list[dict], binary: Path) -> bool:
     if not binary.is_file() or not os.access(binary, os.X_OK):
         return False
     try:
-        result = subprocess.run(
-            [str(real_binary), "--version"],
-            cwd=str(KI_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(real_binary), "--version"],
+                cwd=tmp_cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
         output = (result.stdout + result.stderr).strip()
         passed = result.returncode == 0 and "mf6" in output.lower()
         reason = output.splitlines()[0] if output else f"exit code {result.returncode}"
@@ -147,7 +149,8 @@ def check_binary_starts(checks: list[dict], binary: Path) -> bool:
 def check_tool_syntax(checks: list[dict], tool: Path) -> bool:
     subject = str(tool.resolve() if tool.exists() else tool)
     try:
-        py_compile.compile(str(tool), doraise=True)
+        with tempfile.TemporaryDirectory() as pyc_tmp:  # keep __pycache__ out of the KI
+            py_compile.compile(str(tool), cfile=os.path.join(pyc_tmp, "check.pyc"), doraise=True)
         passed = True
         reason = ""
     except Exception as exc:

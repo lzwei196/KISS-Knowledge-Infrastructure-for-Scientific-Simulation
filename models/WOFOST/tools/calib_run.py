@@ -75,7 +75,9 @@ import json
 import logging
 import math
 import os
+import shutil
 import sys
+sys.dont_write_bytecode = True  # importing KI tools must not write __pycache__ into the KI
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KI = os.path.dirname(HERE)
@@ -255,6 +257,13 @@ def resolve_obs(cache_dir):
     `case_id` / `scored_obs` are derived from THIS record, so the self-declaration
     cannot diverge from what was scored."""
     cache = os.path.join(cache_dir, "spam_obs.json")
+    seed = _seed_root()
+    if seed and not os.path.exists(cache) and os.path.isfile(os.path.join(seed, "spam_obs.json")):
+        try:                                               # KI copy is only read
+            os.makedirs(cache_dir, exist_ok=True)
+            shutil.copyfile(os.path.join(seed, "spam_obs.json"), cache)
+        except OSError:
+            pass                                           # then SPAM is re-read as before
     rec = None
     if os.path.isfile(cache):
         try:
@@ -307,15 +316,57 @@ def resolve_split():
 # ---------------------------------------------------------------------------
 # PREPARE — site-invariant inputs (forcing + soil), built once, reused by every eval
 # ---------------------------------------------------------------------------
-def cache_root():
-    """Persistent cache for the site-invariant inputs. Never holds obs identity —
-    the obs envelope is re-asserted against the pinned constants on every eval."""
+def _in_ki(path):
+    """True if path is the KI or inside it (the KI is read-only)."""
+    ki = os.path.realpath(KI)
+    real = os.path.realpath(path)
+    return real == ki or real.startswith(ki + os.sep)
+
+
+def _seed_root():
+    """Read-only source for missing cache files: a KI-local KDT_CALIB_WOFOST_CACHE
+    (the cache the user picked), else the old KI cache; None for an outside override
+    (that cache is used as is)."""
     env = os.environ.get("KDT_CALIB_WOFOST_CACHE")
     if env:
+        return os.path.abspath(env) if _in_ki(env) else None
+    return os.path.join(KI, ".calib_cache", "OBS_spam2020_corn_belt")
+
+
+def _ki_source_hash():
+    """Short hash of a KI-local KDT_CALIB_WOFOST_CACHE (its full real path), else None
+    (outside override or no override: original names and folders are kept)."""
+    env = os.environ.get("KDT_CALIB_WOFOST_CACHE")
+    if env and _in_ki(env):
+        import hashlib
+        return hashlib.sha256(os.path.realpath(env).encode()).hexdigest()[:12]
+    return None
+
+
+def cache_root(workdir=None):
+    """Persistent cache for the site-invariant inputs. Never holds obs identity —
+    the obs envelope is re-asserted against the pinned constants on every eval.
+    Lives under the run's --workdir (never inside the KI: the KI is read-only)."""
+    env = os.environ.get("KDT_CALIB_WOFOST_CACHE")
+    sub = None
+    if env and _in_ki(env):
+        # One outside folder per picked KI cache (short hash of its full path), so
+        # files copied from cache A are never reused when cache B is picked.
+        sub = "ki_" + _ki_source_hash()
+        print(f"[calib_run] KDT_CALIB_WOFOST_CACHE {env} is inside the KI (read-only); "
+              f"using an outside cache '{sub}' and copying its files from there",
+              file=sys.stderr)
+        env = None
+    if env:
         return os.path.abspath(env)
-    for cand in (os.path.join(KI, ".calib_cache", "OBS_spam2020_corn_belt"),
+    for cand in ((os.path.join(workdir, ".calib_cache", "OBS_spam2020_corn_belt")
+                  if workdir else None),
                  os.path.join(os.path.expanduser("~"), ".cache", "kdt_wofost_calib",
                               "OBS_spam2020_corn_belt")):
+        if cand is None:
+            continue
+        if sub:
+            cand = os.path.join(cand, sub)
         try:
             os.makedirs(cand, exist_ok=True)
             probe = os.path.join(cand, ".w")
@@ -361,8 +412,22 @@ def ensure_cell_inputs(cache_dir, lat, lon, s2, s3):
     # called "weather_pcse.csv" all 15 cells silently load the FIRST cell's weather
     # (observed: every cell returned an identical yield). The validated real-case
     # runner dodged this only because it regenerated each CSV immediately before use.
-    wx = os.path.join(cdir, f"weather_pcse_{lat:.2f}_{lon:.2f}.csv")
+    wx_name = f"weather_pcse_{lat:.2f}_{lon:.2f}.csv"     # name in the KI source cache
+    # A relocated KI cache also puts its source hash in the file NAME: PCSE's pickle
+    # cache is keyed on the basename only, so cache A, then B, then A again with the
+    # same name could load B's weather. External overrides / default keep the name.
+    h = _ki_source_hash()
+    wx = os.path.join(cdir, wx_name if h is None
+                      else f"weather_pcse_{lat:.2f}_{lon:.2f}_{h}.csv")
     soil = os.path.join(cdir, "soil.json")
+    # Reuse inputs an older run already cached inside the KI: copy them (read-only
+    # source, never written) into this workdir cache; the checks below still apply.
+    seed = _seed_root()
+    for dst, name in ((wx, wx_name), (soil, "soil.json")):
+        src = os.path.join(seed or cdir, "cells", f"{lat:.2f}_{lon:.2f}", name)
+        if seed and not os.path.exists(dst) and os.path.isfile(src):
+            os.makedirs(cdir, exist_ok=True)
+            shutil.copyfile(src, dst)
     if not os.path.isfile(wx):
         os.makedirs(cdir, exist_ok=True)
         # ONE stage tool: shared loader -> PCSE CSV (W/m2 x86.4 -> kJ/m2/day, RAIN
@@ -386,7 +451,21 @@ def ensure_cell_inputs(cache_dir, lat, lon, s2, s3):
     if not os.path.isfile(soil):
         os.makedirs(cdir, exist_ok=True)
         s2.LAT, s2.LON = lat, lon
-        params = s2.process()
+        # s2.process() writes <SOIL_PARAMS_JSON or OUTPUT_JSON>.provenance.json; if that
+        # lands in the KI, point it at the same file name under cdir for this call only.
+        _sp_old = os.environ.get("SOIL_PARAMS_JSON")
+        _sp_out = _sp_old or os.environ.get("OUTPUT_JSON")
+        _sp_move = bool(_sp_out) and _in_ki(str(_sp_out) + ".provenance.json")
+        if _sp_move:
+            os.environ["SOIL_PARAMS_JSON"] = os.path.join(cdir, os.path.basename(str(_sp_out)))
+        try:
+            params = s2.process()
+        finally:
+            if _sp_move:
+                if _sp_old is None:
+                    os.environ.pop("SOIL_PARAMS_JSON", None)
+                else:
+                    os.environ["SOIL_PARAMS_JSON"] = _sp_old
         with open(soil, "w") as fh:
             json.dump(params, fh, indent=2)
     with open(soil, "r") as fh:                                  # read-only
@@ -626,7 +705,7 @@ def _run_cell_year(s6, wx, soil, agro, out_csv):
 
 def evaluate(workdir):
     req, handed = read_requested_params()
-    cdir = cache_root()
+    cdir = cache_root(workdir)
     obs = resolve_obs(cdir)                       # + full envelope assertion
     split = resolve_split()
     cells = select_split(obs["cells"], split)
@@ -728,8 +807,17 @@ def main():
         logging.disable(logging.INFO)
 
     try:
+        workdir = os.path.abspath(args.workdir)
+        if _in_ki(workdir):
+            # cwd-or-temp rule: a new folder under the current dir, or a temp dir if cwd is in the KI
+            import tempfile
+            _moved = tempfile.mkdtemp(prefix="wofost_calib_",
+                                      dir=None if _in_ki(os.getcwd()) else os.getcwd())
+            print(f"[calib_run] --workdir {workdir} is inside the KI (read-only); using {_moved}",
+                  file=sys.stderr)
+            workdir = _moved
         if args.prepare:
-            cdir = cache_root()
+            cdir = cache_root(workdir)
             obs = resolve_obs(cdir)
             s2 = _load_tool("kdt_s2", "s2_soil_params", "convert_hwsd_to_pcse_soil.py")
             s3 = _load_tool("kdt_s3", "s3_weather_prep", "build_pcse_weather_from_source.py")
@@ -740,14 +828,20 @@ def main():
             return 0
         if not args.out:
             ap.error("--out is required unless --prepare")
-        metrics = evaluate(os.path.abspath(args.workdir))
+        out_path = os.path.abspath(args.out)
+        if _in_ki(out_path):
+            _moved = os.path.join(workdir, os.path.basename(out_path))
+            print(f"[calib_run] --out {out_path} is inside the KI (read-only); using {_moved}",
+                  file=sys.stderr)
+            out_path = _moved
+        metrics = evaluate(workdir)
     except Exception as e:                       # NO metrics file, non-zero exit -> +inf
         print(f"calib_run FAILED: {type(e).__name__}: {e}", file=sys.stderr)
         if args.verbose:
             import traceback
             traceback.print_exc()
         return 2
-    with open(args.out, "w") as fh:
+    with open(out_path, "w") as fh:
         json.dump(metrics, fh, indent=1)
     print(json.dumps({k: v for k, v in metrics.items() if k != "__kdt__"}, indent=1))
     return 0

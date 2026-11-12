@@ -11,14 +11,14 @@ from ki_tools_common.metrics import all_metrics
 BASE = "KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/outputs/belly_verify/crhm"
 PRJ  = os.path.join(BASE, "belly_tuned.prj")
 CRHM = "KISSPATH_KI_ROOT/CRHM/bin/crhm"
-OUT  = os.path.join(BASE, "output_verify2.txt")
 OBS  = "KISSPATH_OBS/belly_river/observed_05AD005.txt"
 STATE = "KISSPATH_KI_ROOT/CRHM/detached/verify_2"
+OUT  = os.path.join(STATE, "output_verify2.txt")   # run output outside the KI (KI is read-only)
 os.makedirs(STATE, exist_ok=True)
 
 # 1. run model (resumable)
 if not (os.path.exists(OUT) and os.path.getsize(OUT) > 1_000_000):
-    subprocess.run([CRHM, PRJ, "-o", OUT], check=True, cwd=BASE)
+    subprocess.run([CRHM, PRJ, "-o", OUT], check=True, cwd=STATE)  # KI read-only; .prj obs path is absolute
 
 # 2. parse sim: hourly basinflow(1) m3/int -> daily mean m3/s
 df = pd.read_csv(OUT, sep="\t", skiprows=[1])

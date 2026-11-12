@@ -191,7 +191,9 @@ def test_unknown_or_ambiguous_contract_is_never_inferred(tmp_path, key, value):
 
 
 def test_real_case_faithful_date_only_and_first_campaign_bytes(tmp_path):
-    case = Path(__file__).resolve().parents[2] / "models/WOFOST/outputs/wangjiaba"
+    # WOFOST's 2026 Wangjiaba case inputs, kept here since main dropped the case
+    # run (outputs/wangjiaba) from the KI package.
+    case = Path(__file__).resolve().parent / "fixtures/wofost_wangjiaba"
     weather_source = case / "weather_wangjiaba.csv"
     agro_source = case / "agro_maize.yaml"
     weather_raw, agro_raw = weather_source.read_bytes(), agro_source.read_bytes()

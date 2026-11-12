@@ -404,7 +404,7 @@
   format_spec_violated: docs/s0_configuration.md physics-option defaults lack a hydroclimate decision
     rule for OPT_RUN
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_retry1
+  seen_at: "date not recorded, run Noah_MP_retry1"
 - id: noahmp_unrouted_runoff_vs_discharge_and_wb_closure
   symptom:
     description: Noah-MP runoff run reports negative discharge NSE with high r (~0.9) and large +PBIAS
@@ -426,15 +426,16 @@
   format_spec_violated: docs/validation_convention.yaml runoff/regional_aggregate_time_series validated_when
     caveat (routing required for discharge; WB closure only defensible non-routed path)
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_retry1
+  seen_at: "date not recorded, run Noah_MP_retry1"
 - id: dt_v060_offline_wb_closure_et_snapshot
   symptom:
     description: Noah-MP offline (HRLDAS) basin water-balance closure FAILS ~20-30% (ET+Q exceed P) while
-      dStorage ~= 0 and runoff pattern vs GRUN is excellent (r~0.97); a strict critic flags workflow_incomplete
+      dStorage ~= 0 and the runoff pattern vs a gridded runoff product such as GRUN is very good (high
+      r); a strict critic flags workflow_incomplete
       claiming un-differenced accumulated runoff.
   diagnosis:
-    root_cause: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (GRUN r~0.97 proves
-      it). The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
+    root_cause: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (a high r against
+      a gridded runoff product such as GRUN shows it). The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
       x86400 overstates ET because the offline daily HRLDAS build emits no accumulated ET fields. Noah-MP
       closes water per column each timestep by construction, so the offline residual is an extraction
       approximation, not a mass failure.'
@@ -447,7 +448,7 @@
   format_spec_violated: 'validation_convention.yaml runoff/regional_aggregate: headline is NSE/PBIAS;
     WB closure is only a defensibility caveat, not the verdict gate'
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_retry1
+  seen_at: "date not recorded, run Noah_MP_retry1"
 - id: dt_019
   stage: s4_forcing
   severity: silent
@@ -473,12 +474,12 @@
     action: Shift the site record by -UTC_OFFSET before writing LDASIN files. The KI converter enforces
       this - `--source fluxnet` REQUIRES `--utc_offset`, taken from the FLUXNET BADM/BIF variable UTC_OFFSET.
     verification: Find the LDASIN file with the daily maximum SWDOWN; its UTC hour must be within ~1 h
-      of (12 - longitude/15) mod 24. For US-MMS (lon -86.41) that is ~17-18 UTC.
+      of (12 - longitude/15) mod 24. For example, at longitude -86.41 that is ~17-18 UTC.
     prevention: Never assume a site-network timestamp is UTC. Read UTC_OFFSET from the network's own metadata.
   cross_references:
   - dt_009
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usmms_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usmms_20260802"
 - id: dt_020
   stage: s7_output
   severity: silent
@@ -505,7 +506,7 @@
   cross_references:
   - dt_006
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usmms_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usmms_20260802"
 - id: dt_021
   stage: s7_output
   severity: silent
@@ -529,7 +530,7 @@
     prevention: Range-check any consumer guard against -9999 specifically; -9999 is inside every plausible
       `> -1e6` sanity bound.
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usmms_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usmms_20260802"
 - id: dt_022
   stage: s2_soil
   severity: silent
@@ -554,7 +555,7 @@
     verification: sand 47 / clay 21 -> loam (ISLTYP 6); sand 60 / clay 25 -> sandy clay loam; sand 45
       / clay 15 -> loam; sand 50 / clay 38 -> sandy clay.
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usmms_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usmms_20260802"
 - id: dt_023
   stage: s1_domain
   severity: silent
@@ -596,7 +597,7 @@
   - dt_008
   - dt_024
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usne1_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usne1_20260802"
 - id: dt_024
   stage: s0_configuration
   severity: silent
@@ -629,7 +630,7 @@
   cross_references:
   - dt_023
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usne1_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usne1_20260802"
 - id: dt_025
   stage: s7_output
   severity: silent
@@ -656,7 +657,7 @@
   cross_references:
   - dt_021
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usne1_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usne1_20260802"
 - id: dt_026
   stage: s1_domain
   severity: silent
@@ -687,4 +688,4 @@
   cross_references:
   - dt_023
   canonical_intent: ki_local_if_pass
-  added_by_run: Noah_MP_real_case_usne1_20260802
+  seen_at: "2026-08-02, run Noah_MP_real_case_usne1_20260802"

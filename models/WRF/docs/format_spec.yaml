@@ -608,19 +608,23 @@ known_issues:
     '
   severity: medium
 - id: dt_022_nasa_power_lst_vs_utc_and_climatology_proxy
-  symptom: WRF T2 (or any sub-daily field) scored against NASA POWER hourly appears anti-correlated (r~-0.05,
-    NSE~-0.9) despite a physically reasonable simulation; OR a deterministic weather snapshot scored against
-    a multi-year monthly climatology gives structurally poor NSE (-7..-10) with a large warm/cold bi
+  symptom: WRF T2 (or any sub-daily field) scored against NASA POWER hourly appears anti-correlated (r
+    near zero or below, NSE negative) despite a physically reasonable simulation; OR a deterministic weather
+    snapshot scored against a multi-year monthly climatology gives structurally poor NSE (far below zero)
+    with a large warm/cold bias and near-circular spatial CSI.
   diagnosis: 'Two compounding errors: (1) NASA POWER hourly defaults to LST (local solar time) while wrfout
     Times are UTC, so pairing shifts the diurnal cycle by the lon offset and anti-correlates it; (2) comparing
     a single 48-h weather realization against a 2015-2022 climatological mean is not time-matched and
-    n'
+    not compatible support, so RMSE/NSE are dominated by the weather-vs-climate offset and spatial pattern
+    skill is dominated by shared static terrain.'
   remedy: Score WRF T2 as the dag rank-1 point_time_series against a time-matched, valid-time, independent
     obs (NASA POWER hourly T2M at the domain centre) requested with time-standard=UTC, paired to the wrfout
     frames by UTC timestamp. Never score a deterministic snapshot against a multi-year climatology. See
+    run_and_score_realcase_t2_pointts.py.
 - id: dt_wrf_snapshot_vs_climatology_spatial_csi
-  symptom: WRF T2 spatial_field_comparison gives CSI ~0.50 with a large uniform warm/cool bias (e.g. +3.8
-    K) and the pre-retry gate REJECTS with wrong-metric-for-obs-shape (nse/kge/r reported for obs_shape=spatial_time_series).
+  symptom: WRF T2 spatial_field_comparison gives a middling CSI (around 0.5) with a large uniform warm/cool
+    bias (several K) and the pre-retry gate REJECTS with wrong-metric-for-obs-shape (nse/kge/r reported
+    for obs_shape=spatial_time_series).
   diagnosis: A single short WRF weather realization was scored against a multi-year monthly CLIMATOLOGY
     (temporal-support mismatch), CSI used one ABSOLUTE threshold on both fields so the uniform anomaly
     dominated it, no spin-up was dropped, and NSE/KGE (temporal families) were reported for a spatial
@@ -628,4 +632,4 @@ known_issues:
   remedy: Score against a CONTEMPORANEOUS obs field for the actual sim window (fetch ERA5-Land hourly
     2m_temperature via cdsapi, average over the post-spin-up window >= start+12h); compute CSI with each
     field's OWN median as threshold (bias-robust spatial_pattern_match); report only spatial_pattern_match
-    (csi
+    (csi, spatial_r) + magnitude_accuracy (rmse, bias, pbias), never NSE/KGE (dag.yaml:226-230).

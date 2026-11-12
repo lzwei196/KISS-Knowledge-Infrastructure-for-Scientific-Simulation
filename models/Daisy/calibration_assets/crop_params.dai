@@ -1,0 +1,26 @@
+;;; crop_params.dai -- CALIBRATABLE crop parameters for the US-Ne3 ET run.
+;;;
+;;; This is the file the calibration kit edits. "Ne3 Maize" inherits from the
+;;; library "Silage Maize" (which itself inherits "Maize") and overrides only
+;;; the three most ET-sensitive scalar parameters. Daisy merges alist
+;;; sub-parameters, so the parent's full Canopy/Root definition is kept and
+;;; only the tokens below are replaced (cf. lib/dk-maize.dai "Silomajs; Foulum").
+;;;
+;;; The defaults below equal the parent "Silage Maize" defaults [SpLAI 0.010,
+;;; EPext 0.50, MaxPen 120 cm] so an unedited run reproduces the validated
+;;; real-case recipe (NSE ~0.65 at US-Ne3 2005). Note: only the three live
+;;; tokens use the `(<name> <value>)` shape; comments avoid that shape so a
+;;; regex address can never capture a commented value.
+;;;
+;;; Each tunable token is written one-per-line with a fixed `(<name>  <value>)`
+;;; shape so the text_token regex addresses in calibration.yaml capture exactly
+;;; one numeric value. DO NOT add other tokens named SpLAI / EPext / MaxPen.
+
+(defcrop "Ne3 Maize" "Silage Maize"
+  (Canopy
+      (SpLAI 0.016363695824461098)
+      (EPext 0.3953336189637833))
+  (Root
+      (MaxPen 107.39968226767976)))
+
+;;; crop_params.dai ends here

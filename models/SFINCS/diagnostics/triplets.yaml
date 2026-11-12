@@ -2,8 +2,6 @@
 # ==========================
 # At first build (2026-03): 28 triplets covering 9 failure domains (current total: knowledge_infrastructure.yaml)
 # Silent error rate at first build: 46% (13/28)
-# Includes 6 triplets from Chaohe basin validation (2026-03-21)
-# Includes 2 triplets from Bengbu flood validation (2026-03-22)
 
 # ============================================================================
 # Unit Conversion Errors (SILENT — highest priority)
@@ -744,7 +742,7 @@
       0=inactive, 1=active (flow computed), 2=water-level boundary, 3=outflow boundary.
       With every cell set to 3 the whole domain is boundary cells, and SFINCS opens no flow between two boundary cells.
       The model runs without error but computes nothing — all depths are zero.
-      Found 2026-04-11 Wangjiaba test: 80K cells with mask=3, zero flooding despite 10mm/hr rain.
+      In one test, 80K cells with mask=3 gave zero flooding despite 10mm/hr rain.
     affected_components:
       - "build_sfincs_topobathy.py mask generation"
   remedy:
@@ -755,7 +753,7 @@
       - "If all 3: fix with msk[msk==3] = 1, then re-open the outlet edge (dt_007)"
     prevention: "Fixed in tool. Comment documents correct convention."
   severity: "silent"
-  verified: "2026-04-11 (Wangjiaba)"
+  seen_at: "2026-04-11, Wangjiaba"
   cross_references: ["dt_v004"]
 
 - id: dt_v010
@@ -776,7 +774,7 @@
     action: "CMFD: ×3600 (kg/m²/s → mm/hr). MSWX: ÷3 (mm/3hr → mm/hr)."
     tool_to_run: "prepare_sfincs_rainfall.py (fixed 2026-04-11)"
   severity: "silent"
-  verified: "2026-04-11 (Bengbu)"
+  seen_at: "2026-04-11, Bengbu"
 
 - id: dt_v011
   stage: "s4_forcing"
@@ -797,7 +795,7 @@
     action: "Filter glob results by YYYYMM matching start/end period"
     tool_to_run: "prepare_sfincs_rainfall.py (fixed 2026-04-11)"
   severity: "degraded"
-  verified: "2026-04-11"
+  seen_at: "2026-04-11"
 
 - id: dt_v012
   stage: "s4_forcing"
@@ -818,7 +816,7 @@
     action: "Write ASCII format: one line per timestep, 'time_seconds precip_mmhr'"
     tool_to_run: "prepare_sfincs_rainfall.py (fixed 2026-04-11)"
   severity: "fatal"
-  verified: "2026-04-11"
+  seen_at: "2026-04-11"
 
 - id: dt_v013
   stage: "s4_forcing"
@@ -839,7 +837,7 @@
     action: "Filter CaMa data to start_date:end_date before writing sfincs.dis"
     tool_to_run: "cama_to_sfincs_boundary.py (fixed 2026-04-11)"
   severity: "silent"
-  verified: "2026-04-11"
+  seen_at: "2026-04-11"
 
 - id: dt_v014
   stage: "s6_config"
@@ -861,7 +859,7 @@
     action: "Check both cwd and output_dir for file existence"
     tool_to_run: "generate_sfincs_inp.py (fixed 2026-04-11)"
   severity: "silent"
-  verified: "2026-04-11"
+  seen_at: "2026-04-11"
 
 - id: dt_v015
   stage: "s8_postprocess"
@@ -886,9 +884,9 @@
             the 'zsmax' layer without knowing it is elevation not depth
         (c) Old versions of extract_sfincs_results.py that had zsmax before hmax
             in the priority list (dt_v007 — fixed 2026-03-22)
-      Validated proof (bengbu_sfincs_2003_ki): 25.7% of cells have zsmax > 40m,
-      but their hmax MEAN is only 0.063m (6cm). The VIC→CaMa→SFINCS simulation
-      chain is entirely correct when hmax is used.
+      In one real run, 25.7% of cells had zsmax > 40m, but their hmax MEAN was
+      only 0.063m (6cm). The VIC→CaMa→SFINCS simulation chain is entirely correct
+      when hmax is used.
     affected_components:
       - "extract_sfincs_results.py (now fixed — hard error + zb subtraction)"
       - "custom post-processing scripts reading sfincs_map.nc directly"
@@ -916,7 +914,7 @@
         3. Automatically subtracts zb to recover depth when zsmax is the only option
   severity: "silent"
   cross_references: ["dt_v007", "dt_004"]
-  verified: "2026-04-24 (bengbu_sfincs_2003_ki: zsmax range 13-314m vs hmax range 0.05-10.89m)"
+  seen_at: "2026-04-24, Bengbu (run bengbu_sfincs_2003_ki)"
 
 - id: dt_v016
   stage: "s8_postprocess"
@@ -962,7 +960,7 @@
       through open_sfincs_nc(), which performs this fallback and logs a warning.
   severity: "fatal"
   cross_references: ["dt_v018"]
-  verified: "2026-08-02 (Kangerlussuaq run: venv netCDF4 fails, h5netcdf/GDAL/h5py succeed on the same file)"
+  seen_at: "2026-08-02, Kangerlussuaq"
 
 - id: dt_v017
   stage: "s8_postprocess"
@@ -999,7 +997,7 @@
       the msk array, logging both counts.
   severity: "silent"
   cross_references: ["dt_019", "dt_v007"]
-  verified: "2026-08-02 (Kangerlussuaq run: 989 fill cells + 2668 inactive cells removed)"
+  seen_at: "2026-08-02, Kangerlussuaq"
 
 - id: dt_v018
   stage: "s4_forcing"
@@ -1042,7 +1040,7 @@
       calls load_hourly_forcing; the CMFD monthly-glob path is now cmfd-only.
   severity: "fatal"
   cross_references: ["dt_001", "dt_002"]
-  verified: "2026-08-02 (Kangerlussuaq run, MSWX 2012)"
+  seen_at: "2026-08-02, Kangerlussuaq"
 
 - id: dt_v019
   stage: "s2_topobathy"
@@ -1093,7 +1091,7 @@
       edge cell sits above 10 m.
   severity: "silent"
   cross_references: ["dt_v005", "dt_007", "dt_012"]
-  verified: "2026-08-02 (Kangerlussuaq: 150 shoreline outflow cells vs 1077 upland edges kept closed)"
+  seen_at: "2026-08-02, Kangerlussuaq"
 
 - id: dt_v020
   stage: "s6_config"
@@ -1131,7 +1129,7 @@
       topobathy_summary.json when --topobathy_dir is given, and accepts --h_max.
   severity: "degraded"
   cross_references: ["dt_009", "dt_v019"]
-  verified: "2026-08-02 (Kangerlussuaq: h_max 20 m from bathymetry -> dt 5 s, vs 7 s from the hard-coded 10 m)"
+  seen_at: "2026-08-02, Kangerlussuaq"
 
 - id: dt_v021
   stage: "s2_topobathy"
@@ -1178,7 +1176,7 @@
       become outlets.
   severity: "silent"
   cross_references: ["dt_v005", "dt_v009", "dt_v019", "dt_007"]
-  verified: "2026-08-05 (Fraser Hope->Agassiz: msk=3 on the west edge passed ~88% of a 6800 m3/s inflow out of the domain; SFINCS reported msk values 0/1/3 exactly as written)"
+  seen_at: "2026-08-05, Fraser Hope->Agassiz"
 
 - id: dt_v022
   stage: "s3_roughness"
@@ -1209,7 +1207,7 @@
       on-disk copy first, and ignores ._ files.
   severity: "silent"
   cross_references: ["dt_v018"]
-  verified: "2026-08-05 (Fraser: 10 IGBP classes mapped, n 0.015-0.08, instead of uniform 0.04)"
+  seen_at: "2026-08-05, Fraser"
 
 - id: dt_v023
   stage: "s2_topobathy"
@@ -1225,7 +1223,7 @@
     detection_method: "value_comparison"
   diagnosis:
     root_cause: >
-      SFINCS v2 binary maps are COMPRESSED. Proven against the solver on 2026-08-05 by
+      SFINCS v2 binary maps are COMPRESSED. Proven against the solver by
       reading sfincs_map.nc `zb` back and matching it byte-for-byte to the input:
         sfincs.ind = int32 n_active, then n_active 1-BASED flat indices in FORTRAN
                      order (n fastest) over an (nmax, mmax) grid whose row 0 is the
@@ -1237,12 +1235,12 @@
     explanation: >
       SFINCS reads exactly n_active values from each file, so a full C-order north-up
       grid means it consumes the first n_active entries — the top strip of the raster —
-      as if they were the compressed arrays. Measured on a 345x285 Fraser domain:
+      as if they were the compressed arrays. Measured on a 345x285 domain:
       25,067 intended active cells became 24,955+112 written but only 5,406 read, and
       all 112 outflow cells were lost. There is NO error message. Every SFINCS result
-      this KI produced before 2026-08-05 (Chaohe, Bengbu, Wangjiaba, Kangerlussuaq) ran
-      on a scrambled domain — which is the mechanism behind the Chaohe
-      "flooded_cells == total_cells == 29754, flood_fraction 1.0" record.
+      this KI produced before the fix ran on a scrambled domain — which is the
+      mechanism behind an earlier "flooded_cells == total_cells == 29754,
+      flood_fraction 1.0" record.
     affected_components:
       - "build_sfincs_topobathy.py (dep/msk/ind writers)"
       - "build_sfincs_roughness.py (man writer)"
@@ -1266,7 +1264,7 @@
       sfincs.man the same way.
   severity: "fatal"
   cross_references: ["dt_v001", "dt_v009", "dt_v021"]
-  verified: "2026-08-05 (Fraser Hope->Agassiz: sfincs_map.nc msk = 24,955 active + 112 outflow, exactly as written; point_zb at HYDAT 08MF035 = 13.153 m = the DEM cell value; before the fix point_zb = -999 and point_zs was all NaN)"
+  seen_at: "2026-08-05, Fraser Hope->Agassiz (HYDAT 08MF035); date not recorded, earlier Chaohe, Bengbu, Wangjiaba and Kangerlussuaq runs"
 
 - id: dt_v024
   stage: "s9_validation"
@@ -1289,13 +1287,13 @@
       information. Compounded when qinf exceeds the mean rainfall intensity, which
       deletes the pluvial term and leaves the prescribed hydrograph as the sole driver.
     explanation: >
-      Measured on Fraser Hope -> Agassiz (2026-08-05): BC = HYDAT 08MF005 at Hope
-      (217,000 km2) over 25 source cells, scored at HYDAT 08MF035 at Agassiz
-      (218,000 km2, +0.5% area, 31 km downstream, no unforced tributary between).
-      screen_obs_independence.py on the real artifacts: r(BC, obs) = 0.99405,
-      NSE_naive_rating = 0.99918, NSE_model = 0.97773, information_gain = -0.02145.
-      The reported nse_val 0.9744 therefore demonstrated NO hydraulic skill. sfincs.inp
-      also set qinf = 1.0 mm/hr against a mean MSWX rainfall of 0.1495 mm/hr (6.7x).
+      Typical case: BC = an upstream discharge gauge (217,000 km2) over 25 source
+      cells, scored at a stage gauge downstream (218,000 km2, +0.5% area, 31 km
+      downstream, no unforced tributary between). screen_obs_independence.py on the
+      real artifacts found r(BC, obs) close to 1 and a plain rating curve scoring
+      higher than the model (information_gain below 0), so the reported high NSE
+      demonstrated NO hydraulic skill. sfincs.inp also set qinf = 1.0 mm/hr against
+      a mean MSWX rainfall of 0.1495 mm/hr (6.7x).
     affected_components:
       - "obs-target selection (which gauge to score)"
       - "hydat_to_sfincs_boundary.py --flow_station / --obs_stations"
@@ -1307,7 +1305,7 @@
       exit code. On exit 1 do NOT report a number: emit a NULL metric with reason
       'no_independent_obs_target'. To obtain an informative target instead, force every
       unforced in-domain tributary as an extra source (comma-list --flow_station, e.g.
-      Fraser: 08MF005,08MG013 Harrison River 7890 km2) and score below the confluence,
+      <main-stem station>,<tributary station>) and score below the confluence,
       or use a multi-gauge longitudinal water-surface profile, an off-channel floodplain
       gauge, or the dag's flood-hazard target (hmax/extent vs a SAR mask, scored with
       CSI). Keep qinf BELOW the mean precipitation intensity.
@@ -1323,4 +1321,4 @@
       NULL-metric fallback.
   severity: "silent"
   cross_references: ["dt_v023", "dt_v021"]
-  verified: "2026-08-05 (Fraser Hope->Agassiz: tool exits 1 on 08MF035 with r=0.99405, NSE_naive_rating=0.99918, NSE_model=0.97773, information_gain=-0.02145, usable_targets=[], required_metric_status=null; pluvial warning qinf 1.0 mm/hr = 6.7x mean rainfall 0.1495 mm/hr)"
+  seen_at: "2026-08-05, Fraser Hope->Agassiz (HYDAT 08MF005, 08MF035, 08MG013)"

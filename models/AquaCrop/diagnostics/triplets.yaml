@@ -546,7 +546,7 @@
   severity: fatal
   cross_references:
   - dt_007
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_aq_018
   stage: c4_cama_flood_coupling
   failure_domain: silent_error
@@ -598,7 +598,7 @@
       series (NOT run_aquacrop iloc[0]), then align by harvest year with get_faostat_yield_series and
       call compute_metrics.'
   format_spec_violated: none — protocol/recipe gap, not a format-rule violation
-  added_by_run: AquaCrop_retry1
+  seen_at: "date not recorded, run AquaCrop_retry1"
 - id: dt_faostat_multiyear_forcing_hang
   symptom:
     description: Multi-year national-yield (FAOSTAT) validation run emits no result JSON / hangs; final
@@ -613,7 +613,7 @@
       final_stats.csv series (run_aquacrop reports only season-0 yield) and align by harvest year before
       compute_metrics.
   format_spec_violated: none — recipe/protocol guidance, no Tier-2 rule
-  added_by_run: AquaCrop_retry2
+  seen_at: "date not recorded, run AquaCrop_retry2"
 - id: dt_017_aggregate_detrended_r_expected_zero
   symptom:
     description: 'Single-point AquaCrop run vs a national/sub-national yield aggregate (FAOSTAT/GDHY,
@@ -633,4 +633,4 @@
   format_spec_violated: dag.yaml outputs.DryYield.observability.regional_aggregate_time_series.metric_families
     = [trend_match, magnitude_accuracy] (raw/detrended interannual NSE/r not a valid acceptance gate)
   canonical_intent: ki_local_if_pass
-  added_by_run: AquaCrop_retry1
+  seen_at: "date not recorded, run AquaCrop_retry1"

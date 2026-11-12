@@ -6,8 +6,14 @@
 # tools/calib_run.py as four named scalars in $KDT_CALIB_PARAMS (runner injection),
 # so no parameter file is edited in the KI. calib_run.py assembles
 # theta=[x1,x2,x3,x4], runs the KI's run_marrmot.py over the CMFD/Oudin forcing
-# cached under {workdir}, scores Q vs the Bengbu obs on the requested split, and
-# echoes theta as __kdt__.applied_params.
+# cached under {workdir}/calib: reuse a valid workdir cache first, else copy the KI's
+# calib/forcing.csv + calib/obs_q.csv read-only, else rebuild from the original
+# Bengbu CMFD/observation sources. All pairs must pass the 1979-1990 date/alignment
+# and finite-observation checks. Dates do not establish basin identity: use an
+# empty workdir or a cache known to contain Bengbu inputs. Generic detached/real_case
+# is not used. The driver
+# scores Q vs the Bengbu obs on the requested split, and echoes theta as
+# __kdt__.applied_params (plus __kdt__.case_id SITE:bengbu).
 #
 # GR4J has exactly four calibratable parameters and ALL of them are in the pool:
 # x1 (production store) and x2 (groundwater exchange) are the volume/magnitude

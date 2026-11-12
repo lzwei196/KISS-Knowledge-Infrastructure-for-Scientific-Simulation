@@ -12,6 +12,7 @@ Usage::
 import argparse
 import os
 import sys
+sys.dont_write_bytecode = True  # importing KI tools must not write __pycache__ into the KI
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -28,6 +29,15 @@ for _cand in [
         break
 
 sys.path.insert(0, str(TOOLS_DIR))
+
+
+def _run_base():
+    """Current dir, or a new temp dir if the current dir is in the KI (the KI is read-only)."""
+    base = Path.cwd().resolve()
+    if base == KI_ROOT or KI_ROOT in base.parents:
+        import tempfile
+        base = Path(tempfile.mkdtemp(prefix="apex_run_"))
+    return base
 
 
 def quickstart(lat, lon, crop, year1, year2, source="cmfd",
@@ -50,9 +60,19 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd",
     if crop_lower == "maize":
         crop_lower = "corn"
 
+    # Run folder lives OUTSIDE the KI (the KI is read-only knowledge):
+    # ./runs/<name> under the current dir, or a temp dir if cwd is in the KI.
+    _run_name = f"APEX_{crop_lower}_{lat:.2f}_{lon:.2f}"
+    _made_here = workspace is None  # auto-made or moved: we must create its runs/ parent
     if workspace is None:
-        workspace = KI_ROOT / "runs" / f"APEX_{crop_lower}_{lat:.2f}_{lon:.2f}"
+        workspace = _run_base() / "runs" / _run_name
     workspace = Path(workspace).resolve()
+    if workspace == KI_ROOT or KI_ROOT in workspace.parents:
+        _moved = _run_base() / "runs" / _run_name
+        print(f"[quickstart] workspace {workspace} is inside the KI (read-only); using {_moved}",
+              file=sys.stderr)
+        workspace = _moved
+        _made_here = True
 
     nbyr = year2 - year1 + 1
 
@@ -78,6 +98,8 @@ def quickstart(lat, lon, crop, year1, year2, source="cmfd",
     # ── Step 2: Copy workspace ───────────────────────────────────
     if verbose:
         print(f"\n[1/7] Setting up workspace...")
+    if _made_here:
+        workspace.parent.mkdir(parents=True, exist_ok=True)  # setup() needs the parent to exist
     setup(str(workspace))
 
     # ── Step 3: Generate crop OPC with data-driven dates ─────────

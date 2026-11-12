@@ -104,7 +104,7 @@ def parse_topmod_out(topmod_file):
     Parse topmod.out file.
 
     Format: it  p  ep  Q[it]  quz  qb  sbar  qof
-    All fluxes in m/hr, sbar in m.
+    All fluxes are depths per model step (m; m/day on the daily route), sbar in m.
 
     Returns dict of arrays.
     """

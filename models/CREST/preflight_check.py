@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -124,7 +125,7 @@ def check_import(checks, module, *, critical=True):
 
 def check_py_compile(checks, paths):
     quoted = ", ".join(repr(str(p)) for p in paths)
-    code = "import py_compile; [py_compile.compile(p, doraise=True) for p in [" + quoted + "]]"
+    code = "import py_compile,tempfile\nwith tempfile.TemporaryDirectory() as t:\n    [py_compile.compile(p, cfile=t+'/check.pyc', doraise=True) for p in [" + quoted + "]]"
     rc, stdout, stderr = run_python_snippet(code, timeout=20)
     subject = f"{HYDROCRAFT_PYTHON}:py_compile:tools"
     if rc == 0:
@@ -167,14 +168,15 @@ def find_ef5_binary():
 def check_binary_start(checks, binary):
     real_binary = Path(binary).resolve(strict=True)
     try:
-        result = subprocess.run(
-            [str(real_binary), "--help"],
-            cwd=str(KI_ROOT),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=5,
-        )
+        with tempfile.TemporaryDirectory() as tmp_cwd:
+            result = subprocess.run(
+                [str(real_binary), "--help"],
+                cwd=tmp_cwd,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            )
     except subprocess.TimeoutExpired:
         return add_check(
             checks,

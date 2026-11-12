@@ -596,7 +596,7 @@
       is reservoir/level-only, classify requires_data and re-target. New-basin mesh authoring is requires_human_engineering.
   format_spec_violated: none (target-selection + missing-tool gap, not a format-spec rule)
   canonical_intent: ki_local_if_pass
-  added_by_run: PIHM_retry1
+  seen_at: "date not recorded, run PIHM_retry1"
 - id: dt_021
   symptom:
     description: 'Pipeline blocked at S1 for a new basin: no .mesh/.att can be produced; metrics null
@@ -610,7 +610,7 @@
       of scope).
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: PIHM_retry1
+  seen_at: "date not recorded, run PIHM_retry1"
 - id: dt_022_china_gw_yearbook_water_table_domain_skip
   symptom:
     description: PIHM targeted at the China Geological Environment Monitoring Groundwater Level Yearbook
@@ -638,13 +638,13 @@
       Until then, validate water-table dynamics only on basins with a real mesh and negligible abstraction.
   format_spec_violated: none (domain-validity + missing-capability gap)
   canonical_intent: ki_skip_structural
-  added_by_run: PIHM_real_case_20260623
+  seen_at: "2026-06-23, run PIHM_real_case_20260623"
 - id: dt_023_headless_tin_fragmented_river_network_no_routed_outlet
   symptom:
     description: PIHM run on a large NEW basin (e.g. 唐乃亥/Tangnaihai Yellow-source ~132,000 km², or Bengbu/Wangjiaba
       Huai) with an AD-HOC headless-built TIN (NUMELE in the hundreds–thousands, real geometry, dev example
-      reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (Bengbu real run 2026-07-04
-      sim mean 23 vs obs 970 m3/s, ~40x undershoot), NSE_val negative (-0.68), PBIAS ~-99%, r low (~0.30).
+      reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (in one real run about
+      40x under), NSE_val negative, PBIAS near -100%, r low.
       Water balance may still "close" (P≈ET+Q+dS) — the deficit is a routing/accumulation gap, not a mass-conservation
       bug.
   diagnosis:
@@ -668,7 +668,7 @@
       large-basin runs as capability tests, not skill scores. Do not re-enter the r<0.5 / NSE retry loop.
   format_spec_violated: none (missing routing/accumulation capability, not a format-spec rule)
   canonical_intent: ki_skip_structural
-  added_by_run: PIHM_real_case_20260713
+  seen_at: "2026-07-04, Bengbu; 2026-07-13, run PIHM_real_case_20260713"
 - id: dt_024_pihm_input_header_conventions
   symptom:
     description: 'flux-pihm / pihm exits immediately with ''Expected header: ...'' + ''Error: input file
@@ -692,7 +692,7 @@
       <units>' line under the header is safe.
   format_spec_violated: input header records (read_att.c / read_forc.c / read_soil.c CheckHeader)
   canonical_intent: ki_local_if_pass
-  added_by_run: PIHM_real_case_20260802
+  seen_at: "2026-08-02, run PIHM_real_case_20260802"
 - id: dt_025_headless_tin_conventions_ccw_nabr_outlet
   symptom:
     description: 'A headlessly generated PIHM TIN loads but the run is wrong or dies: negative/zero element
@@ -717,7 +717,7 @@
       node elevations to decrease monotonically downstream. Do not hand-write a TIN.
   format_spec_violated: mesh geometry contract (init_topo.c / init_river.c / river_flow.c)
   canonical_intent: ki_local_if_pass
-  added_by_run: PIHM_real_case_20260802
+  seen_at: "2026-08-02, run PIHM_real_case_20260802"
 - id: dt_026_gw_head_to_piezometric_level
   symptom:
     description: PIHM .gw.dat compared against a piezometer gives an absurd bias (tens of metres) or an
@@ -739,4 +739,4 @@
       the metric is capped by construction.'
   format_spec_violated: none (variable-semantics + datum conversion)
   canonical_intent: ki_local_if_pass
-  added_by_run: PIHM_real_case_20260802
+  seen_at: "2026-08-02, run PIHM_real_case_20260802"

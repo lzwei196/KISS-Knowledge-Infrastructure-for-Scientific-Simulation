@@ -540,4 +540,4 @@
       elevation) over a glaciated domain, or document as out-of-domain.
   format_spec_violated: dag.yaml outputs set (no SWE variable); SKILL.md NON-PRODUCIBLE VARIABLES guard
   canonical_intent: ki_local_if_pass
-  added_by_run: ISSM_retry1
+  seen_at: "date not recorded, run ISSM_retry1"

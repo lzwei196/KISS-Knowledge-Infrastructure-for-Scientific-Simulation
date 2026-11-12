@@ -118,6 +118,7 @@ outputs:
         metric_families:
         - temporal_pattern_match
         - magnitude_accuracy
+        - timing_accuracy
         determining_metric: nse
         caveats:
         - Observed discharge in m3/s must be converted to mm/d using the gauged upstream catchment area
@@ -204,10 +205,13 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Simulated streamflow is 3-8x too high compared to observed. Runoff ratio exceeds 1.0.
-  diagnosis: Precipitation from CMFD is in mm/3h but treated as mm/d.; CMFD provides 3-hourly precipitation
+  diagnosis: 'Precipitation from CMFD is in mm/3h but treated as mm/d.; CMFD provides 3-hourly precipitation
     accumulations. Each daily value should be the sum of 8 sub-daily values. If the raw 3-hourly values
     are passed directly as daily values, each timestep has ~1/8 of the correct daily total but there are
-    8x t
+    8x too many records, or if a single 3h value is used per day, it represents only 3 hours of rain,
+    not 24.
+
+    ; [''convert_forcing.py'']'
   remedy: 'Sum 8 consecutive 3-hourly values to get daily total.; convert_forcing.py --format cmfd; [''Load
     all 8 sub-daily values per day'', ''Sum to get daily total: P_daily = sum(P_3h[0:8])'', ''Verify mean
     P is 0.5-15 mm/d for most climates'']; convert_forcing.py auto-detects CMFD format and aggregates.'
@@ -236,14 +240,16 @@ known_issues:
   severity: silent
 - id: dt_004
   symptom: Actual evapotranspiration exceeds precipitation. Stores drain rapidly to zero.
-  diagnosis: Net radiation (W/m2 or MJ/m2/d) passed as PET instead of actual PET in mm/d.; MARRMoT expects
+  diagnosis: 'Net radiation (W/m2 or MJ/m2/d) passed as PET instead of actual PET in mm/d.; MARRMoT expects
     pre-computed potential evapotranspiration in mm/d (typically 0.5-8 mm/d). Net radiation values of
     100-300 W/m2 or 5-25 MJ/m2/d are orders of magnitude larger when interpreted as mm/d. The model will
-    evapora
+    evaporate all available water at every timestep, draining stores completely.
+
+    ; [''convert_forcing.py'']'
   remedy: Compute PET from radiation using Penman-Monteith or Hargreaves, not pass radiation directly.;
     convert_forcing.py; ['Check if PET column contains radiation values (> 20 typical)', 'Use Hargreaves
     if only Tmin/Tmax available', 'Use Penman-Monteith if radiation, humidity, wind available', 'Verify
-    PET i
+    PET is 0.5-8 mm/d']; convert_forcing.py warns if PET mean > 20 mm/d.
   severity: silent
 - id: dt_005
   symptom: PET ~30x too high in some months. Actual ET unrealistically large.
@@ -255,14 +261,16 @@ known_issues:
   remedy: Divide monthly PET by the number of days in each month.; convert_forcing.py; ['Identify monthly
     PET values (they will be 30-200 range)', 'Divide each by days in corresponding month', 'Distribute
     evenly across all days or use daily interpolation']; convert_forcing.py detects monthly-scale PET
-    and div
+    and divides.
   severity: silent
 - id: dt_006
   symptom: Snow models produce zero snow. All precipitation is rain even in winter.
-  diagnosis: Temperature in Kelvin not converted to Celsius.; ERA5 temperature (t2m) is in Kelvin (e.g.,
+  diagnosis: 'Temperature in Kelvin not converted to Celsius.; ERA5 temperature (t2m) is in Kelvin (e.g.,
     273-300 K). Snow/rain partitioning models (HBV, alpine models) use a threshold near 0°C. With Kelvin
     values, temperature is always far above any threshold, so all precipitation is classified as rain.
-    No error
+    No error is raised.
+
+    ; [''convert_forcing.py'']'
   remedy: 'Subtract 273.15 from Kelvin temperature values.; convert_forcing.py --format era5; [''Check
     temperature range: if 250-320, likely Kelvin'', ''Subtract 273.15 to convert to Celsius'', ''Verify:
     mean temp should be -20 to 35°C for most locations'']; convert_forcing.py warns if mean temperature
@@ -281,9 +289,13 @@ known_issues:
   severity: silent
 - id: dt_008
   symptom: Model storage never fills or drains unrealistically fast. Smax appears wrong.
-  diagnosis: Storage parameter in m or cm instead of mm.; MARRMoT storage parameters (Smax, x1, x3) are
+  diagnosis: 'Storage parameter in m or cm instead of mm.; MARRMoT storage parameters (Smax, x1, x3) are
     in mm. HWSD soil depth is in cm; SoilGrids may be in mm. If a 1.5 m soil depth is passed as 1.5 (meters)
-    to Smax, the store holds only 1.5 mm — it fills and overflows immediately. If passed as 1500 mm correctl
+    to Smax, the store holds only 1.5 mm — it fills and overflows immediately. If passed as 1500 mm correctly,
+    behaviour is appropriate. Conversely, if 150 cm is treated as mm, Smax=150 may be too small for deep
+    soils.
+
+    ; [''convert_parameters.py'']'
   remedy: 'Verify source units. Convert cm to mm (*10), m to mm (*1000).; convert_parameters.py; [''Check
     HWSD/SoilGrids documentation for depth units'', ''If cm: multiply by 10'', ''If m: multiply by 1000'',
     ''Typical Smax range: 50-2000 mm'']; convert_parameters.py documents source unit in output JSON.'
@@ -293,7 +305,9 @@ known_issues:
   diagnosis: 'delta_t set to 24 (hours) instead of 1 (day) for daily forcing.; MARRMoT''s delta_t is in
     days. Setting delta_t=24 tells the model each timestep is 24 days long, causing it to multiply all
     fluxes by 24 when integrating storage changes: dS = flux * delta_t. The water balance will show a
-    massive error '
+    massive error because fluxes are 24x wrong.
+
+    ; [''run_marrmot.py'']'
   remedy: 'Set delta_t = 1 for daily data. For hourly data, use delta_t = 1/24.; run_marrmot.py --delta-t
     1; [''Verify forcing timestep matches delta_t'', ''Daily data: delta_t = 1'', ''Hourly data: delta_t
     = 1/24 = 0.0417'', ''3-hourly data: delta_t = 3/24 = 0.125'']; run_marrmot.py defaults to delta_t=1
@@ -301,65 +315,81 @@ known_issues:
   severity: degraded
 - id: dt_010
   symptom: NSE is extremely negative (< -100). PBIAS > 10000%. Obs and sim on different scales.
-  diagnosis: Observed streamflow in m3/s compared directly to simulated mm/d.; MARRMoT outputs streamflow
+  diagnosis: 'Observed streamflow in m3/s compared directly to simulated mm/d.; MARRMoT outputs streamflow
     in mm/d. Observed gauge data is typically in m3/s. For a 1000 km2 catchment, 1 mm/d ≈ 11.6 m3/s. Without
     conversion, a simulated 2 mm/d is compared to an observed 23 m3/s, producing terrible metrics. The
-    con
+    conversion requires catchment area.
+
+    ; [''parse_output.py'']'
   remedy: 'Convert observed m3/s to mm/d: Q_mm = Q_m3s * 86400 / (A_km2 * 1e6) * 1000.; parse_output.py
     --obs-unit m3_s --area-km2 1000; [''Determine catchment area upstream of gauge (km2)'', ''Convert:
     Q_mm_d = Q_m3s * 86400 / (area_km2 * 1e6) * 1000'', ''Verify: typical Q is 0.1-20 mm/d'']; parse_output.py
-    convert'
+    converts automatically when --obs-unit m3_s and --area-km2 provided.'
   severity: silent
 - id: dt_011
   symptom: Evaporation unrealistically high or low. Temperature-dependent processes wrong.
   diagnosis: 'Climate array columns in wrong order: [P, T, Ep] instead of [P, Ep, T].; MARRMoT expects
     input_climate = [P, Ep, T]. If columns are swapped to [P, T, Ep], the model uses temperature values
     as PET and PET values as temperature. Winter temperature (~0°C) becomes PET=0 mm/d (correct by coincidence),
-    bu'
+    but summer temperature (~25°C) becomes PET=25 mm/d (way too high). No error is raised.
+
+    ; [''convert_forcing.py'', ''run_marrmot.py'']'
   remedy: 'Verify column order is [P, Ep, T]. Check header in CSV output.; convert_forcing.py; [''Open
     forcing CSV and check column headers'', ''Must be: date, P_mm_d, Ep_mm_d, T_degC (in this order)'',
     ''If swapped: re-run convert_forcing.py'']; convert_forcing.py writes explicit column headers.'
   severity: silent
 - id: dt_012
   symptom: MATLAB/Octave crashes with 'Index exceeds array dimensions' error.
-  diagnosis: S0 vector length does not match model's numStores.; Each model has a fixed number of stores
+  diagnosis: 'S0 vector length does not match model''s numStores.; Each model has a fixed number of stores
     (e.g., HyMOD has 5). S0 must have exactly that many elements. If S0 is too short (e.g., [0,0] for
     a 5-store model), MATLAB crashes when accessing S0(3). If too long, extra elements are silently ignored,
-    leavi
+    leaving some stores at their default initial value.
+
+    ; [''run_marrmot.py'', ''convert_parameters.py'']'
   remedy: 'Set S0 to have exactly m.numStores elements.; convert_parameters.py; ["Check model''s numStores:
     m = feval(''model''); m.numStores", ''Ensure len(S0) == numStores'', ''Default: S0 = zeros(1, numStores)''];
     convert_parameters.py generates S0 with correct length.'
   severity: fatal
 - id: dt_013
   symptom: Water balance error > 10 mm. Solver fallback warnings in console output.
-  diagnosis: Newton-Raphson solver fails to converge on stiff ODE system.; Some parameter combinations
+  diagnosis: 'Newton-Raphson solver fails to converge on stiff ODE system.; Some parameter combinations
     create stiff ODEs (e.g., very large Smax with near-zero initial storage, or extreme non-linearity
     parameters). The Newton-Raphson solver fails, falls back to fsolve, then lsqnonlin. If all fail, the
-    best approx
+    best approximate solution is used, introducing mass balance errors. The model continues but results
+    are degraded.
+
+    ; [''run_marrmot.py'']'
   remedy: Increase resnorm_maxiter to 12+. Check 5th output (solverSteps) for diagnostics.; run_marrmot.py
     --solver-maxiter 12; ['Increase solver_opts.resnorm_maxiter to 12 or higher', 'Decrease solver_opts.resnorm_tolerance
-    to 0.01', 'Check if parameters are at extreme ranges', 'Consider initializing S0 clos
+    to 0.01', 'Check if parameters are at extreme ranges', 'Consider initializing S0 closer to steady
+    state']; run_marrmot.py checks water balance and warns if > 1 mm.
   severity: degraded
 - id: dt_014
   symptom: Model completes successfully but total water balance is several mm off.
-  diagnosis: Water balance check is informational only, not enforced.; MARRMoT prints a water balance
+  diagnosis: 'Water balance check is informational only, not enforced.; MARRMoT prints a water balance
     summary to the console but does not stop execution if the balance is violated. A water balance error
     of even 1 mm over a multi-year simulation indicates the numerical solver did not fully converge on
-    some timest
+    some timesteps. The error accumulates silently and can bias long-term statistics.
+
+    ; [''run_marrmot.py'', ''parse_output.py'']'
   remedy: 'Always check water balance output. If > 1 mm, increase solver iterations.; ; [''Check 4th output
     of get_output(): waterBalance'', ''If |waterBalance| > 1 mm: increase resnorm_maxiter'', ''If still
     failing: reduce delta_t or simplify model'']; run_marrmot.py extracts and reports water balance in
-    JSON outpu'
+    JSON output.'
   severity: silent
 - id: dt_015
   symptom: Hydrograph peak timing is shifted. Unit hydrograph appears too wide or narrow.
-  diagnosis: Unit hydrograph time base does not account for delta_t.; MARRMoT unit hydrograph functions
+  diagnosis: 'Unit hydrograph time base does not account for delta_t.; MARRMoT unit hydrograph functions
     (uh_1_half through uh_8_delay) distribute flow over a number of timesteps. The UH parameter (e.g.,
     maxbas in HBV, x4 in GR4J) defines the time base in days. If delta_t is changed from 1 to 1/24 (hourly),
-    the s
+    the same UH parameter distributes flow over the same number of timesteps but each timestep is now
+    1 hour instead of 1 day, compressing the response to 1/24 of its intended duration. UH parameters
+    must be rescaled when changing delta_t.
+
+    ; [''run_marrmot.py'']'
   remedy: 'Rescale UH time base parameter when changing delta_t: maxbas_new = maxbas / delta_t.; ; [''Identify
     which parameter controls UH time base'', ''If switching from daily to hourly: multiply by 24'', ''If
-    switching from daily to 3-hourly: multiply by 8'']; Document delta_t alongside UH parameters in params.js'
+    switching from daily to 3-hourly: multiply by 8'']; Document delta_t alongside UH parameters in params.json.'
   severity: degraded
 - id: dt_016
   symptom: 'Octave error: ''optim'' package not found. Calibration fails.'
@@ -367,7 +397,7 @@ known_issues:
     require the optim package (provides fsolve, lsqnonlin). The MARRMoT_model constructor tries to load
     it automatically (pkg load optim), but if not installed, calibration and advanced solving fail.
 
-    ; [''run_'
+    ; [''run_marrmot.py'']'
   remedy: 'Install optim package: pkg install -forge optim; ; [''In Octave: pkg install -forge optim'',
     ''Verify: pkg load optim (should not error)'', ''Alternatively: apt install octave-optim'']; run_marrmot.py
     checks Octave availability but not packages.'
@@ -393,27 +423,36 @@ known_issues:
   remedy: Add a MARRMoT-CSV / nasa_power source branch to preflight_forcing.py that detects the [P,Ep,T]
     daily CSV (or point nasa_power frame) and runs the same physical-range checks (P 0.5-15 mm/d, Ep 0.5-8
     mm/d, T plausibility, NaN count). Until then, document the manual plausibility fallback in SKILL.md.
-    A
+    Also update SKILL.md's stale data_ki/CMFD|HWSD|ObservedQ paths to ki_tools_common (KDT 5.0 removed
+    data_ki/X).
 - id: dt_019
   symptom: water_balance FAIL (residual ~15-20%) with a negative pbias on a cold, high-altitude, high-radiation
     basin (e.g. Tibetan Plateau / upper Yellow R), DESPITE a respectable NSE/r; GR4J x2 (groundwater exchange)
-    pinned near its bound (theta ~ -13 to -20 mm/d). Oudin/Hargreaves PET annual total falls bel
+    pinned near its bound (theta ~ -13 to -20 mm/d). Oudin/Hargreaves PET annual total falls below the
+    closure requirement Ep >= P - Q_obs.
   diagnosis: Oudin and Hargreaves are temperature-index PET formulae calibrated on temperate lowlands;
     on cold, high-insolation, high-altitude terrain they structurally UNDER-estimate atmospheric demand,
     so Ep < P - Q. MARRMoT bounds Ea by Ep, leaving no evaporative exit for the water surplus, so the
-    optimiser d
+    optimiser drives the only remaining mass-removal flux (GR4J x2 groundwater exchange) against its bound
+    -- a non-physical, non-identifiable fit that a P - Ea - Q closure check catches.
   remedy: 'Before calibrating, verify Ep_annual >= (P - Q_obs)_annual. If it fails and downwelling radiation
     is available (CMFD always has srad/lrad/pres), rebuild forcing with convert_forcing.py --pet-method
-    priestley_taylor --srad-col <sw> --lrad-col <lw> --pres-col <pres> (ALWAYS pass --pres-col: the 101325'
+    priestley_taylor --srad-col <sw> --lrad-col <lw> --pres-col <pres> (ALWAYS pass --pres-col: the 101325
+    Pa sea-level fallback inflates the psychrometric constant gamma and under-estimates Ep at altitude).
+    Re-run and re-check water balance.'
 - id: dt_020
   symptom: 'A MARRMoT structure dies on its FIRST objective evaluation with "error: ''normcdf'' undefined
     near line 20, column 11 ... The ''normcdf'' function belongs to the statistics package from Octave
     Forge which seems to not be installed". Stack: saturation_13 -> model_fun -> ODE_approx_IE -> get_streamflow
-    ->'
-  diagnosis: This Octave install has no reachable packages.octave.org, so the Octave-Forge statistics
+    -> calibrate>fitness_fun. The structure yields no theta and silently drops out of a multi-structure
+    comparison, looking like a "model that does not fit this basin" when it never ran at all.'
+  diagnosis: 'This Octave install has no reachable packages.octave.org, so the Octave-Forge statistics
     package is absent (same offline condition that already required the lsqnonlin shim for the missing
-    optim package). MARRMoT's flux function saturation_13 -- saturation-excess flow from a store with
-    a lognormal di
+    optim package). MARRMoT''s flux function saturation_13 -- saturation-excess flow from a store with
+    a lognormal distribution of contributing area -- calls normcdf. Exactly one flux function and exactly
+    one structure depend on it: m_42_hycymodel_12p_6s.'
   remedy: 'Use the KI-local shim tools/octave_shims/normcdf.m (auto-added to the Octave path by all three
     script builders in run_marrmot.py). The standard normal CDF is exact in the complementary error function,
-    which IS core Octave: Phi(z) = 0.5*erfc(-z/sqrt(2)), so the shim is an exact substitute, not an app'
+    which IS core Octave: Phi(z) = 0.5*erfc(-z/sqrt(2)), so the shim is an exact substitute, not an approximation
+    (verified against reference values to 1e-6). Do NOT conclude a structure is unsuitable for the basin
+    until it has actually produced a theta.'

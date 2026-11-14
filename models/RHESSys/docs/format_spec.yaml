@@ -355,7 +355,8 @@ outputs:
       - none
   - name: cs.net_psn (net photosynthesis / NPP proxy)
     unit: gC/m^2/day in .daily growth files (x1000; kgC/m^2/day in output-filter CSV)
-    description: Net photosynthesis at the canopy stratum.
+    description: Net photosynthesis, computed per canopy stratum; the patch value is the cover-weighted
+      sum over strata.
     validation_rank: 7
     emitted_in: patch daily growth output, column net_psn (cover-fraction-weighted sum over strata, output_growth_patch.c:69/141,
       x1000); stratum (column psn_to_cpool) and basin (column gpsn) growth files write psn_to_cpool x1000

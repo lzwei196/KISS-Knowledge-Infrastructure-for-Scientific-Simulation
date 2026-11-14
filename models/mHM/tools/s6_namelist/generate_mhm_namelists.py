@@ -95,7 +95,7 @@ if len(sys.argv) > 1:
     PARAM_NML = args.param_nml
 
     # NOTE: `logger` is configured below this block, so report to stderr directly.
-    if OPTIMIZE and OPTI_FUNCTION in (10, 11, 12, 13, 15, 17, 27, 29, 30):
+    if OPTIMIZE and OPTI_FUNCTION in (10, 11, 12, 13, 15, 17, 27, 28, 29, 30, 33):
         print(f"ERROR: opti_function={OPTI_FUNCTION} needs a &optional_data namelist "
               f"(soil moisture / TWS / ET / neutrons). For discharge calibration use "
               f"1 (1-NSE) or 9 (1-KGE). See dt_r15.", file=sys.stderr)

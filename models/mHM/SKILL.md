@@ -344,7 +344,11 @@ python tools/s9_calibration/setup_mhm_calibration.py \
 | 10–13 | KGE / PD / SSE / corr of **soil moisture** | **YES** |
 | 15 | `KGE(Q) * RMSE(TWS)` | **YES** |
 | 17 | KGE of **neutrons** | **YES** |
-| 27, 29, 30 | objectives involving **ET** | **YES** |
+| 27 | `1 - KGE` of catchment-average **ET** | **YES** |
+| 28 | power-6 mix of `1 - KGE(Q)` and `1 - mean per-cell correlation` of **soil moisture** | **YES** |
+| 29 | power-6 mix of `1 - KGE(Q)` and `1 - mean per-cell KGE` of **ET** | **YES** |
+| 30 | RMSE of standardized monthly **ET** anomalies (domain average) `* (1 - KGE(Q))` | **YES** |
+| 33 | power-6 mix of KGE losses for **Q, ET and TWS** (multi-objective) | **YES** |
 
 > **TRAP (dt_r15).** `opti_function=10` is **NOT** KGE of discharge — it is
 > `1 - KGE of catchment-average SOIL MOISTURE`. Earlier revisions of this file

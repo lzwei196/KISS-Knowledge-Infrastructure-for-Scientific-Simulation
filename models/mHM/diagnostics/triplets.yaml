@@ -743,7 +743,7 @@
   diagnosis:
     root_cause: opti_function=10 is NOT KGE of discharge in mHM v5.13.1
     explanation: 'mo_mhm_read_config.f90 reads the &optional_data namelist for `case(10:13, 28)` (soil
-      moisture), `case(17)` (neutrons), `case(27,29,30)` (ET) and `case(15)` (TWS). Per mo_mrm_objective_function_runoff.F90
+      moisture; 28 also uses Q), `case(17)` (neutrons), `case(27,29,30)` (ET; 29 and 30 also use Q), `case(15)` (TWS) and `case(33)` (Q + ET + TWS). Per mo_mrm_objective_function_runoff.F90
       the DISCHARGE objectives are 1 = 1-NSE, 2 = 1-lnNSE, 3 = 1-0.5*(NSE+lnNSE), 9 = 1-KGE, 14 = multi-gauge
       KGE. opti_function=10 is 1 - KGE of catchment-average SOIL MOISTURE. Older SKILL.md text calling
       10 "KGE (recommended)" makes the documented recipe crash.
@@ -757,7 +757,7 @@
     manual_steps:
     - opti_function = 1  -> minimise 1 - NSE(Q)
     - opti_function = 9  -> minimise 1 - KGE(Q)
-    - Only use 10-13/15/17/27-30 with an &optional_data namelist AND the obs files
+    - Only use 10-13/15/17/27-30/33 with an &optional_data namelist AND the obs files
     prevention: setup_mhm_calibration.py rejects objectives that require &optional_data
   severity: fatal
   seen_at: "2026-07-09, Wangjiaba (51030)"

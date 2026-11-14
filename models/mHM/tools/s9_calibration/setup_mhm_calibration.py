@@ -550,7 +550,7 @@ def validate_inputs():
         if nml_path.exists():
             nml_lines = [ln.split("!", 1)[0].strip().lower()
                          for ln in nml_path.read_text(errors="replace").splitlines()]
-            if not any(ln.split()[:1] == ["&optional_data"] for ln in nml_lines):
+            if not any(re.match(r"&optional_data(?![a-z0-9_])", ln) for ln in nml_lines):
                 errors.append(f"opti_function {OPTI_FUNCTION} needs an &optional_data namelist and its obs "
                               f"files (dt_r15); for discharge use 1 (1-NSE) or 9 (1-KGE)")
 

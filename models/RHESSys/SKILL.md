@@ -320,11 +320,11 @@ filter:
 | `rz_storage` | mm in .daily files (m in output-filter CSV) | patch | Root zone storage |
 | `snowpack.water_equivalent_depth` | mm in .daily files (m in output-filter CSV) | patch | SWE |
 | `detention_store` | mm in .daily files (m in output-filter CSV) | patch | Surface detention |
-| `cs.leafc` | kg C/m^2 | stratum | Leaf carbon |
-| `cs.net_psn` | kg C/m^2/day | stratum | Net photosynthesis |
+| `cs.leafc` | kg C/m^2 in output-filter CSV; the grow_stratum .daily leafc column is (leafc + leafc_store + leafc_transfer) x1000 in g C/m^2 | stratum | Leaf carbon |
+| `cs.net_psn` | g C/m^2/day as column net_psn in grow_patch .daily (x1000, cover-weighted sum over strata; kg C/m^2/day in output-filter CSV) | patch | Net photosynthesis |
 | `epv.proj_lai` | m^2/m^2 | stratum | Projected LAI |
-| `streamflow_NO3` | kg N/m^2/day | basin | Nitrate in streamflow |
-| `streamflow_DON` | kg N/m^2/day | basin | DON in streamflow |
+| `streamflow_NO3` | g N/m^2/day in grow_basin .daily (x1000; kg N/m^2/day in output-filter CSV) | basin | Nitrate in streamflow |
+| `streamflow_DON` | g N/m^2/day in grow_basin .daily (x1000; kg N/m^2/day in output-filter CSV) | basin | DON in streamflow |
 | `soil_cs.totalc` | kg C/m^2 | patch | Total soil carbon |
 | `litter_cs.totalc` | kg C/m^2 | patch | Total litter carbon |
 

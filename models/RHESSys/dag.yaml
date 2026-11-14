@@ -237,9 +237,9 @@ outputs:
       detrending_options: ["none"]
   - var: "cs.net_psn (net photosynthesis / NPP proxy)"
     validation_rank: 7
-    unit: "kgC/m^2/day"
+    unit: "gC/m^2/day in .daily growth files (x1000; kgC/m^2/day in output-filter CSV)"
     description: "Net photosynthesis at the canopy stratum."
-    emitted_in: "stratum daily growth output"
+    emitted_in: "patch daily growth output, column net_psn (cover-fraction-weighted sum over strata, output_growth_patch.c:69/141, x1000); stratum and basin (column gpsn) growth files write psn_to_cpool x1000 instead"
     observability:
       comparable_obs_shapes:
         - obs_shape: "point_time_series"

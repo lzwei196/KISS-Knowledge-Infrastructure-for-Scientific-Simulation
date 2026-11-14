@@ -342,12 +342,12 @@ python tools/s9_calibration/setup_mhm_calibration.py \
 | **9** | `1 - KGE(Q)` — the real KGE-of-discharge objective | no |
 | 14 | multi-gauge KGE, power-6 norm | no |
 | 10–13 | KGE / PD / SSE / corr of **soil moisture** | **YES** |
-| 15 | RMSE of standardized monthly **TWS** anomalies (domain average) `* (1 - mean KGE(Q) over gauges)`; not available with MPI | **YES** |
-| 17 | `1 - KGE` of catchment-average **neutrons** | **YES** |
-| 27 | `1 - KGE` of catchment-average **ET** | **YES** |
+| 15 | RMSE of standardized monthly anomalies of domain-average **TWS**, averaged over domains, `* (1 - mean KGE(Q) over gauges)`; not available with MPI | **YES** |
+| 17 | `1 - KGE` of catchment-average **neutrons**; with several domains: `(sum(((1 - KGE_d) / D)^6))^(1/6)` | **YES** |
+| 27 | `1 - KGE` of catchment-average **ET**; with several domains: same power-6 sum as 17 | **YES** |
 | 28 | power-6 mix of the gauges' `1 - KGE(Q)` and `1 - mean per-cell correlation` of **soil moisture** (cells with too few obs count as 0) | **YES** |
 | 29 | power-6 mix of the gauges' `1 - KGE(Q)` and `1 - mean per-cell KGE` of **ET** (cells with too few obs count as 0) | **YES** |
-| 30 | RMSE of standardized monthly **ET** anomalies (domain average) `* (1 - mean KGE(Q) over gauges)`; not available with MPI | **YES** |
+| 30 | RMSE of standardized monthly anomalies of domain-average **ET**, averaged over domains, `* (1 - mean KGE(Q) over gauges)`; not available with MPI | **YES** |
 | 33 | one number: power-6 mean of per-gauge `1 - KGE(Q)`, per-cell `1 - KGE(ET)` and per-cell `1 - KGE(TWS anomaly)` in one pool (many cells can outweigh few gauges) | **YES** |
 
 > **TRAP (dt_r15).** `opti_function=10` is **NOT** KGE of discharge — it is

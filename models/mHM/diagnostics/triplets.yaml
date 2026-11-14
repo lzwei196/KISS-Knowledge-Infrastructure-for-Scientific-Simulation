@@ -427,9 +427,9 @@
   remedy:
     action: Use per-basin KGE/NSE averaged across basins (not summed)
     manual_steps:
-    - Set opti_function to KGE (value 10) which normalizes per gauge
+    - Set opti_function = 9 (1 - mean KGE over all gauges) or 14 (power-6 norm, weights the worst gauge); 10 is soil moisture, not discharge (dt_r15)
     - Or compute weighted average of per-basin metrics
-    prevention: Default opti_function=10 (KGE) handles this correctly
+    prevention: For several gauges use opti_function = 9 (equal mean of KGE) or 14 (power-6, weights the worst gauge); 1 = 1-NSE
   severity: silent
 - id: dt_s05
   stage: s2_morphology

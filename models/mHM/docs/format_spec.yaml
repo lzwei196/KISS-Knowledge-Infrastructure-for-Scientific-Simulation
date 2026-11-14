@@ -449,9 +449,10 @@ known_issues:
   diagnosis: Objective function not normalized by basin area or number of timesteps; When calibrating
     across multiple basins, a 100,000 km2 basin dominates the objective function over a 1,000 km2 basin
     because it has more grid cells contributing to total error.; ['s9_calibrate']
-  remedy: Use per-basin KGE/NSE averaged across basins (not summed); ['Set opti_function to KGE (value
-    10) which normalizes per gauge', 'Or compute weighted average of per-basin metrics']; Default opti_function=10
-    (KGE) handles this correctly
+  remedy: Use per-basin KGE/NSE averaged across basins (not summed); ['Set opti_function = 9 (1 - mean
+    KGE over all gauges) or 14 (power-6 norm, weights the worst gauge); 10 is soil moisture, not discharge
+    (dt_r15)', 'Or compute weighted average of per-basin metrics']; For several gauges use opti_function
+    = 9 (equal mean of KGE) or 14 (power-6, weights the worst gauge); 1 = 1-NSE
   severity: silent
 - id: dt_s05
   symptom: Aspect values wrong (north/south flipped)

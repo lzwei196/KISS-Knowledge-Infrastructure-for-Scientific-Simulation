@@ -311,7 +311,7 @@ Routed streamflow discharge on the L11 routing network, extracted at gauge cells
 python tools/s9_calibration/setup_mhm_calibration.py \
     --run_dir /path/to/gauged_basin \
     --opti_method 1 \
-    --opti_function 10 \
+    --opti_function 9 \
     --n_iterations 1000 \
     --basin_type humid_subtropical
 

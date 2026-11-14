@@ -9,7 +9,7 @@ Description:  Configure and run mHM's built-in DDS/SCE calibration, then extract
 mHM has a BUILT-IN optimizer. Calibration works by:
   1. Setting `optimize = .TRUE.` in mhm.nml
   2. Choosing optimizer: opti_method = 1 (DDS), 2 (SA), 3 (SCE)
-  3. Choosing objective: opti_function = 10 (KGE), 1 (NSE), 9 (KGE v2012)
+  3. Choosing objective: opti_function = 1 (1-NSE of Q), 9 (1-KGE of Q), 14 (multi-gauge KGE); 10-13 are soil moisture
   4. Setting iteration count: nIterations (default 1000 for DDS)
   5. Running the mHM binary -- it self-calibrates
   6. Best parameters are written to FinalParam.nml and optimization log
@@ -26,7 +26,7 @@ wider infiltration ranges but narrower snow ranges.
 Inputs:
   --run_dir            : mHM run directory (must have mhm.nml and all input data ready)
   --opti_method        : 1=DDS (default, recommended), 2=SA, 3=SCE
-  --opti_function      : 10=KGE (default), 1=1-NSE, 2=1-lnNSE, 9=KGE(2012)
+  --opti_function      : 1=1-NSE (default), 2=1-lnNSE, 9=1-KGE of Q, 14=multi-gauge KGE; 10=soil moisture (needs &optional_data)
   --n_iterations       : number of iterations (default 1000; use 200 for quick test)
   --basin_type         : humid_subtropical|semi_arid|cold_alpine|tropical (optional, adjusts bounds)
   --execute            : actually run mHM calibration (default: only generate config)
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 RUN_DIR = ""
 OPTI_METHOD = 1       # 1=DDS (recommended for mHM)
-OPTI_FUNCTION = 10    # 10=KGE (recommended)
+OPTI_FUNCTION = 1     # 1=1-NSE of Q (same as the argparse default); 9=1-KGE of Q
 N_ITERATIONS = 1000   # DDS: 1000 is usually sufficient for ~50 active params
 BASIN_TYPE = ""       # Optional: humid_subtropical, semi_arid, cold_alpine, tropical
 EXECUTE = False       # Actually run the binary
@@ -78,7 +78,7 @@ if len(sys.argv) > 1:
                         choices=[1, 2, 3],
                         help="1=DDS, 2=SA, 3=SCE")
     parser.add_argument("--opti_function", type=int, default=1,
-                        help="Objective function: 10=KGE, 1=1-NSE, 9=KGE(2012)")
+                        help="Objective: 1=1-NSE of Q, 9=1-KGE of Q, 14=multi-gauge KGE; 10-13=soil moisture (needs &optional_data)")
     parser.add_argument("--n_iterations", type=int, default=1000,
                         help="Number of optimization iterations")
     parser.add_argument("--basin_type", default="",
@@ -187,7 +187,7 @@ def modify_mhm_nml_for_calibration(nml_path, opti_method, opti_function, n_itera
     Key settings:
       optimize = .TRUE.
       opti_method = 1 (DDS) / 2 (SA) / 3 (SCE)
-      opti_function = 10 (KGE) / 1 (1-NSE) / 9 (KGE 2012)
+      opti_function = 1 (1-NSE of Q) / 9 (1-KGE of Q) / 14 (multi-gauge KGE)
       nIterations = N
     """
     with open(nml_path) as f:
@@ -542,6 +542,17 @@ def validate_inputs():
 
     if OPTI_METHOD not in (1, 2, 3):
         errors.append(f"Invalid opti_method: {OPTI_METHOD}. Must be 1 (DDS), 2 (SA), or 3 (SCE)")
+
+    # dt_r15: these objectives need observations beyond discharge (soil moisture, TWS, ET or neutrons).
+    # Without an &optional_data namelist mHM stops: "POSITION_NML: namelist /optional_data/ MISSING" (exit 1).
+    if OPTI_FUNCTION in (10, 11, 12, 13, 15, 17, 27, 28, 29, 30, 33) and RUN_DIR:
+        nml_path = Path(RUN_DIR) / "mhm.nml"
+        if nml_path.exists():
+            nml_lines = [ln.split("!", 1)[0].strip().lower()
+                         for ln in nml_path.read_text(errors="replace").splitlines()]
+            if not any(ln.split()[:1] == ["&optional_data"] for ln in nml_lines):
+                errors.append(f"opti_function {OPTI_FUNCTION} needs an &optional_data namelist and its obs "
+                              f"files (dt_r15); for discharge use 1 (1-NSE) or 9 (1-KGE)")
 
     if errors:
         for e in errors:

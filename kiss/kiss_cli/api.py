@@ -1113,10 +1113,11 @@ def _ki_walk(base: Path, ki_root: Path, *, hidden: bool, deadline: float | None 
     # (Python 3.12+), so followlinks=True (review r9). Only the folder itself is checked again: a
     # parent swapped by a hostile process at the right moment can still show names from outside
     # (never contents: every read is resolved and kept inside the KI); closing that needs dir_fd,
-    # which Windows lacks.
+    # which Windows lacks. The start folder is checked again like the others (codex r10).
     for top, dirs, names in os.walk(base, onerror=lambda _error: None, followlinks=True):
         top_p = Path(top)
-        if top_p != base and (_ki_out_of_time(deadline) or _ki_is_link(top_p)):
+        # every folder, the start folder too (codex r10): it may have been swapped since it was resolved
+        if _ki_out_of_time(deadline) or _ki_is_link(top_p):
             if _ki_out_of_time(deadline):     # read but not checked again in time: not used
                 return files, folders, True
             dirs[:] = []
@@ -1164,7 +1165,7 @@ def _ki_count_files(folder: Path, budget: list[int], deadline: float | None = No
     for top, dirs, files in os.walk(folder, onerror=lambda _error: None, followlinks=True):
         if _ki_out_of_time(deadline):
             return f"{n}+ files"
-        if Path(top) != folder and _ki_is_link(top):
+        if _ki_is_link(top):   # every folder, the start folder too (codex r10)
             dirs[:] = []
             continue
         kept = []

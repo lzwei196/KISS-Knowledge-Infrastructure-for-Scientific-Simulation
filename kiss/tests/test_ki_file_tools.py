@@ -868,6 +868,21 @@ def test_list_handler_checks_the_clock_between_is_file_and_is_dir(tmp_path, monk
     assert "(not read: the time for this call ran out" in A.execute_tool("list_ki_files", {"subdir": "docs"}, ki, cfg)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need extra rights on Windows")
+def test_start_folder_swapped_for_a_link_is_not_used(tmp_path):
+    """Codex r10: the start folder of a walk or count is checked again too. Here a/ was resolved as a
+    real folder, then swapped for a link to an outside folder before the walk."""
+    k = _fake_ki(tmp_path)
+    outside = tmp_path / "outside"; (outside / "deep").mkdir(parents=True)
+    (outside / "top.csv").write_text("x"); (outside / "deep" / "o.csv").write_text("x")
+    a = k / "a"
+    a.symlink_to(outside, target_is_directory=True)          # the swap, as seen by the walk
+    files, folders, _cut = A._ki_walk(a, k, hidden=False)
+    assert files == [] and folders == []
+    assert A._ki_count_files(a, [10_000]) == "0 files"
+    assert A._ki_count_files(k / "docs", [10_000]) == "2 files"   # a real start folder still counts
+
+
 def test_list_ki_files_schema_offers_pattern():
     schema = next(t for t in A.tool_schemas(None) if t["name"] == "list_ki_files")
     props = schema["input_schema"]["properties"]

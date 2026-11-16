@@ -821,6 +821,53 @@ def test_tool_handlers_stop_after_a_slow_resolve(tmp_path, monkeypatch):
         A.execute_tool("read_ki_file", {"path": "docs/x.md"}, ki, cfg)
 
 
+def test_no_late_look_from_os_walk_and_recheck_first_looks_at_the_clock(tmp_path, monkeypatch):
+    """Review r9: os.walk's own islink look ran with no clock check; the re-check after a scan now
+    looks at the clock first. 1 look per lstat/scandir; no look may start after the budget."""
+    k = tmp_path / "KI"
+    for d in ("a/x", "a/y", "a/z"):
+        (k / d).mkdir(parents=True); (k / d / "f.txt").write_text("x")
+    k = k.resolve()
+    clock = {"t": 0.0}
+    monkeypatch.setattr(A, "_ki_now", lambda: clock["t"])
+    late = {"n": 0}
+    real_lstat, real_scandir, real_islink = os.lstat, os.scandir, os.path.islink
+
+    def tick(real):
+        def f(*a_, **kw):
+            late["n"] += clock["t"] > 5.0
+            clock["t"] += 1.0
+            return real(*a_, **kw)
+        return f
+
+    monkeypatch.setattr(A.os, "lstat", tick(real_lstat))
+    monkeypatch.setattr(A.os, "scandir", tick(real_scandir))
+    monkeypatch.setattr(A.os.path, "islink", tick(real_islink))
+    A._ki_walk(k / "a", k, hidden=False, deadline=5.0)
+    assert late["n"] == 0
+    clock["t"], late["n"] = 0.0, 0
+    A._ki_count_files(k / "a", [10_000], deadline=5.0)
+    assert late["n"] == 0
+
+
+def test_list_handler_checks_the_clock_between_is_file_and_is_dir(tmp_path, monkeypatch):
+    """Review r9: the second handler check (after is_file, before is_dir) is reached."""
+    k = _fake_ki(tmp_path)
+    ki, cfg = KI("M", k), paths.KissConfig.default(tmp_path / "project")
+    clock = _LateClock()
+    monkeypatch.setattr(A, "_ki_now", clock)
+    real_is_file = Path.is_file
+
+    def is_file(self, *a_, **kw):
+        out = real_is_file(self, *a_, **kw)
+        if self.name == "docs":
+            clock.late = True
+        return out
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    assert "(not read: the time for this call ran out" in A.execute_tool("list_ki_files", {"subdir": "docs"}, ki, cfg)
+
+
 def test_list_ki_files_schema_offers_pattern():
     schema = next(t for t in A.tool_schemas(None) if t["name"] == "list_ki_files")
     props = schema["input_schema"]["properties"]

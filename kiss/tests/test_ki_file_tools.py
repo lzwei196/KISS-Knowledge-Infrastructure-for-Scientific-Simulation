@@ -225,11 +225,11 @@ def test_glob_matching_cannot_hang_and_matches_the_plain_reading(tmp_path):
             c = pattern[i]
             out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
             i += 1
-        return re.compile("".join(out) + r"\Z", re.IGNORECASE)
+        return re.compile("".join(out) + r"\Z", re.IGNORECASE | re.DOTALL)
 
     rnd = random.Random(7)
     checked = 0
-    for _ in range(4000):
+    for _ in range(6000):
         pat = "".join(rnd.choice(["a", "b", "/", "*", "*", "?", "**", "**/", "."]) for _ in range(rnd.randint(1, 8)))
         try:
             fast = A._ki_glob_regex(pat)
@@ -237,18 +237,43 @@ def test_glob_matching_cannot_hang_and_matches_the_plain_reading(tmp_path):
             continue   # too many ** : refused, never slow
         ref = plain(pat)
         for _ in range(12):
-            name = "".join(rnd.choice("ab/.") for _ in range(rnd.randint(0, 10)))
+            name = "".join(rnd.choice("ab/.\nA") for _ in range(rnd.randint(0, 12)))
             assert bool(fast.match(name)) == bool(ref.match(name)), (pat, name)
             checked += 1
-    assert checked > 20000
-    started = time.monotonic()
-    for reps in (8, 12, 15):
-        assert not A._ki_glob_regex("*a" * reps + "*b").match("a" * 60 + ".txt")
-    assert time.monotonic() - started < 1.0
-    with pytest.raises(A.ToolError, match=r"\*\* at most"):
-        A._ki_glob_regex("**/a/**/b/**/c")
+    assert checked > 30000
+    assert A._ki_glob_regex("*a**b").match("a\nab")                    # review r2: newline in a name
+    for ok in ("**/*.py", "docs/**", ".kdt_runs/**", "**/s2_*/*.csv", "**/docs/**", "*****z"):
+        A._ki_glob_regex(ok)                                           # common shapes stay allowed
+    for bad in ("**/a/**/b", "*a**/*a**/*b", "**a**a*b", "**/x/**/y/**", "**?**z"):
+        with pytest.raises(A.ToolError, match=r"\*\* only once"):
+            A._ki_glob_regex(bad)
     with pytest.raises(A.ToolError, match=r"\* at most"):
         A._ki_glob_regex("*a" * 20)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses SIGALRM as a hard stop")
+def test_glob_worst_cases_are_fast():
+    """Review r1/r2: shapes that backtracked for seconds; a hard stop so a hang fails, not blocks."""
+    import signal
+    import time
+
+    def boom(*_):
+        raise TimeoutError("glob match took too long")
+
+    old = signal.signal(signal.SIGALRM, boom)
+    signal.alarm(20)
+    try:
+        long_name = ("a" * 200 + "/") * 15 + "x.txt"
+        started = time.monotonic()
+        for pat in ("*a" * 15 + "*b", "*****z", "*****.zzz", "**/*a*a*a*a*a*b", "*a*a*a*a*b/**", "*a**/*a*b"):
+            rx = A._ki_glob_regex(pat)
+            for name in ("a" * 250 + ".txt", long_name, ("ab/" * 80) + "a" * 120):
+                for _ in range(20):
+                    rx.match(name)
+        assert time.monotonic() - started < 5.0
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
 
 
 def test_big_ki_search_and_hints_stay_right(tmp_path, monkeypatch):
@@ -298,6 +323,31 @@ def test_hints_keep_the_ki_they_were_given(tmp_path):
     listing = A._ki_list_folder(k / "docs", k, demo)
     assert "Folder: Demo/docs/" in listing and "Demo/docs/s4_genotype_config_skill.md" in listing
     assert A._ki_find("docs/s4_*", k, k, demo).splitlines()[1:] == ["Demo/docs/s4_genotype_config_skill.md"]
+
+
+def test_folders_differing_only_in_case_are_both_searched(tmp_path):
+    """Review r2: the fixed-folder start must not drop Data/ when data/ also exists."""
+    k = (tmp_path / "KI"); (k / "Data").mkdir(parents=True)
+    if (k / "data").exists():
+        pytest.skip("case-insensitive file system")
+    (k / "data").mkdir(); (k / "Data" / "a.csv").write_text("x"); (k / "data" / "b.csv").write_text("x")
+    k = k.resolve()
+    assert A._ki_find("data/*.csv", k, k).splitlines()[1:] == ["Data/a.csv", "data/b.csv"]
+    assert "data/b.csv" in A._ki_find("DATA/b.csv", k, k)
+
+
+def test_hint_values_are_quoted_and_names_kept_exactly(tmp_path):
+    """Review r2: quotes or backslashes in a name, and a KI name with spaces, survive in a hint."""
+    k = _fake_ki(tmp_path)
+    view = A._KiView(ki=" B ")
+    assert view.call("list_ki_files", subdir='my"da\\ta') == 'list_ki_files(subdir="my\\"da\\\\ta", ki=" B ")'
+    import json
+    args = json.loads("{" + view.call("list_ki_files", subdir='my"da\\ta')[len("list_ki_files("):-1]
+                      .replace('subdir=', '"subdir":').replace(', ki=', ', "ki":') + "}")
+    assert args == {"subdir": 'my"da\\ta', "ki": " B "}                     # reads back exactly
+    assert 'ki=" B "' in A._ki_missing_file("docs/genotype.md", k / "docs/genotype.md", k, view)
+    assert 'list_ki_files(subdir="Demo", pattern="genotype")' in A._ki_missing_file(
+        "Demo/docs/genotype.md", k / "docs/genotype.md", k, A._KiView(prefix="Demo/"))
 
 
 def test_list_ki_files_schema_offers_pattern():

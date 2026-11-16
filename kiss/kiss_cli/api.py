@@ -1002,7 +1002,6 @@ _KI_COUNT_CAP = 10_000   # files counted inside one sub-folder
 _KI_COUNT_BUDGET = 50_000  # files counted by one whole listing
 _KI_HINT_CAP = 40        # names shown in one hint line
 _KI_MAX_STARS = 16       # single * in one pattern
-_KI_MAX_DOUBLE_STARS = 2   # ** in one pattern
 _KI_BACKUP_RE = re.compile(r"\.(?:bak|orig|backup)(?:$|[._\-~0-9])|~$", re.IGNORECASE)
 _IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003   # a Windows junction
 
@@ -1022,9 +1021,14 @@ class _KiView:
         return self.prefix + rel
 
     def call(self, tool: str, **kw: str) -> str:
+        """A call the model can copy: values quoted as JSON strings (a quote or a backslash in a
+        name cannot break it); in intake a name search gets the KI's own folder as subdir."""
+        if self.prefix and tool == "list_ki_files" and "subdir" not in kw:
+            kw = {"subdir": self.prefix.rstrip("/"), **kw}
         if self.ki:
             kw["ki"] = self.ki
-        return f"{tool}(" + ", ".join(f'{k}="{v}"' for k, v in kw.items()) + ")"
+        return f"{tool}(" + ", ".join(f"{k}={json.dumps(v, ensure_ascii=False)}"
+                                      for k, v in kw.items()) + ")"
 
 
 _KI_PLAIN_VIEW = _KiView()
@@ -1055,8 +1059,8 @@ def _ki_entry_kind(e) -> str:
     """'dir', 'link' (a folder link or junction), or 'file' for one scandir entry."""
     try:
         info = os.lstat(e.path)
-    except OSError:
-        return "file"
+    except OSError:   # gone or no rights: shown as such, never walked
+        return "unreadable"
     if _ki_stat_is_link(info):
         try:
             return "link" if (stat.S_ISDIR(info.st_mode) or e.is_dir()) else "file"
@@ -1108,7 +1112,7 @@ def _ki_count_files(folder: Path, budget: list[int]) -> str:
         dirs[:] = [d for d in dirs if not _ki_hidden_name(d) and not _ki_is_link(Path(top) / d)]
         k = sum(1 for f in files if not _ki_hidden_name(f))
         n += k
-        budget[0] -= k
+        budget[0] -= k + 1   # a folder costs one too, so many empty folders stay cheap
         if n >= _KI_COUNT_CAP:
             return f"{_KI_COUNT_CAP}+ files"
         if budget[0] <= 0:
@@ -1131,6 +1135,8 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW) -
             dirs.append(e)
         elif kind == "link":
             links.append(e.name)
+        elif kind == "unreadable":
+            files.append(e.name + "  (cannot read)")
         elif e.name in _KI_KEY_FILES:
             key.append(e.name)
         else:
@@ -1173,10 +1179,15 @@ def _ki_glob_regex(pattern: str) -> "re.Pattern[str]":
     """Glob to regex: ``*`` and ``?`` stay inside one name, ``**`` crosses folders, every other
     character (``[`` too) is literal. Case is ignored (models rarely get it right).
 
-    No pattern can make the match slow: a ``*`` followed by fixed text and then another
-    wildcard takes that text at its first place (an atomic group, which gives the same
-    answer as plain backtracking there, because the next ``*`` or ``**`` can take up what
-    lies between), and ``**`` is allowed at most _KI_MAX_DOUBLE_STARS times."""
+    Kept cheap for any allowed pattern (review r1/r2):
+    - a run of wildcards with nothing between them counts as one (``*****`` = ``**``);
+    - ``**`` may appear once, plus once more at the very end (``**/*.py``, ``docs/**``,
+      ``.kdt_runs/**``); a trailing ``**`` always matches at once, so at most one ``**``
+      can backtrack and one match costs at most about (path length)^2 steps;
+    - a ``*`` followed by fixed text and then another ``*`` or ``**`` takes that text at its
+      first place (an atomic group: same answer, because the next wildcard can take up what
+      lies between); ``.`` matches every character (DOTALL), so ``**`` also covers a newline
+      in a file name, as ``*`` does."""
     toks: list[tuple[str, str]] = []   # ("S", "") one *, ("D", "") **, ("DS", "") **/, ("L", regex)
     i, n = 0, len(pattern)
     while i < n:
@@ -1197,8 +1208,32 @@ def _ki_glob_regex(pattern: str) -> "re.Pattern[str]":
         else:
             toks.append(("L", piece))
         i += 1
-    if sum(1 for t in toks if t[0] in ("D", "DS")) > _KI_MAX_DOUBLE_STARS:
-        raise ToolError(f"use ** at most {_KI_MAX_DOUBLE_STARS} times in one pattern")
+    # a run of wildcards with no text between: any ** in it -> one ** (it covers * and **/);
+    # only * -> one *; only **/ -> one **/; **/ next to * stays as written (different meaning)
+    merged: list[tuple[str, str]] = []
+    k = 0
+    while k < len(toks):
+        if toks[k][0] == "L":
+            merged.append(toks[k]); k += 1
+            continue
+        j = k
+        while j < len(toks) and toks[j][0] != "L":
+            j += 1
+        kinds = {t[0] for t in toks[k:j]}
+        if "D" in kinds:
+            merged.append(("D", ""))
+        elif kinds == {"S"}:
+            merged.append(("S", ""))
+        elif kinds == {"DS"}:
+            merged.append(("DS", ""))
+        else:
+            merged += toks[k:j]
+        k = j
+    toks = merged
+    trailing = 1 if toks and toks[-1][0] == "D" else 0
+    if sum(1 for t in toks[:len(toks) - trailing] if t[0] in ("D", "DS")) > 1:
+        raise ToolError("use ** only once in a pattern (plus once at the very end), "
+                        "e.g. '**/*.py' or 'docs/**'")
     if sum(1 for t in toks if t[0] == "S") > _KI_MAX_STARS:
         raise ToolError(f"use * at most {_KI_MAX_STARS} times in one pattern")
     out, k = [], 0
@@ -1212,7 +1247,7 @@ def _ki_glob_regex(pattern: str) -> "re.Pattern[str]":
         out.append({"S": "[^/]*", "D": ".*", "DS": "(?:.*/)?"}.get(kind, text))
         k += 1
     try:
-        return re.compile("".join(out) + r"\Z", re.IGNORECASE)
+        return re.compile("".join(out) + r"\Z", re.IGNORECASE | re.DOTALL)
     except re.error as e:  # not reachable with the escaping above; never crash the turn
         raise ToolError(f"bad pattern {pattern!r}: {e}") from None
 
@@ -1341,12 +1376,12 @@ def _ki_fixed_folder(pat: str, base: Path) -> Path | None:
             break
         try:
             with os.scandir(folder) as it:
-                hit = next((e for e in it if e.name.lower() == seg.lower() and _ki_entry_kind(e) == "dir"), None)
+                hits = [e for e in it if e.name.lower() == seg.lower() and _ki_entry_kind(e) == "dir"]
         except OSError:
-            hit = None
-        if hit is None:
+            hits = []
+        if len(hits) != 1:   # none, or Data/ and data/ both (case-sensitive disk): walk from base
             return None
-        folder = Path(hit.path)
+        folder = Path(hits[0].path)
     return None if folder == base else folder
 
 
@@ -1403,7 +1438,8 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
         if len(hits) > _KI_FIND_CAP:
             out.append(f"(showing {_KI_FIND_CAP} of {len(hits)} matches: use a narrower pattern)")
     else:
-        out.append(f"No files match {shown!r}{where} in this KI.")
+        out.append(f"No files match {shown!r}{where} in the first {_KI_WALK_CAP} files searched "
+                   "(the search was cut off)." if cut else f"No files match {shown!r}{where} in this KI.")
         hints = []
         if same:
             hints.append("A folder has that name: " + ", ".join(view.p(f) for f in same[:5])
@@ -2323,9 +2359,9 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         (e.g. Demo/); with ki=, every suggested call carries it."""
         ki_name = args.get("ki")
         if isinstance(ki_name, str) and ki_name.strip():
-            return _KiView(ki=ki_name.strip())
+            return _KiView(ki=ki_name)   # exactly as accepted: the flow looks names up as given
         if intake_read_map is not None:
-            first = rel.strip("/").split("/", 1)[0]
+            first = next((s for s in rel.split("/") if s not in ("", ".")), "")
             try:
                 model = str(intake_read_map.entry(first).get("model") or first)
             except (ValueError, OSError, AttributeError):

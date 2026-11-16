@@ -117,6 +117,14 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
     assert "Demo/diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})
     with pytest.raises(api.ToolError, match=r'ki="Demo"'):
         call("read_ki_file", {"ki": "Demo", "path": "readr.py"})
+    # review r2: the name-search hint, followed word for word, searches Demo (not the catalogue)
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo", pattern="readr"\)') as miss:
+        call("read_ki_file", {"path": "Demo/readr.py"})
+    assert "Or find files by name" in str(miss.value)
+    assert "Demo/reader.py" in call("list_ki_files", {"subdir": "Demo", "pattern": "reader"})
+    # review r2: "./Demo/..." keeps the KI name in its hints
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):
+        call("read_ki_file", {"path": "./Demo/diagnostics"})
     assert "Demo/SKILL.md" == call("list_ki_files", {})
     assert "corrected portable columns" in call("search_diagnostics", {"keyword": "remedy"})
     assert "corrected portable columns" in call("search_diagnostics", {"ki": "Demo", "keyword": "remedy"})

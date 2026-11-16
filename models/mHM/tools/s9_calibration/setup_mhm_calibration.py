@@ -181,6 +181,61 @@ BASIN_TYPE_BOUNDS = {
 }
 
 
+_NML_NAME_EDGE = r"(?<![A-Za-z0-9_%])"
+_NML_GROUP = "mainconfig_mhm_mrm"   # optimize and opti_function live here (src/common/mo_namelists.f90:1425-1436)
+
+
+def _nml_mask(text):
+    """Copy of text, same length, with '!' comments and quoted strings blanked (newlines kept), so a name inside a
+    comment or a string such as "restart/optimize=F/run.nc" is never read or changed."""
+    out, quote, comment = list(text), None, False
+    for i, ch in enumerate(text):
+        if ch == "\n":
+            comment = False
+        elif comment:
+            out[i] = " "
+        elif quote:
+            out[i] = " "
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            out[i], quote = " ", ch
+        elif ch == "!":
+            out[i], comment = " ", True
+    return "".join(out)
+
+
+def _nml_assignments(text, name, group=_NML_GROUP):
+    """(start, end, value) of each active `name = value` inside &group, in file order (in Fortran a later one wins).
+    The value may be on the next line. Repeat counts such as 1*T are not supported (the check then reports
+    "cannot read")."""
+    masked = _nml_mask(text)
+    g = re.search(r"&" + group + r"(?![A-Za-z0-9_])", masked, re.I)
+    if not g:
+        return []
+    # The group ends at '/' or at the old-style '&end' / '$end' (gfortran accepts both).
+    stop = re.compile(r"/|[&$]end(?![A-Za-z0-9_])", re.I).search(masked, g.end())
+    end = stop.start() if stop else len(masked)
+    # A value stops at space, ',', '/', '&', '$' or '='; an empty value (the next token is another `name =`) is not read.
+    pat = re.compile(_NML_NAME_EDGE + re.escape(name) + r"\s*=\s*(?![A-Za-z_]\w*\s*=)([^\s,/&$=]+)", re.I)
+    return [(m.start(1), m.end(1), m.group(1)) for m in pat.finditer(masked, g.end(), end)]
+
+
+def _nml_last_value(text, name):
+    """Value mHM will use for `name` (the last active one in the group), lower case; None if absent."""
+    found = _nml_assignments(text, name)
+    return found[-1][2].lower() if found else None
+
+
+def _nml_set_all(text, name, new_value, group=_NML_GROUP):
+    """Give every active `name = ...` in &group the new value, so no later one can override it.
+    Returns (text, count)."""
+    found = _nml_assignments(text, name, group)
+    for start, end, _ in reversed(found):
+        text = text[:start] + new_value + text[end:]
+    return text, len(found)
+
+
 def modify_mhm_nml_for_calibration(nml_path, opti_method, opti_function, n_iterations):
     """Modify mhm.nml to enable optimization.
 
@@ -193,33 +248,28 @@ def modify_mhm_nml_for_calibration(nml_path, opti_method, opti_function, n_itera
     with open(nml_path) as f:
         content = f.read()
 
-    # Replace optimize = .FALSE. with .TRUE.
-    content = re.sub(
-        r'(optimize\s*=\s*)\.FALSE\.',
-        r'\g<1>.TRUE.',
-        content
-    )
+    # Set optimize = .TRUE. on every active assignment in &mainconfig_mhm_mrm (comments, quoted strings and other
+    # groups are left alone; a value on the next line is handled). Stop if there is none: mHM has no default for it.
+    content, n_opt = _nml_set_all(content, "optimize", ".TRUE.")
+    if n_opt == 0:
+        raise SystemExit(f"ERROR: no active 'optimize = ...' in &mainconfig_mhm_mrm of {nml_path}; add it there first")
 
-    # Update opti_method
-    content = re.sub(
-        r'(opti_method\s*=\s*)\d+',
-        rf'\g<1>{opti_method}',
-        content
-    )
+    # Set opti_method on every active assignment in &mainconfig_mhm_mrm. mHM has no default for it: stop if none.
+    content, n_meth = _nml_set_all(content, "opti_method", str(opti_method))
+    if n_meth == 0:
+        raise SystemExit(f"ERROR: no active 'opti_method = N' in &mainconfig_mhm_mrm of {nml_path}; add it there first")
 
-    # Update opti_function
-    content = re.sub(
-        r'(opti_function\s*=\s*)\d+',
-        rf'\g<1>{opti_function}',
-        content
-    )
+    # Set opti_function on every active assignment in &mainconfig_mhm_mrm, so no later one can override it
+    # (comments like "!> e.g. for opti_function=8", quoted strings and other groups are left alone).
+    # Stop if there is none: a silent no-op would run the old objective.
+    content, n_fn = _nml_set_all(content, "opti_function", str(opti_function))
+    if n_fn == 0:
+        raise SystemExit(f"ERROR: no active 'opti_function = N' in &mainconfig_mhm_mrm of {nml_path}; add it there first")
 
-    # Update nIterations
-    content = re.sub(
-        r'(nIterations\s*=\s*)\d+',
-        rf'\g<1>{n_iterations}',
-        content
-    )
+    # Set nIterations on every active assignment in &optimization. mHM's default is 0 iterations: stop if none.
+    content, n_it = _nml_set_all(content, "nIterations", str(n_iterations), group="optimization")
+    if n_it == 0:
+        raise SystemExit(f"ERROR: no active 'nIterations = N' in &Optimization of {nml_path}; add it there first")
 
     # For SCE: set reasonable ngs based on parameter count
     if opti_method == 3:
@@ -545,13 +595,31 @@ def validate_inputs():
 
     # dt_r15: these objectives need observations beyond discharge (soil moisture, TWS, ET or neutrons).
     # Without an &optional_data namelist mHM stops: "POSITION_NML: namelist /optional_data/ MISSING" (exit 1).
-    if OPTI_FUNCTION in (10, 11, 12, 13, 15, 17, 27, 28, 29, 30, 33) and RUN_DIR:
+    # mHM reads &optional_data only when optimize is true (mo_mhm_read_config.f90:146-150).
+    # The configure call writes the CLI value into mhm.nml and sets optimize true; --execute leaves mhm.nml
+    # as is (dt_r16), so it tests the values mhm.nml already holds. --parse_results alone runs no mHM: no check.
+    if RUN_DIR and (Path(RUN_DIR) / "mhm.nml").exists() and (EXECUTE or not PARSE_RESULTS):
         nml_path = Path(RUN_DIR) / "mhm.nml"
-        if nml_path.exists():
-            nml_lines = [ln.split("!", 1)[0].strip().lower()
-                         for ln in nml_path.read_text(errors="replace").splitlines()]
-            if not any(re.match(r"&optional_data(?![a-z0-9_])", ln) for ln in nml_lines):
-                errors.append(f"opti_function {OPTI_FUNCTION} needs an &optional_data namelist and its obs "
+        nml_text = nml_path.read_text(errors="replace")
+        if EXECUTE:
+            opt_raw = _nml_last_value(nml_text, "optimize")
+            fn_raw = _nml_last_value(nml_text, "opti_function")
+            m_opt = re.fullmatch(r"\.?([tf])[a-z]*\.?", opt_raw or "")
+            m_fn = re.fullmatch(r"\+?(\d+)", fn_raw or "")
+            if not m_opt:
+                errors.append(f"cannot read 'optimize' in {nml_path} (found {opt_raw!r}); "
+                              f"mHM needs it in &mainconfig_mhm_mrm")
+            optimizing = bool(m_opt) and m_opt.group(1) == "t"
+            if optimizing and not m_fn:
+                errors.append(f"cannot read 'opti_function' in {nml_path} (found {fn_raw!r}); "
+                              f"mHM needs it in &mainconfig_mhm_mrm")
+            use_fn = int(m_fn.group(1)) if m_fn else None
+            where = "mhm.nml"
+        else:
+            use_fn, optimizing, where = OPTI_FUNCTION, True, "--opti_function"
+        if optimizing and use_fn in (10, 11, 12, 13, 15, 17, 27, 28, 29, 30, 33):
+            if not re.search(r"(?im)^\s*&optional_data(?![a-z0-9_])", _nml_mask(nml_text)):
+                errors.append(f"opti_function {use_fn} (from {where}) needs an &optional_data namelist and its obs "
                               f"files (dt_r15); for discharge use 1 (1-NSE) or 9 (1-KGE)")
 
     if errors:

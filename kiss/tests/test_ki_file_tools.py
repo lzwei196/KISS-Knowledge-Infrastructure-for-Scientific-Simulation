@@ -155,8 +155,149 @@ def test_ki_file_tools_through_execute_tool(tmp_path):
         call("list_ki_files", {"subdir": "a\x00b"})
     assert "No files match" in call("list_ki_files", {"pattern": "[a-Z]*"})
     assert "SKILL.md.bak.2026" in call("read_ki_file", {"path": "SKILL.md.bak.2026"})   # still readable by name
-    page = call("read_ki_file", {"path": "docs/s4_genotype_config_skill.md"})          # paged reading kept
-    assert "docs/s4_genotype_config_skill.md" in page
+    # paged reading kept (review r1): metadata, line range and the next start line
+    (k / "docs/long.md").write_text("".join(f"line {i}\n" for i in range(1, 31)))
+    page = call("read_ki_file", {"path": "docs/long.md", "start_line": 11, "line_count": 5})
+    assert page.read_metadata["read_path"] == "docs/long.md"
+    assert page.read_metadata["read_kind"] == "text" and page.read_metadata["next_start_line"] == 16
+    assert page.content.startswith("line 11\n") and "line 16" not in page.content
+
+
+def test_absolute_and_non_text_arguments_are_refused(tmp_path):
+    """Review r1: an absolute folder is refused before any trimming; non-text arguments get a clear error."""
+    k = _fake_ki(tmp_path)
+    ki, cfg = KI("M", k), paths.KissConfig.default(tmp_path / "project")
+
+    def call(name, args):
+        return A.execute_tool(name, args, ki, cfg)
+
+    for sub in ("/tests", "//docs", "\\docs", "C:\\", "C:/docs", "C:docs", "\\\\server\\share\\x", "/"):
+        with pytest.raises(A.ToolError, match="absolute paths are not accepted"):
+            call("list_ki_files", {"subdir": sub})
+        with pytest.raises(A.ToolError, match="absolute paths are not accepted"):
+            call("read_ki_file", {"path": sub + "/SKILL.md"})
+    with pytest.raises(A.ToolError, match="absolute paths are not accepted"):
+        call("list_ki_files", {"pattern": "/docs/*.md"})
+    for key, bad in (("subdir", ["docs"]), ("pattern", 5)):
+        with pytest.raises(A.ToolError, match=f"{key} must be a string"):
+            call("list_ki_files", {key: bad})
+    with pytest.raises(A.ToolError, match="path must be a string"):
+        call("read_ki_file", {"path": ["SKILL.md"]})
+
+
+def test_windows_junction_is_never_entered(tmp_path, monkeypatch):
+    """Review r1: Python 3.11 (the Windows app) has no os.path.isjunction; the reparse tag decides."""
+    k = _fake_ki(tmp_path)
+    (k / "jdir").mkdir(); (k / "jdir" / "secret.txt").write_text("x")
+    real_lstat = os.lstat
+    junction = str(k / "jdir")
+
+    class _Junction:
+        def __init__(self, info):
+            self.st_mode, self.st_reparse_tag = info.st_mode, A._IO_REPARSE_TAG_MOUNT_POINT
+
+    def lstat(path, *a, **kw):
+        info = real_lstat(path, *a, **kw)
+        return _Junction(info) if os.fspath(path) == junction else info
+
+    monkeypatch.setattr(A.os, "lstat", lstat)
+    monkeypatch.delattr(A.os.path, "isjunction", raising=False)
+    top = A._ki_list_folder(k, k)
+    assert "jdir/  (folder link)" in top and "secret" not in top
+    assert A._ki_find("secret", k, k).startswith("No files match")
+    assert "jdir/" not in A._ki_walk(k, k, hidden=False)[1]
+
+
+def test_glob_matching_cannot_hang_and_matches_the_plain_reading(tmp_path):
+    """Review r1: '*a*a*a...b' backtracked for seconds or minutes. The new regex must answer the
+    same as the plain translation (checked on many generated cases) and stay fast."""
+    import random
+    import re
+    import time
+
+    def plain(pattern):   # the reviewed web translation, kept here as the reference
+        out, i = [], 0
+        while i < len(pattern):
+            if pattern.startswith("**/", i):
+                out.append("(?:.*/)?"); i += 3; continue
+            if pattern.startswith("**", i):
+                out.append(".*"); i += 2; continue
+            c = pattern[i]
+            out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
+            i += 1
+        return re.compile("".join(out) + r"\Z", re.IGNORECASE)
+
+    rnd = random.Random(7)
+    checked = 0
+    for _ in range(4000):
+        pat = "".join(rnd.choice(["a", "b", "/", "*", "*", "?", "**", "**/", "."]) for _ in range(rnd.randint(1, 8)))
+        try:
+            fast = A._ki_glob_regex(pat)
+        except A.ToolError:
+            continue   # too many ** : refused, never slow
+        ref = plain(pat)
+        for _ in range(12):
+            name = "".join(rnd.choice("ab/.") for _ in range(rnd.randint(0, 10)))
+            assert bool(fast.match(name)) == bool(ref.match(name)), (pat, name)
+            checked += 1
+    assert checked > 20000
+    started = time.monotonic()
+    for reps in (8, 12, 15):
+        assert not A._ki_glob_regex("*a" * reps + "*b").match("a" * 60 + ".txt")
+    assert time.monotonic() - started < 1.0
+    with pytest.raises(A.ToolError, match=r"\*\* at most"):
+        A._ki_glob_regex("**/a/**/b/**/c")
+    with pytest.raises(A.ToolError, match=r"\* at most"):
+        A._ki_glob_regex("*a" * 20)
+
+
+def test_big_ki_search_and_hints_stay_right(tmp_path, monkeypatch):
+    """Review r1: a walk cut off at the file limit missed files in later folders; counting and
+    hint lists had no overall limit."""
+    k = _fake_ki(tmp_path)
+    monkeypatch.setattr(A, "_KI_WALK_CAP", 50)
+    (k / "build").mkdir()
+    for i in range(80):
+        (k / "build" / f"o{i:03d}.obj").write_text("x")
+    (k / "tools" / "run_model.py").write_text("x")
+    # a path pattern walks only the folder it names, so the big build/ folder cannot hide the file
+    assert "tools/run_model.py" in A._ki_find("tools/*.py", k, k)
+    assert "only the first" not in A._ki_find("tools/*.py", k, k)
+    assert "tools/run_model.py" in A._ki_find("tools/run_model", k, k)
+    # a miss looks in the named folder first
+    assert "Did you mean: tools/run_model.py" in A._ki_missing_file(
+        "tools/run_modl.py", k / "tools/run_modl.py", k)
+    # a cut walk says so, without claiming the file is not there
+    cut = A._ki_find("zzz_nothing", k, k)
+    assert "only the first 50 files were searched" in cut
+    # counting: one budget for the whole listing; folders past the budget are not counted
+    monkeypatch.setattr(A, "_KI_COUNT_BUDGET", 30)
+    top = A._ki_list_folder(k, k)
+    # "80+" = at least 80: one folder is read in one step, the budget stops before the next one
+    assert "build/  (80+ files)" in top and "docs/  (not counted)" in top
+    # hint lists are capped
+    many = tmp_path / "many"
+    for i in range(60):
+        (many / f"d{i:02d}").mkdir(parents=True)
+    msg = A._ki_missing_folder("nope", many / "nope", many.resolve())
+    assert "(20 more)" in msg and len(msg) < 2000
+
+
+def test_hints_keep_the_ki_they_were_given(tmp_path):
+    """Review r1: a hint followed word for word must reach the same KI (ki= kept; intake prefix kept)."""
+    k = _fake_ki(tmp_path)
+    b = A._KiView(ki="B")
+    assert 'list_ki_files(subdir="tools/s2_weather_prep", ki="B")' in A._ki_missing_folder(
+        "tools/s2_forcing", k / "tools/s2_forcing", k, b)
+    assert 'list_ki_files(pattern="genotype", ki="B")' in A._ki_missing_file(
+        "docs/genotype.md", k / "docs/genotype.md", k, b)
+    assert 'list_ki_files(subdir="docs", ki="B")' in A._ki_find("docs", k, k, b)
+    demo = A._KiView(prefix="Demo/")
+    assert "Did you mean: Demo/docs/s4_genotype_config_skill.md" in A._ki_missing_file(
+        "Demo/docs/genotype.md", k / "docs/genotype.md", k, demo)
+    listing = A._ki_list_folder(k / "docs", k, demo)
+    assert "Folder: Demo/docs/" in listing and "Demo/docs/s4_genotype_config_skill.md" in listing
+    assert A._ki_find("docs/s4_*", k, k, demo).splitlines()[1:] == ["Demo/docs/s4_genotype_config_skill.md"]
 
 
 def test_list_ki_files_schema_offers_pattern():

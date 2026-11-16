@@ -108,7 +108,15 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
     assert "diagnostics/" in call("list_ki_files", {"ki": "Demo"})      # one folder per listing
     assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "subdir": "diagnostics"})
     assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "pattern": "reader"})
-    assert "diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})   # library path
+    # a library path keeps its KI name in every path and hint, so a hint can be followed as written
+    assert "Demo/diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    with pytest.raises(api.ToolError, match=r"Did you mean: Demo/reader\.py"):
+        call("read_ki_file", {"path": "Demo/readr.py"})
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):
+        call("list_ki_files", {"subdir": "Demo/nope"})
+    assert "Demo/diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    with pytest.raises(api.ToolError, match=r'ki="Demo"'):
+        call("read_ki_file", {"ki": "Demo", "path": "readr.py"})
     assert "Demo/SKILL.md" == call("list_ki_files", {})
     assert "corrected portable columns" in call("search_diagnostics", {"keyword": "remedy"})
     assert "corrected portable columns" in call("search_diagnostics", {"ki": "Demo", "keyword": "remedy"})

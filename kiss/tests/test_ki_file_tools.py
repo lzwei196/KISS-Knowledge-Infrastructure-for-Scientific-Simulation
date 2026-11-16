@@ -768,6 +768,59 @@ def test_missing_file_says_partial_even_with_a_suggestion(tmp_path, monkeypatch)
     assert "Did you mean: reader.py ?" in msg and "only part of the KI was looked at" in msg
 
 
+def test_folder_swapped_for_a_link_after_the_check_is_not_used(tmp_path, monkeypatch):
+    """Review r8: a folder that passed the link check but is a link once read is dropped, in the walk
+    and in counting."""
+    k = _fake_ki(tmp_path)
+    swapped = str(k / "docs")
+    real = A._ki_is_link
+    seen = {"n": 0}
+
+    def is_link(path):
+        if os.fspath(path) == swapped:
+            seen["n"] += 1
+            return seen["n"] > 1          # passes the first look, is a "link" when read
+        return real(path)
+
+    monkeypatch.setattr(A, "_ki_is_link", is_link)
+    files, folders, _cut = A._ki_walk(k, k, hidden=False)
+    assert not any(f.startswith("docs/") for f in files)
+    seen["n"] = 0
+    # top: SKILL.md, dag.yaml, zeta.txt; tools/s2_weather_prep: 1; docs/ (2 files) is dropped
+    assert A._ki_count_files(k, [10_000]) == "4 files"
+    monkeypatch.setattr(A, "_ki_is_link", real)
+    assert A._ki_count_files(k, [10_000]) == "6 files"                  # without the swap
+
+
+def test_dotted_capital_i_prefix(tmp_path):
+    """Review r8: subdir İnfo, pattern info/x.py - the prefix is matched with the pattern's case rule."""
+    k = tmp_path / "KI"; (k / "İnfo").mkdir(parents=True); (k / "İnfo" / "x.py").write_text("x")
+    k = k.resolve()
+    out = A._ki_find("info/x.py", k / "İnfo", k)
+    assert "İnfo/x.py" in out.splitlines()[1:]
+
+
+def test_tool_handlers_stop_after_a_slow_resolve(tmp_path, monkeypatch):
+    """Review r8: no is_file / is_dir after the budget was spent resolving the path."""
+    k = _fake_ki(tmp_path)
+    ki, cfg = KI("M", k), paths.KissConfig.default(tmp_path / "project")
+    clock = _LateClock()
+    monkeypatch.setattr(A, "_ki_now", clock)
+    real_resolve = Path.resolve
+
+    def resolve(self, *a_, **kw):
+        out = real_resolve(self, *a_, **kw)
+        if "docs" in os.fspath(self):
+            clock.late = True
+        return out
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    assert "(not read: the time for this call ran out" in A.execute_tool("list_ki_files", {"subdir": "docs"}, ki, cfg)
+    clock.late = False
+    with pytest.raises(A.ToolError, match="could not look at docs/x.md in time"):
+        A.execute_tool("read_ki_file", {"path": "docs/x.md"}, ki, cfg)
+
+
 def test_list_ki_files_schema_offers_pattern():
     schema = next(t for t in A.tool_schemas(None) if t["name"] == "list_ki_files")
     props = schema["input_schema"]["properties"]

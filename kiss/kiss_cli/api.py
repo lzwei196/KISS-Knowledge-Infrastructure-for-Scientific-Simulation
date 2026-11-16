@@ -247,10 +247,22 @@ def tool_schemas(ki, *, setup_mode: bool = False,
         },
         {
             "name": "list_ki_files",
-            "description": "List the files in this KI package, optionally under a subdirectory.",
+            "description": (
+                "List one folder of this KI package (default: the top): files as KI paths, "
+                "sub-folders with their file counts. Hidden, cache and backup files are left out "
+                "but counted. With `pattern`, find files by name instead, in the whole KI or under "
+                "`subdir`: e.g. pattern='docs/s4_*', 'weather', 'docs/' or '**/*.py'."
+            ),
             "input_schema": {
                 "type": "object",
-                "properties": {"subdir": {"type": "string"},
+                "properties": {"subdir": {"type": "string",
+                                          "description": "folder relative to the KI root, e.g. 'docs' or 'tools'; default: the top"},
+                               "pattern": {"type": "string",
+                                           "description": ("find files by name. Plain words: files whose name contains them. "
+                                                           "With '/': a KI path ('docs/' = everything in docs). "
+                                                           "* and ? match inside one name, ** crosses folders; case is ignored. "
+                                                           "Hidden and backup files are searched only when the pattern names "
+                                                           "them, e.g. '.kdt_runs/**'.")},
                                "ki": {"type": "string",
                                       "description": "KI name from the intake catalogue, or a selected KI in project work"}},
             },
@@ -969,6 +981,367 @@ def _safe_relative_file_listing(base: Path, root: Path, limit: int,
             if len(names) >= limit:
                 return sorted(names)
     return sorted(names)
+
+
+# --- KI file listing and finding (from the GeoForge web agent, 2026-11-05) -----
+#
+# Shaped like the file tools of Gemini CLI / Qwen Code: one folder at a time,
+# a name-pattern search, hidden and backup files left out (counted in a listing),
+# and the real names when a folder or file does not exist. Everything stays
+# read-only and inside the KI: every path goes through ``_ki_scoped`` in
+# execute_tool, and a pattern is only matched against names found under it.
+
+_KI_KEY_FILES = ("SKILL.md", "dag.yaml")
+_KI_LIST_CAP = 400       # entries shown by one folder listing
+_KI_FIND_CAP = 200       # matches shown by one pattern search
+_KI_WALK_CAP = 50_000    # files looked at by one walk (a KI is far smaller)
+_KI_COUNT_CAP = 10_000   # files counted inside one sub-folder
+_KI_BACKUP_RE = re.compile(r"\.(?:bak|orig|backup)(?:$|[._\-~0-9])|~$", re.IGNORECASE)
+
+
+def _ki_is_link(path) -> bool:
+    """A symlink, or a Windows junction (os.walk and scandir report a junction as a plain folder)."""
+    try:
+        return os.path.islink(path) or bool(getattr(os.path, "isjunction", lambda _p: False)(path))
+    except OSError:
+        return True
+
+
+def _ki_hidden_name(name: str) -> bool:
+    """A dot name, a Python cache, or a backup copy (``SKILL.md.bak.2026...``, ``x.orig``)."""
+    return (name.startswith(".") or name == "__pycache__" or name.endswith((".pyc", ".pyo"))
+            or bool(_KI_BACKUP_RE.search(name)))
+
+
+def _ki_rel(p: Path, ki_root: Path) -> str:
+    return p.relative_to(ki_root).as_posix()
+
+
+def _ki_walk(base: Path, ki_root: Path, *, hidden: bool):
+    """``(files, folders, cut)`` under ``base`` as KI-relative paths, sorted, without following
+    folder links. ``hidden=False`` skips hidden folders and files (hidden relative to ``base``,
+    so a hidden folder named as ``base`` is walked). ``cut`` = stopped at _KI_WALK_CAP files."""
+    files: list[str] = []
+    folders: list[str] = []
+    # A KI tree can hold folders another process removes mid-walk, junctions and
+    # unreadable entries (Windows): skip those and keep the evidence collected.
+    for top, dirs, names in os.walk(base, onerror=lambda _error: None, followlinks=False):
+        top_p = Path(top)
+        dirs.sort()
+        if not hidden:
+            dirs[:] = [d for d in dirs if not _ki_hidden_name(d)]
+        dirs[:] = [d for d in dirs if not _ki_is_link(top_p / d)]
+        try:
+            folders += [_ki_rel(top_p / d, ki_root) + "/" for d in dirs]
+        except ValueError:
+            continue
+        for f in sorted(names):
+            if not hidden and _ki_hidden_name(f):
+                continue
+            try:
+                files.append(_ki_rel(top_p / f, ki_root))
+            except ValueError:
+                continue
+            if len(files) >= _KI_WALK_CAP:
+                return files, folders, True
+    return files, folders, False
+
+
+def _ki_count_files(folder: Path) -> str:
+    n = 0
+    for top, dirs, files in os.walk(folder, onerror=lambda _error: None, followlinks=False):
+        dirs[:] = [d for d in dirs if not _ki_hidden_name(d) and not _ki_is_link(Path(top) / d)]
+        n += sum(1 for f in files if not _ki_hidden_name(f))
+        if n >= _KI_COUNT_CAP:
+            return f"{_KI_COUNT_CAP}+ files"
+    return "1 file" if n == 1 else f"{n} files"
+
+
+def _ki_list_folder(base: Path, ki_root: Path) -> str:
+    """One folder, KI-relative paths: key files, then sub-folders (with file counts), then files."""
+    prefix = "" if base == ki_root else _ki_rel(base, ki_root) + "/"
+    key, dirs, links, files, hidden = [], [], [], [], []
+    with os.scandir(base) as it:
+        entries = sorted(it, key=lambda e: e.name)
+    for e in entries:
+        try:
+            junction = bool(getattr(e, "is_junction", lambda: False)())
+            real_dir = e.is_dir(follow_symlinks=False) and not junction
+            link_dir = not real_dir and (junction or (e.is_symlink() and e.is_dir()))
+        except OSError:  # a link loop or an unreadable entry: show it as a plain entry
+            real_dir = link_dir = False
+        if _ki_hidden_name(e.name):
+            hidden.append(e.name + ("/" if real_dir or link_dir else ""))
+        elif real_dir:
+            dirs.append(e)
+        elif link_dir:
+            links.append(e.name)
+        elif e.name in _KI_KEY_FILES:
+            key.append(e.name)
+        else:
+            files.append(e.name)
+    key.sort(key=_KI_KEY_FILES.index)
+    lines = [prefix + n for n in key]
+    lines += [f"{prefix}{d.name}/  ("
+              + (_ki_count_files(Path(d.path)) if os.access(d.path, os.R_OK | os.X_OK) else "cannot read")
+              + ")" for d in dirs]
+    lines += [f"{prefix}{n}/  (folder link)" for n in links]
+    lines += [prefix + n for n in files]
+    where = prefix or "the top of the KI"
+    out = [f"Folder: {where}  (folders end with /; read a file with read_ki_file(path=...))"]
+    out += lines[:_KI_LIST_CAP]
+    if not lines:
+        out.append("(no files shown here)")
+    if len(lines) > _KI_LIST_CAP:
+        out.append(f"(showing {_KI_LIST_CAP} of {len(lines)} entries: use pattern=... to narrow it)")
+    if hidden:
+        sample = ", ".join(hidden[:5]) + (", ..." if len(hidden) > 5 else "")
+        ex = next((h for h in hidden if h == ".kdt_runs/"), None) or next((h for h in hidden if h.endswith("/")), None)
+        how = (f", or list a hidden folder with subdir=\"{prefix}{ex.rstrip('/')}\"" if ex else "")
+        out.append(f"({len(hidden)} hidden, cache or backup entries not shown: {sample}. Read one "
+                   f"by name with read_ki_file{how}.)")
+    return "\n".join(out)
+
+
+def _ki_glob_regex(pattern: str) -> "re.Pattern[str]":
+    """Glob to regex: ``*`` and ``?`` stay inside one name, ``**`` crosses folders, every other
+    character (``[`` too) is literal. Case is ignored (models rarely get it right)."""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?"); i += 3; continue
+        if pattern.startswith("**", i):
+            out.append(".*"); i += 2; continue
+        c = pattern[i]
+        out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
+        i += 1
+    try:
+        return re.compile("".join(out) + r"\Z", re.IGNORECASE)
+    except re.error as e:  # not reachable with the escaping above; never crash the turn
+        raise ToolError(f"bad pattern {pattern!r}: {e}") from None
+
+
+_KI_EXT_RE = re.compile(r"\.[a-z0-9]{1,6}\Z", re.IGNORECASE)
+
+
+def _ki_pattern_wants_hidden(pat: str, words: list[str]) -> bool:
+    """True when the pattern itself names a hidden part (``.kdt_runs/**``, ``SKILL.md.bak*``,
+    ``*.pyc``, the word ``.kdt_runs``). ``*.py``, ``**`` and a file-type word like ``.py`` are not."""
+    if words:
+        return any(_ki_hidden_name(w) and (not _KI_EXT_RE.fullmatch(w) or _ki_hidden_name("x" + w))
+                   for w in words)
+    return any(_ki_hidden_name(seg.replace("*", "x").replace("?", "x"))
+               or bool(_KI_BACKUP_RE.search(seg.rstrip("*?")))
+               for seg in pat.split("/") if seg)
+
+
+def _ki_clean_pattern(raw: str) -> tuple[str, list[str], bool, bool]:
+    """``(glob, words, by_name, plain_path)``. Plain words (no * ? and no "/"): every word must be in
+    the file name (a file-type word like ``.py`` must end it). A "/" makes it a KI path; ``docs/`` is
+    everything in docs; a plain path without * is completed in _ki_find."""
+    pat = (raw or "").strip().replace("\\", "/")
+    trailing = pat.endswith("/")
+    if pat.startswith("/") or (len(pat) > 1 and pat[1] == ":" and pat[0].isalpha()
+                               and (len(pat) == 2 or pat[2] == "/")):
+        raise ToolError(f"absolute paths are not accepted: {raw}")
+    segs = [s for s in pat.split("/") if s and s != "."]
+    if ".." in segs:
+        raise ToolError(f"path escapes the KI package: {raw}")
+    if not segs:
+        raise ToolError("pattern is empty; e.g. pattern='docs/s4_*' or 'weather' or '**/*.py'")
+    pat = "/".join(segs) + ("/" if trailing else "")
+    by_name = "/" not in pat
+    has_glob = "*" in pat or "?" in pat
+    if by_name and not has_glob:
+        return "", pat.lower().split(), True, False
+    if trailing:
+        return pat.rstrip("/") + "/**", [], False, False
+    return pat, [], by_name, not has_glob
+
+
+def _ki_close_paths(wanted: str, rels: list[str], n: int = 5) -> list[str]:
+    """Real KI paths near ``wanted``: same start, same name elsewhere, same name start; only when
+    none of those exist, close spelling of the name (never of the whole path: shared folders
+    make unrelated files look close)."""
+    import difflib
+    w = wanted.strip("/").lower()
+    if not w:
+        return []
+    w_name = w.rsplit("/", 1)[-1]
+    w_stem = w_name.split(".", 1)[0]
+    w_base = w.rsplit(".", 1)[0] if "." in w_name else w
+    picks: list[str] = []
+
+    def add(rs):
+        for r in rs:
+            if r not in picks:
+                picks.append(r)
+
+    def name(r: str) -> str:
+        return r.rstrip("/").rsplit("/", 1)[-1].lower()
+
+    def whole(s: str, start: str) -> bool:  # "s1_x" starts with the whole "s1"; "s10" does not
+        return s.startswith(start) and (len(s) == len(start)
+                                        or (not s[len(start)].isalnum() and s[len(start)] != "/"))
+
+    def starts(s: str, start: str) -> bool:  # a name start, never "every file in that folder"
+        return s.startswith(start) and (len(s) == len(start) or s[len(start)] != "/")
+
+    if len(w_stem) >= 2:
+        add(r for r in rels if name(r) == w_name)
+        add(r for r in rels if whole(r.lower(), w_base) and r.lower().rstrip("/") != w)
+        add(r for r in rels if whole(name(r), w_stem))
+        add(r for r in rels if starts(r.lower(), w_base) and r.lower().rstrip("/") != w)
+        add(r for r in rels if name(r).startswith(w_stem))
+    if len(w_stem) >= 4:
+        add(r for r in rels if w_stem in name(r))
+    if not picks:
+        names: dict[str, list[str]] = {}
+        for r in rels:
+            names.setdefault(name(r), []).append(r)
+        for m in difflib.get_close_matches(w_name, list(names), n=n, cutoff=0.75):
+            add(names[m])
+    return picks[:n]
+
+
+def _ki_like_folders(word: str, folders: list[str], n: int = 8) -> list[str]:
+    """Folders whose name contains ``word``, or shares its first part (``s2_forcing`` -> ``s2_*``)."""
+    w = word.strip("/").lower().rsplit("/", 1)[-1]
+    head = w.split("_", 1)[0] + "_" if "_" in w and len(w.split("_", 1)[0]) >= 2 else ""
+    if len(w) < 3:
+        return []
+    out = [f for f in folders if w in f.rstrip("/").rsplit("/", 1)[-1].lower()]
+    if head:
+        out += [f for f in folders if f.rstrip("/").rsplit("/", 1)[-1].lower().startswith(head) and f not in out]
+    return out[:n]
+
+
+def _ki_word_in(w: str, name: str) -> bool:
+    """``.py`` must end the name; ``.bak`` / ``.orig`` / ``.backup`` must be followed by the end or
+    ``._-~``/a digit (as in ``_KI_BACKUP_RE``, so ``.bake`` is not a backup); other words anywhere."""
+    if _KI_EXT_RE.fullmatch(w):
+        if _KI_BACKUP_RE.search(w):
+            return bool(re.search(re.escape(w) + r"(?:$|[._\-~0-9])", name))
+        return name.endswith(w)
+    return w in name
+
+
+def _ki_find(pattern: str, base: Path, ki_root: Path) -> str:
+    pat, words, by_name, plain_path = _ki_clean_pattern(pattern)
+    want_hidden = _ki_pattern_wants_hidden(pat, words)
+    pre = "" if base == ki_root else _ki_rel(base, ki_root) + "/"
+    # a path pattern starts at subdir when it does not already start with it
+    if (pat and not by_name and pre and not pat.lower().startswith(pre.lower())
+            and pat.lower().rstrip("/") != pre.rstrip("/").lower()):
+        pat = pre + pat
+    files, folders, cut = _ki_walk(base, ki_root, hidden=want_hidden)
+    if plain_path:  # an existing folder (any case) = everything in it; otherwise a name start (docs/s4)
+        low = pat.lower().rstrip("/")
+        is_folder = (low == pre.rstrip("/").lower()) or any(f.lower().rstrip("/") == low for f in folders)
+        pat = pat.rstrip("/") + "/**" if is_folder else pat + "**"
+    rx = _ki_glob_regex(pat) if pat else None
+
+    def matches(rels: list[str]) -> list[str]:
+        out_ = []
+        for rel in rels:
+            if by_name:
+                nm = rel.rsplit("/", 1)[-1].lower()
+                ok = (all(_ki_word_in(w, nm) for w in words) if words else rx.match(nm))
+            else:
+                ok = rx.match(rel)
+            if ok:
+                out_.append(rel)
+        return out_
+
+    hits = matches(files)
+    only_hidden = False
+    same = [f for f in folders if f.rstrip("/").rsplit("/", 1)[-1].lower() in words]
+    if not hits and not want_hidden and not same:  # e.g. ".lock", "*pyc": once more with hidden files
+        h_files, _h_folders, h_cut = _ki_walk(base, ki_root, hidden=True)
+        hits, cut = matches(h_files), cut or h_cut
+        only_hidden = bool(hits)
+    if want_hidden or only_hidden:  # real files first, so the cap never hides them behind copies
+        hits.sort(key=lambda r: any(_ki_hidden_name(s) for s in r[len(pre):].split("/")))
+    shown = (pattern or "").strip()
+    where = f" under {pre}" if pre else ""
+    out = []
+    if hits:
+        how = "file names" if by_name else "KI paths"
+        out.append(f"No visible file matches {shown!r}{where}; these hidden, cache or backup files do:"
+                   if only_hidden else f"Files matching {shown!r} ({how}){where}:")
+        out += hits[:_KI_FIND_CAP]
+        if len(hits) > _KI_FIND_CAP:
+            out.append(f"(showing {_KI_FIND_CAP} of {len(hits)} matches: use a narrower pattern)")
+    else:
+        out.append(f"No files match {shown!r}{where} in this KI.")
+        hints = []
+        if same:
+            hints.append("A folder has that name: " + ", ".join(same[:5])
+                         + f" - list it with list_ki_files(subdir=\"{same[0].rstrip('/')}\")")
+        guess = (pat.replace("*", "").replace("?", "").rstrip("/") if pat else (words[0] if words else ""))
+        close = [] if same else _ki_close_paths(guess, files)
+        if close:
+            hints.append("Close file names: " + ", ".join(close))
+        if not by_name and "/" in guess.strip("/"):  # the real folders next to the guess
+            parent = guess.strip("/").rsplit("/", 1)[0].lower() + "/"
+            nxt = [f for f in folders if f.lower().startswith(parent) and f.count("/") == parent.count("/") + 1]
+            if nxt:
+                hints.append(f"folders in {parent}: " + ", ".join(nxt[:20]))
+        elif not same:
+            like = _ki_like_folders(guess, folders)
+            if like:
+                hints.append("folders with a similar name: " + ", ".join(like)
+                             + f" - list one with list_ki_files(subdir=\"{like[0].rstrip('/')}\")")
+        if pre and not by_name:
+            hints.append(f"(a pattern with / is read from {pre}: e.g. pattern=\"*.py\" or pattern=\"{pre}*.py\")")
+        out += hints
+        out.append("List a folder with list_ki_files(subdir=...) to see what is there.")
+    if cut:
+        out.append(f"(search stopped after {_KI_WALK_CAP} files: use subdir=... to narrow it)")
+    return "\n".join(out)
+
+
+def _ki_missing_folder(sub: str, base: Path, ki_root: Path) -> str:
+    """A folder that does not exist: the folders that do exist nearby, and files named like it."""
+    parent = base.parent
+    while parent != ki_root and not parent.is_dir():
+        parent = parent.parent
+    where = "the top of the KI" if parent == ki_root else _ki_rel(parent, ki_root) + "/"
+    prefix = "" if parent == ki_root else _ki_rel(parent, ki_root) + "/"
+    with os.scandir(parent) as it:
+        here = sorted(prefix + e.name + "/" for e in it
+                      if e.is_dir(follow_symlinks=False) and not _ki_hidden_name(e.name)
+                      and not _ki_is_link(e.path))
+    msg = [f"no such folder in this KI: {sub}",
+           f"folders in {where}: " + (", ".join(here) if here else "(none)")]
+    files, folders, _cut = _ki_walk(ki_root, ki_root, hidden=False)
+    like = [c for c in _ki_like_folders(base.name, folders) if c not in here]
+    if like:
+        msg.append("folders with a similar name elsewhere: " + ", ".join(like))
+    last = base.name.lower()
+    named = [r for r in files if len(last) >= 3 and last in r.rsplit("/", 1)[-1].lower()]
+    if named:
+        msg.append(f"files with {base.name!r} in the name: " + ", ".join(named[:5])
+                   + (", ..." if len(named) > 5 else ""))
+    return "\n".join(msg)
+
+
+def _ki_missing_file(path: str, p: Path, ki_root: Path) -> str:
+    if p.is_dir():
+        return (f"{path} is a folder, not a file: list it with "
+                f"list_ki_files(subdir=\"{_ki_rel(p, ki_root)}\")")
+    if p.parent != ki_root and not p.parent.is_dir():
+        folder_msg = _ki_missing_folder(_ki_rel(p.parent, ki_root), p.parent, ki_root)
+        return f"no such file in this KI: {path}\n" + folder_msg
+    files, _folders, _cut = _ki_walk(ki_root, ki_root, hidden=False)
+    close = _ki_close_paths(_ki_rel(p, ki_root), files)
+    msg = f"no such file in this KI: {path}"
+    if close:
+        msg += "\nDid you mean: " + ", ".join(close) + " ?"
+    stem = re.sub(r"[*?]", "", p.name.split(".", 1)[0])
+    if len(stem) >= 2:
+        msg += f"\nOr find files by name with list_ki_files(pattern=\"{stem}\")."
+    return msg
 
 
 class _TextPage(str):
@@ -1788,17 +2161,36 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if name == "read_ki_file":
         start, count = _read_page_arguments(args, ki=True)
-        p, _r = _ki_scoped(args.get("path", ""))
-        if not p.is_file():
-            raise ToolError(f"no such file in this KI: {args.get('path')}")
+        rel = str(args.get("path") or "").replace("\\", "/").strip()
+        if not rel:
+            raise ToolError("path is empty; e.g. path='SKILL.md'")
+        try:
+            p, _r = _ki_scoped(rel)
+            if not p.is_file():
+                raise ToolError(_ki_missing_file(rel, p, _r))
+        except (OSError, RuntimeError, ValueError) as e:  # link loop, NUL byte, no rights
+            raise ToolError(f"cannot read {rel}: {getattr(e, 'strerror', None) or e}") from None
         return _read_text_page(p, start, count, relative_path=p.relative_to(_r).as_posix())
 
     if name == "list_ki_files":
-        if intake_read_map is not None and not args.get("ki") and args.get("subdir", ".") in (None, "", "."):
-            return "\n".join(f"{model}/SKILL.md" for model in intake_read_map.entries)
-        base, ki_root = _ki_scoped(args.get("subdir") or ".")
-        names = _safe_relative_file_listing(base, ki_root, 400)
-        return "\n".join(names) or "(empty)"
+        sub = str(args.get("subdir") or "").replace("\\", "/").strip().strip("/") or "."
+        pattern = str(args.get("pattern") or "").strip()
+        if intake_read_map is not None and not args.get("ki") and sub == ".":
+            listing = "\n".join(f"{model}/SKILL.md" for model in intake_read_map.entries)
+            if pattern:
+                listing += "\n(to find files by name, name one KI with ki=...)"
+            return listing
+        try:
+            base, ki_root = _ki_scoped(sub)
+            if base.is_file():
+                raise ToolError(f"{sub} is a file, not a folder: read it with read_ki_file(path=\"{sub}\")")
+            if not base.is_dir():
+                raise ToolError(_ki_missing_folder(sub, base, ki_root))
+            if pattern:
+                return _ki_find(pattern, base, ki_root)
+            return _ki_list_folder(base, ki_root)
+        except (OSError, RuntimeError, ValueError) as e:  # link loop, NUL byte, no rights
+            raise ToolError(f"cannot read {sub}: {getattr(e, 'strerror', None) or e}") from None
 
     if name == "run_preflight":
         if bool((setup_context or {}).get("installation_only")):

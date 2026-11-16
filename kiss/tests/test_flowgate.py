@@ -408,7 +408,12 @@ def test_read_and_list_ki_files_reach_every_selected_ki(tmp_path):
     fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": ["A", "B"]})
     assert api.execute_tool("read_ki_file", {"path": "docs/note.md", "ki": "B"}, a, _cfg(project),
                             project_mode=True, flow=fs).content == "B doc"
-    assert "docs/note.md" in api.execute_tool("list_ki_files", {"ki": "B"}, a, _cfg(project), project_mode=True, flow=fs)
+    # one folder per listing: B's top shows docs/ with its count; the file itself one level down or by name
+    assert "docs/  (1 file)" in api.execute_tool("list_ki_files", {"ki": "B"}, a, _cfg(project), project_mode=True, flow=fs)
+    assert "docs/note.md" in api.execute_tool("list_ki_files", {"ki": "B", "subdir": "docs"}, a, _cfg(project),
+                                              project_mode=True, flow=fs)
+    assert "docs/note.md" in api.execute_tool("list_ki_files", {"ki": "B", "pattern": "note"}, a, _cfg(project),
+                                              project_mode=True, flow=fs)
     with pytest.raises(api.ToolError, match="not one of the selected KIs"):
         api.execute_tool("read_ki_file", {"path": "SKILL.md", "ki": "C"}, a, _cfg(project), project_mode=True, flow=fs)
     with pytest.raises(api.ToolError, match="escapes"):

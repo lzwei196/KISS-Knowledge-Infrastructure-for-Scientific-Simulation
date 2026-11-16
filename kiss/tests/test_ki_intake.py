@@ -105,7 +105,10 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
 
     assert "return 2" in call("read_ki_file", {"path": "dEmO/reader.py"})
     assert "return 2" in call("read_ki_file", {"ki": "DEMO", "path": "reader.py"})
-    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo"})
+    assert "diagnostics/" in call("list_ki_files", {"ki": "Demo"})      # one folder per listing
+    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "subdir": "diagnostics"})
+    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "pattern": "reader"})
+    assert "diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})   # library path
     assert "Demo/SKILL.md" == call("list_ki_files", {})
     assert "corrected portable columns" in call("search_diagnostics", {"keyword": "remedy"})
     assert "corrected portable columns" in call("search_diagnostics", {"ki": "Demo", "keyword": "remedy"})

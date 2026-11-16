@@ -1002,6 +1002,8 @@ _KI_COUNT_CAP = 10_000   # files counted inside one sub-folder
 _KI_COUNT_BUDGET = 50_000  # files counted by one whole listing
 _KI_HINT_CAP = 40        # names shown in one hint line
 _KI_MAX_STARS = 16       # single * in one pattern
+_KI_MATCH_MAX_LEN = 512  # longer KI paths are not matched by a pattern (Windows paths stop at 260)
+_KI_MATCH_SECONDS = 3.0  # one search stops matching after this long and says so
 _KI_BACKUP_RE = re.compile(r"\.(?:bak|orig|backup)(?:$|[._\-~0-9])|~$", re.IGNORECASE)
 _IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003   # a Windows junction
 
@@ -1130,7 +1132,7 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW) -
     for e in entries:
         kind = _ki_entry_kind(e)
         if _ki_hidden_name(e.name):
-            hidden.append(e.name + ("/" if kind != "file" else ""))
+            hidden.append(e.name + ("/" if kind in ("dir", "link") else ""))
         elif kind == "dir":
             dirs.append(e)
         elif kind == "link":
@@ -1159,7 +1161,7 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW) -
     lines = lines[:_KI_LIST_CAP]
     where = prefix or "the top of the KI"
     out = [f"Folder: {where}  (folders end with /; read a file with "
-           f"{view.call('read_ki_file', path='...')})"]
+           f"{view.call('read_ki_file', path=view.p('...'))})"]
     out += lines
     if not total:
         out.append("(no files shown here)")
@@ -1232,8 +1234,9 @@ def _ki_glob_regex(pattern: str) -> "re.Pattern[str]":
     toks = merged
     trailing = 1 if toks and toks[-1][0] == "D" else 0
     if sum(1 for t in toks[:len(toks) - trailing] if t[0] in ("D", "DS")) > 1:
-        raise ToolError("use ** only once in a pattern (plus once at the very end), "
-                        "e.g. '**/*.py' or 'docs/**'")
+        raise ToolError("use ** only once in a pattern (plus once at the very end), e.g. "
+                        "'**/*.py', 'docs/**' or '**/tests/**'; for more, search one folder with "
+                        "subdir=... first")
     if sum(1 for t in toks if t[0] == "S") > _KI_MAX_STARS:
         raise ToolError(f"use * at most {_KI_MAX_STARS} times in one pattern")
     out, k = [], 0
@@ -1374,9 +1377,10 @@ def _ki_fixed_folder(pat: str, base: Path) -> Path | None:
     for seg in segs:
         if not seg or "*" in seg or "?" in seg:
             break
+        same_name = re.compile(re.escape(seg), re.IGNORECASE)   # the pattern's own case rule
         try:
             with os.scandir(folder) as it:
-                hits = [e for e in it if e.name.lower() == seg.lower() and _ki_entry_kind(e) == "dir"]
+                hits = [e for e in it if same_name.fullmatch(e.name) and _ki_entry_kind(e) == "dir"]
         except OSError:
             hits = []
         if len(hits) != 1:   # none, or Data/ and data/ both (case-sensitive disk): walk from base
@@ -1386,7 +1390,10 @@ def _ki_fixed_folder(pat: str, base: Path) -> Path | None:
 
 
 def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW) -> str:
-    pat, words, by_name, plain_path = _ki_clean_pattern(pattern)
+    raw = (pattern or "").strip().replace("\\", "/")
+    if view.prefix and raw.lower().startswith(view.prefix.lower()):
+        raw = raw[len(view.prefix):]   # intake: a path copied from a listing (Demo/...) reads as shown
+    pat, words, by_name, plain_path = _ki_clean_pattern(raw)
     want_hidden = _ki_pattern_wants_hidden(pat, words)
     pre = "" if base == ki_root else _ki_rel(base, ki_root) + "/"
     # a path pattern starts at subdir when it does not already start with it
@@ -1406,9 +1413,19 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
         pat = pat.rstrip("/") + "/**" if is_folder else pat + "**"
     rx = _ki_glob_regex(pat) if pat else None
 
+    import time as _time
+    deadline = _time.monotonic() + _KI_MATCH_SECONDS
+    limits = {"long": set(), "slow": False}   # paths skipped for length; stopped by the time limit
+
     def matches(rels: list[str]) -> list[str]:
         out_ = []
         for rel in rels:
+            if len(rel) > _KI_MATCH_MAX_LEN:
+                limits["long"].add(rel)
+                continue
+            if _time.monotonic() > deadline:
+                limits["slow"] = True
+                break
             if by_name:
                 nm = rel.rsplit("/", 1)[-1].lower()
                 ok = (all(_ki_word_in(w, nm) for w in words) if words else rx.match(nm))
@@ -1421,7 +1438,8 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
     hits = matches(files)
     only_hidden = False
     same = [f for f in folders if f.rstrip("/").rsplit("/", 1)[-1].lower() in words]
-    if not hits and not want_hidden and not same and not cut:  # e.g. ".lock", "*pyc": once more with hidden files
+    if not hits and not want_hidden and not same and not cut and not limits["slow"]:
+        # e.g. ".lock", "*pyc": once more with hidden files
         h_files, _h_folders, h_cut = _ki_walk(start, ki_root, hidden=True)
         hits, cut = matches(h_files), cut or h_cut
         only_hidden = bool(hits)
@@ -1439,7 +1457,9 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
             out.append(f"(showing {_KI_FIND_CAP} of {len(hits)} matches: use a narrower pattern)")
     else:
         out.append(f"No files match {shown!r}{where} in the first {_KI_WALK_CAP} files searched "
-                   "(the search was cut off)." if cut else f"No files match {shown!r}{where} in this KI.")
+                   "(the search was cut off)." if cut else
+                   f"No files match {shown!r}{where} before matching stopped (it took too long)."
+                   if limits["slow"] else f"No files match {shown!r}{where} in this KI.")
         hints = []
         if same:
             hints.append("A folder has that name: " + ", ".join(view.p(f) for f in same[:5])
@@ -1463,10 +1483,15 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
             hints.append(f"(a pattern with / is read from {view.p(pre)}: e.g. pattern=\"*.py\" "
                          f"or pattern=\"{pre}*.py\")")
         out += hints
-        out.append("List a folder with " + view.call("list_ki_files", subdir="...") + " to see what is there.")
+        out.append("List a folder with " + view.call("list_ki_files", subdir=view.p("...")) + " to see what is there.")
     if cut:
         out.append(f"(only the first {_KI_WALK_CAP} files were searched, so some matches may be missing: "
                    "use subdir=... to narrow it)")
+    if limits["slow"]:
+        out.append(f"(matching stopped after {_KI_MATCH_SECONDS:g} s, so some matches may be missing: "
+                   "use a simpler pattern or subdir=...)")
+    if limits["long"]:
+        out.append(f"({len(limits['long'])} paths longer than {_KI_MATCH_MAX_LEN} characters were not matched)")
     return "\n".join(out)
 
 
@@ -1497,8 +1522,9 @@ def _ki_missing_folder(sub: str, base: Path, ki_root: Path, view: _KiView = _KI_
 
 def _ki_missing_file(path: str, p: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW) -> str:
     if p.is_dir():
+        rel = "" if p == ki_root else _ki_rel(p, ki_root)
         return (f"{path} is a folder, not a file: list it with "
-                + view.call("list_ki_files", subdir=view.p(_ki_rel(p, ki_root))))
+                + view.call("list_ki_files", subdir=view.p(rel).rstrip("/") or "."))
     if p.parent != ki_root and not p.parent.is_dir():
         folder_msg = _ki_missing_folder(view.p(_ki_rel(p.parent, ki_root)), p.parent, ki_root, view)
         return f"no such file in this KI: {path}\n" + folder_msg
@@ -2358,7 +2384,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         """How hints name this KI: in intake without ki=, paths keep their catalogue prefix
         (e.g. Demo/); with ki=, every suggested call carries it."""
         ki_name = args.get("ki")
-        if isinstance(ki_name, str) and ki_name.strip():
+        if isinstance(ki_name, str) and ki_name:
             return _KiView(ki=ki_name)   # exactly as accepted: the flow looks names up as given
         if intake_read_map is not None:
             first = next((s for s in rel.split("/") if s not in ("", ".")), "")

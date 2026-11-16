@@ -121,7 +121,23 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
     with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo", pattern="readr"\)') as miss:
         call("read_ki_file", {"path": "Demo/readr.py"})
     assert "Or find files by name" in str(miss.value)
-    assert "Demo/reader.py" in call("list_ki_files", {"subdir": "Demo", "pattern": "reader"})
+
+    def follow(text):
+        """Run the last list_ki_files(...) call in a hint exactly as written (values are JSON strings)."""
+        import json as _json
+        import re as _re
+        found = _re.findall(r'list_ki_files\(((?:\w+="(?:[^"\\]|\\.)*"(?:, )?)+)\)', text)[-1]
+        kwargs = {m.group(1): _json.loads(m.group(2))
+                  for m in _re.finditer(r'(\w+)=("(?:[^"\\]|\\.)*")', found)}
+        return call("list_ki_files", kwargs)
+
+    followed = follow(str(miss.value))                     # list_ki_files(subdir="Demo", pattern="readr")
+    assert followed.startswith("No files match 'readr' under Demo/")   # searched Demo, not the catalogue
+    assert "Demo/SKILL.md" not in followed.splitlines()[0]
+    with pytest.raises(api.ToolError, match=r"Did you mean: Demo/reader\.py") as miss2:
+        call("read_ki_file", {"path": "Demo/reader_x.py"})
+    assert follow(str(miss2.value)).startswith("No files match 'reader_x' under Demo/")   # still Demo
+
     # review r2: "./Demo/..." keeps the KI name in its hints
     with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):
         call("read_ki_file", {"path": "./Demo/diagnostics"})

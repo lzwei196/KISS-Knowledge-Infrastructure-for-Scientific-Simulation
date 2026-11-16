@@ -350,6 +350,101 @@ def test_hint_values_are_quoted_and_names_kept_exactly(tmp_path):
         "Demo/docs/genotype.md", k / "docs/genotype.md", k, A._KiView(prefix="Demo/"))
 
 
+def test_matching_has_a_hard_limit(tmp_path, monkeypatch):
+    """Review r3: an allowed pattern can still be slow on very long paths. Long paths are skipped and
+    one search stops after a time limit; both are said in the answer."""
+    k = _fake_ki(tmp_path)
+    pat = "*a**/*" + "a" * 100 + "b"
+    long_files = [("a" * 200 + "/") * 15 + f"x{i:03d}.txt" for i in range(50)]
+    monkeypatch.setattr(A, "_ki_walk", lambda *a_, **kw: (long_files, [], False))
+    import time
+    started = time.monotonic()
+    out = A._ki_find(pat, k, k)
+    assert time.monotonic() - started < 2.0
+    assert "50 paths longer than 512 characters were not matched" in out
+    monkeypatch.setattr(A, "_ki_walk", lambda *a_, **kw: (["docs/a.md", "docs/b.md"], ["docs/"], False))
+    monkeypatch.setattr(A, "_KI_MATCH_SECONDS", -1.0)                  # already past the limit
+    out = A._ki_find("docs/*.md", k, k)
+    assert out.startswith("No files match 'docs/*.md' before matching stopped")
+    assert "matching stopped after" in out
+
+
+def test_cut_off_search_says_so_first(tmp_path, monkeypatch):
+    k = _fake_ki(tmp_path)
+    monkeypatch.setattr(A, "_KI_WALK_CAP", 3)
+    out = A._ki_find("zzz_nothing", k, k)
+    assert out.startswith("No files match 'zzz_nothing' in the first 3 files searched (the search was cut off).")
+
+
+def test_junction_is_not_counted_or_used_as_start(tmp_path, monkeypatch):
+    """Review r3: junction checks also in counting and in the pattern's start folder."""
+    k = _fake_ki(tmp_path)
+    (k / "docs" / "jdir").mkdir(); (k / "docs" / "jdir" / "secret.txt").write_text("x")
+    (k / "jtop").mkdir(); (k / "jtop" / "secret.txt").write_text("x")
+    real_lstat = os.lstat
+    junctions = {str(k / "docs" / "jdir"), str(k / "jtop")}
+
+    class _Junction:
+        def __init__(self, info):
+            self.st_mode, self.st_reparse_tag = info.st_mode, A._IO_REPARSE_TAG_MOUNT_POINT
+
+    def lstat(path, *a_, **kw):
+        info = real_lstat(path, *a_, **kw)
+        return _Junction(info) if os.fspath(path) in junctions else info
+
+    monkeypatch.setattr(A.os, "lstat", lstat)
+    assert "docs/  (2 files)" in A._ki_list_folder(k, k)               # jdir/secret.txt not counted
+    assert A._ki_fixed_folder("jtop/*.txt", k) is None                 # never a start folder
+    assert A._ki_find("jtop/*.txt", k, k).startswith("No files match")   # the walk never enters it
+    assert "secret" not in A._ki_find("secret", k, k).split("\n", 1)[1:]   and \
+        A._ki_find("secret", k, k).startswith("No files match")
+
+
+def test_unreadable_entry_is_shown_not_walked(tmp_path, monkeypatch):
+    k = _fake_ki(tmp_path)
+    (k / "locked").mkdir(); (k / "locked" / "x.txt").write_text("x")
+    (k / ".hidlock").mkdir()
+    real_lstat = os.lstat
+    blocked = {str(k / "locked"), str(k / ".hidlock")}
+
+    def lstat(path, *a_, **kw):
+        if os.fspath(path) in blocked:
+            raise PermissionError(13, "Permission denied")
+        return real_lstat(path, *a_, **kw)
+
+    monkeypatch.setattr(A.os, "lstat", lstat)
+    top = A._ki_list_folder(k, k)
+    assert "locked  (cannot read)" in top and "locked/" not in top
+    assert ".hidlock/" not in top and 'subdir=".hidlock"' not in top     # not offered as a folder
+    assert "locked/x.txt" not in A._ki_find("x", k, k)                  # never walked into
+
+
+def test_unicode_case_matches_the_pattern_rule(tmp_path):
+    """Review r3: the start-folder shortcut uses the pattern's own case rule (Σ, σ, ς)."""
+    k = tmp_path / "KI"
+    (k / "Σ").mkdir(parents=True)
+    if (k / "ς").exists() or (k / "σ").exists():
+        pytest.skip("case-insensitive file system")
+    (k / "ς").mkdir(); (k / "Σ" / "a.csv").write_text("x"); (k / "ς" / "b.csv").write_text("x")
+    k = k.resolve()
+    hits = A._ki_find("σ/*.csv", k, k).splitlines()[1:]
+    assert sorted(hits) == sorted(["Σ/a.csv", "ς/b.csv"])
+
+
+def test_intake_path_copied_into_a_pattern_and_placeholders(tmp_path):
+    """Review r3: in intake a listed path (Demo/...) works as a pattern; placeholders keep Demo/."""
+    k = _fake_ki(tmp_path)
+    demo = A._KiView(prefix="Demo/")
+    assert A._ki_find("Demo/docs/s4_genotype_config_skill.md", k, k, demo).splitlines()[1:] == [
+        "Demo/docs/s4_genotype_config_skill.md"]
+    assert A._ki_find("demo/docs/*.md", k, k, demo).splitlines()[1:] == [
+        "Demo/docs/s2_weather_prep_skill.md", "Demo/docs/s4_genotype_config_skill.md"]
+    assert 'list_ki_files(subdir="Demo/...")' in A._ki_find("nothing_here", k, k, demo)
+    assert 'read_ki_file(path="Demo/...")' in A._ki_list_folder(k, k, demo)
+    assert 'list_ki_files(subdir="Demo")' in A._ki_missing_file("Demo", k, k, demo)
+    assert 'ki=" "' in A._KiView(ki=" ").call("list_ki_files", subdir="docs")
+
+
 def test_list_ki_files_schema_offers_pattern():
     schema = next(t for t in A.tool_schemas(None) if t["name"] == "list_ki_files")
     props = schema["input_schema"]["properties"]

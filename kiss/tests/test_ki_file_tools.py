@@ -365,6 +365,15 @@ def test_matching_has_a_hard_limit(tmp_path, monkeypatch):
     assert "50 paths longer than 512 characters were not matched" in out
     monkeypatch.setattr(A, "_ki_walk", lambda *a_, **kw: (["docs/a.md", "docs/b.md"], ["docs/"], False))
     monkeypatch.setattr(A, "_KI_FIND_SECONDS", -1.0)                   # already past the limit
+    out = A._ki_find("docs/*.md", k, k)                                # review r5: walked paths still matched
+    assert out.splitlines()[1:] == ["docs/a.md", "docs/b.md"]
+    clock = [0.0]
+
+    def now():                                                         # each look at the clock: +10 s
+        clock[0] += 10.0
+        return clock[0]
+
+    monkeypatch.setattr(A, "_ki_now", now)
     out = A._ki_find("docs/*.md", k, k)
     assert out.startswith("No files match 'docs/*.md' in the part of the KI that was searched.")
     assert "only part of the KI was searched" in out
@@ -465,7 +474,8 @@ def test_whole_call_has_one_time_budget(tmp_path, monkeypatch):
     A._ki_find("x" * 118 + "q.txt", k, k)
     assert time.monotonic() - started < 8.0          # was 10.9 s before (difflib over every name)
     started = time.monotonic()
-    A._ki_missing_file("d00/" + "x" * 118 + "q.txt", k / "d00/q.txt", k)
+    (k / "d00").mkdir()                      # review r5: the folder exists, so the costly close-name path runs
+    A._ki_missing_file("d00/" + "x" * 118 + "q.txt", k / "d00" / ("x" * 118 + "q.txt"), k)
     assert time.monotonic() - started < 8.0
 
 
@@ -520,6 +530,110 @@ def test_intake_prefix_keeps_the_pattern_meaning(tmp_path):
     assert "Demo/tools/reader.py" in A._ki_find("*.py", k, k, demo)        # no prefix: a name search
     empty = tmp_path / "empty"; empty.mkdir()
     assert 'list_ki_files(subdir="Demo/...")' in A._ki_missing_folder("Demo/x", empty / "x", empty.resolve(), demo)
+
+
+class _Clock:
+    """A fake clock for the KI file tools: jumps to ``late`` after ``calls`` looks."""
+
+    def __init__(self, calls, late=1_000.0):
+        self.n, self.calls, self.late = 0, calls, late
+
+    def __call__(self):
+        self.n += 1
+        return 0.0 if self.n <= self.calls else self.late
+
+
+def test_walk_cut_by_time_keeps_what_it_read(tmp_path, monkeypatch):
+    """Review r5: a walk stopped by the budget still answers for the folders it read."""
+    k = _fake_ki(tmp_path)
+    (k / "tools" / "reader.py").write_text("x")
+    (k / "zz").mkdir(); (k / "zz" / "a.txt").write_text("x")
+    # looks: deadline, then one per folder read: top, docs, tools -> late from tools/s2_weather_prep on
+    monkeypatch.setattr(A, "_ki_now", _Clock(calls=4))
+    out = A._ki_find("reader", k, k)
+    assert out.splitlines()[:2] == ["Files matching 'reader' (file names):", "tools/reader.py"]
+    assert "only part of the KI was searched" in out
+    # the hidden retry: cut by time, still keeps the hidden file in a folder it read
+    (k / ".a.lock").write_text("x")
+    real_walk = A._ki_walk
+    clock = _Clock(calls=10 ** 6)
+    monkeypatch.setattr(A, "_ki_now", clock)
+
+    def walk(base, ki_root, *, hidden, deadline=None):
+        if hidden:
+            clock.calls = clock.n          # the hidden walk starts late
+        return real_walk(base, ki_root, hidden=hidden, deadline=deadline)
+
+    monkeypatch.setattr(A, "_ki_walk", walk)
+    out = A._ki_find("*.lock", k, k)
+    assert ".a.lock" in out.splitlines()[1:]
+    assert out.startswith("No visible file matches '*.lock' in the part of the KI that was searched;")
+
+
+def test_every_step_honours_the_call_budget(tmp_path, monkeypatch):
+    """Review r5: the start-folder shortcut, counting, folder hints and missing-folder ancestors stop
+    at the call's deadline; a wide folder cannot push the walk past its cap."""
+    import time
+    k = _fake_ki(tmp_path)
+    late = A._ki_now() - 1.0                                            # a deadline already passed
+    assert A._ki_fixed_folder("tools/s2_weather_prep/*.py", k, late) is None
+    listing = A._ki_list_folder(k, k, deadline=late)
+    assert "docs/  (not counted)" in listing and "tools/  (not counted)" in listing
+    deep = k / "a/b/c/d/e/f/g/h/i/j"
+    assert A._ki_missing_folder("a/b/c/d/e/f/g/h/i/j", deep, k, deadline=late).startswith(
+        "no such folder in this KI: a/b/c/d/e/f/g/h/i/j")
+    folders = [f"d/s2_forcing{i:05d}/" for i in range(50_000)]
+    started = time.monotonic()
+    like = A._ki_like_folders("s2_forcing", folders)
+    assert len(like) == 8 and time.monotonic() - started < 1.0
+    wide = tmp_path / "wide"
+    for i in range(60):
+        (wide / f"f{i:02d}").mkdir(parents=True)
+    monkeypatch.setattr(A, "_KI_WALK_CAP", 50)
+    files, got, cut = A._ki_walk(wide.resolve(), wide.resolve(), hidden=False)
+    assert cut and len(files) + len(got) <= 50
+
+
+def test_close_spelling_stops_at_the_budget(tmp_path):
+    """Review r5: one "close spelling" run over 2,000 near-identical ~199-character names took 5.5 s."""
+    import random
+    import time
+    rnd = random.Random(5)
+
+    def similar(i):
+        s = list("x" * 190)
+        for _ in range(6):
+            s[rnd.randrange(190)] = rnd.choice("abcdefgh")
+        return "d/" + "".join(s) + "%05d.txt" % i
+
+    names = [similar(i) for i in range(2_000)]
+    started = time.monotonic()
+    A._ki_close_paths("d/" + "x" * 194 + "q.txt", names, deadline=A._ki_now() + 0.5)
+    assert time.monotonic() - started < 2.0
+
+
+def test_intake_prefix_forms(tmp_path):
+    """Review r5: ./ and doubled slashes around Demo/; a bare "Demo" stays a name search."""
+    k = _fake_ki(tmp_path)
+    (k / "reader.py").write_text("x"); (k / "tools" / "demo_run.py").write_text("x")
+    demo = A._KiView(prefix="Demo/")
+    assert A._ki_find("././Demo/*.py", k, k, demo).splitlines()[1:] == ["Demo/reader.py"]
+    for everything in ("Demo/./", "Demo//", "Demo/.", "demo/"):
+        assert "Demo/docs/s4_genotype_config_skill.md" in A._ki_find(everything, k, k, demo), everything
+    assert A._ki_find("Demo//docs/s4_*", k, k, demo).splitlines()[1:] == ["Demo/docs/s4_genotype_config_skill.md"]
+    for bare in ("Demo", "demo", "DEMO"):                                # a name search, any case
+        assert A._ki_find(bare, k, k, demo).splitlines()[1:] == ["Demo/tools/demo_run.py"], bare
+
+
+def test_hidden_answer_says_when_paths_were_skipped(tmp_path, monkeypatch):
+    """Review r5: a visible match skipped for length makes the hidden answer partial too."""
+    k = _fake_ki(tmp_path)
+    long_visible = ("a" * 200 + "/") * 3 + "needle.txt"
+    monkeypatch.setattr(A, "_ki_walk", lambda base, ki_root, *, hidden, deadline=None: (
+        [long_visible] + ([".hidden/needle.txt"] if hidden else []), [], False))
+    out = A._ki_find("**/needle.txt", k, k)
+    assert out.startswith("No visible file matches '**/needle.txt' in the part of the KI that was searched;")
+    assert "1 paths longer than 512 characters were not matched" in out
 
 
 def test_list_ki_files_schema_offers_pattern():

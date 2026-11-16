@@ -400,6 +400,33 @@ def test_multi_ki_run_ki_tool_selects_by_name(tmp_path):
                          a, _cfg(project), project_mode=True, flow=fs)
 
 
+def test_ki_file_hints_with_odd_ki_names_are_followed_as_written(tmp_path):
+    """Review r4/r5: a hint carries ki= exactly (quotes, spaces) and, run as written, reaches that KI."""
+    import json as _json
+    import re as _re
+    a = _ki(tmp_path, "A")
+    odd = {}
+    for name, folder in (('B "q"', "Bq"), (" C ", "Cs")):
+        k = _ki(tmp_path, folder)
+        (k.root / "docs").mkdir(); (k.root / "docs" / "note.md").write_text(folder)
+        odd[name] = k
+    project = tmp_path / "project"; (project / "runs").mkdir(parents=True)
+    roots = {"A": a.root, **{n: k.root for n, k in odd.items()}}
+    fs = flowgate.FlowSession.open(project, roots, python=sys.executable)
+    fs.move("task_received"); fs.move("kis_resolved", {"selected_kis": list(roots)})
+
+    def call(name, args):
+        return api.execute_tool(name, args, a, _cfg(project), project_mode=True, flow=fs)
+
+    for name, k in odd.items():
+        with pytest.raises(api.ToolError) as miss:
+            call("read_ki_file", {"ki": name, "path": "docs"})            # a folder, not a file
+        hint = _re.search(r'list_ki_files\(((?:\w+="(?:[^"\\]|\\.)*"(?:, )?)+)\)', str(miss.value)).group(1)
+        kwargs = {m.group(1): _json.loads(m.group(2)) for m in _re.finditer(r'(\w+)=("(?:[^"\\]|\\.)*")', hint)}
+        assert kwargs == {"subdir": "docs", "ki": name}
+        assert "docs/note.md" in call("list_ki_files", kwargs)            # reaches that KI, not A
+
+
 def test_read_and_list_ki_files_reach_every_selected_ki(tmp_path):
     a, b = _ki(tmp_path, "A"), _ki(tmp_path, "B")
     (b.root / "docs").mkdir(); (b.root / "docs" / "note.md").write_text("B doc")

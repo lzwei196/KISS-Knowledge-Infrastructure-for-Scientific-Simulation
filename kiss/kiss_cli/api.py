@@ -21,6 +21,7 @@ a tool meant to install cleanly anywhere.
 
 from __future__ import annotations
 
+import contextvars
 import csv
 import hashlib
 import io
@@ -1079,6 +1080,10 @@ def _ki_rel(p: Path, ki_root: Path) -> str:
 
 
 _ki_now = time.monotonic   # the one clock of the KI file tools (tests replace it)
+#: the deadline of the KI file tool call in progress, set when execute_tool starts (before the KI
+#: roots are resolved), so the whole call shares one budget
+_KI_CALL_DEADLINE: "contextvars.ContextVar[float | None]" = contextvars.ContextVar(
+    "geoforge_ki_call_deadline", default=None)
 
 
 def _ki_deadline(deadline: float | None) -> float:
@@ -1098,6 +1103,8 @@ def _ki_walk(base: Path, ki_root: Path, *, hidden: bool, deadline: float | None 
     ``deadline``."""
     files: list[str] = []
     folders: list[str] = []
+    if _ki_out_of_time(deadline):   # never start a walk after the budget
+        return files, folders, True
     # A KI tree can hold folders another process removes mid-walk, junctions and
     # unreadable entries (Windows): skip those and keep the evidence collected.
     for top, dirs, names in os.walk(base, onerror=lambda _error: None, followlinks=False):
@@ -1105,7 +1112,14 @@ def _ki_walk(base: Path, ki_root: Path, *, hidden: bool, deadline: float | None 
         dirs.sort()
         if not hidden:
             dirs[:] = [d for d in dirs if not _ki_hidden_name(d)]
-        dirs[:] = [d for d in dirs if not _ki_is_link(top_p / d)]
+        kept = []
+        for d in dirs:   # one look per sub-folder; none after the budget (those are not walked)
+            if _ki_out_of_time(deadline):
+                break
+            if not _ki_is_link(top_p / d):
+                kept.append(d)
+        timed_out = len(kept) < len(dirs) and _ki_out_of_time(deadline)
+        dirs[:] = kept
         try:
             new = [_ki_rel(top_p / d, ki_root) + "/" for d in dirs]
         except ValueError:
@@ -1123,7 +1137,7 @@ def _ki_walk(base: Path, ki_root: Path, *, hidden: bool, deadline: float | None 
                 continue
             if len(files) + len(folders) >= _KI_WALK_CAP:
                 return files, folders, True
-        if _ki_out_of_time(deadline):
+        if timed_out or _ki_out_of_time(deadline):
             return files, folders, True
     return files, folders, False
 
@@ -1133,6 +1147,8 @@ def _ki_count_files(folder: Path, budget: list[int], deadline: float | None = No
     ``budget`` (one item list, so many big sub-folders cannot make one listing slow)."""
     n = 0
     for top, dirs, files in os.walk(folder, onerror=lambda _error: None, followlinks=False):
+        if _ki_out_of_time(deadline):
+            return f"{n}+ files"
         dirs[:] = [d for d in dirs if not _ki_hidden_name(d) and not _ki_is_link(Path(top) / d)]
         k = sum(1 for f in files if not _ki_hidden_name(f))
         n += k
@@ -1154,7 +1170,12 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW,
     key, dirs, links, files, hidden = [], [], [], [], []
     with os.scandir(base) as it:
         entries = sorted(it, key=lambda e: e.name)
+    unchecked = 0
     for e in entries:
+        if _ki_out_of_time(deadline):   # no more per-entry looks after the budget
+            unchecked += 1
+            files.append(e.name + "  (not checked)")
+            continue
         kind = _ki_entry_kind(e)
         if _ki_hidden_name(e.name):
             hidden.append(e.name + ("/" if kind in ("dir", "link") else ""))
@@ -1190,6 +1211,8 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW,
     out += lines
     if not total:
         out.append("(no files shown here)")
+    if unchecked:
+        out.append(f"({unchecked} entries were not checked in time: list this folder again to see them)")
     if total > _KI_LIST_CAP:
         out.append(f"(showing {_KI_LIST_CAP} of {total} entries: use pattern=... to narrow it)")
     if hidden:
@@ -1428,7 +1451,8 @@ def _ki_fixed_folder(pat: str, base: Path, deadline: float | None = None) -> Pat
         same_name = re.compile(re.escape(seg), re.IGNORECASE)   # the pattern's own case rule
         try:
             with os.scandir(folder) as it:
-                hits = [e for e in it if same_name.fullmatch(e.name) and _ki_entry_kind(e) == "dir"]
+                hits = [e for e in it if same_name.fullmatch(e.name)
+                        and not _ki_out_of_time(deadline) and _ki_entry_kind(e) == "dir"]
         except OSError:
             hits = []
         if len(hits) != 1:   # none, or Data/ and data/ both (case-sensitive disk): walk from base
@@ -1447,11 +1471,12 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
         while bare.startswith("./"):
             bare = bare[2:]
         name = view.prefix.rstrip("/")
-        if bare.casefold().startswith(name.casefold() + "/"):
+        first, sep, after = bare.partition("/")
+        if sep and first.casefold() == name.casefold():
             # intake: a path copied from a listing (Demo/...) reads as shown, and stays a path
             # pattern ("Demo/*.py" = the top folder only; "Demo/", "Demo/." = everything in Demo).
             # Only with a "/" after the name: a bare "Demo" stays a name search.
-            rest = bare[len(name) + 1:]
+            rest = after   # cut at the typed slash: casefold can change the length (Straße)
             parts = [s for s in rest.split("/") if s not in ("", ".")]
             raw = ("/".join(parts) + ("/" if rest.endswith("/") and parts else "")) or "**"
             force_path = True
@@ -1565,12 +1590,20 @@ def _ki_missing_folder(sub: str, base: Path, ki_root: Path, view: _KiView = _KI_
         parent = ki_root if _ki_out_of_time(deadline) else parent.parent
     rel = "" if parent == ki_root else _ki_rel(parent, ki_root) + "/"
     where = view.p(rel) or "the top of the KI"
+    here = []
     with os.scandir(parent) as it:
-        here = sorted(view.p(rel + e.name + "/") for e in it
-                      if _ki_entry_kind(e) == "dir" and not _ki_hidden_name(e.name))
+        for e in it:
+            if _ki_out_of_time(deadline):
+                break
+            if not _ki_hidden_name(e.name) and _ki_entry_kind(e) == "dir":
+                here.append(view.p(rel + e.name + "/"))
+    here.sort()
     msg = [f"no such folder in this KI: {sub}",
            f"folders in {where}: " + (_ki_join(here) if here else "(none)")]
-    files, folders, cut = _ki_walk(ki_root, ki_root, hidden=False, deadline=deadline)
+    if _ki_out_of_time(deadline):   # never start another read after the budget
+        files, folders, cut = [], [], True
+    else:
+        files, folders, cut = _ki_walk(ki_root, ki_root, hidden=False, deadline=deadline)
     like = [c for c in (view.p(f) for f in _ki_like_folders(base.name, folders, deadline=deadline))
             if c not in here]
     if like:
@@ -1600,18 +1633,26 @@ def _ki_missing_file(path: str, p: Path, ki_root: Path, view: _KiView = _KI_PLAI
     close: list[str] = []
     if p.parent != ki_root:   # the folder it names exists: look there first (fast, never cut off)
         try:
+            here = []
             with os.scandir(p.parent) as it:
-                here = sorted(_ki_rel(Path(e.path), ki_root) for e in it
-                              if _ki_entry_kind(e) == "file" and not _ki_hidden_name(e.name))
+                for e in it:
+                    if _ki_out_of_time(deadline):
+                        break
+                    if not _ki_hidden_name(e.name) and _ki_entry_kind(e) == "file":
+                        here.append(_ki_rel(Path(e.path), ki_root))
+            here.sort()
             close = _ki_close_paths(wanted, here, deadline=deadline)
         except OSError:
             close = []
-    if not close and not _ki_out_of_time(deadline):
-        files, _folders, _cut = _ki_walk(ki_root, ki_root, hidden=False, deadline=deadline)
+    partial = _ki_out_of_time(deadline)
+    if not close and not partial:
+        files, _folders, partial = _ki_walk(ki_root, ki_root, hidden=False, deadline=deadline)
         close = _ki_close_paths(wanted, files, deadline=deadline)
     msg = f"no such file in this KI: {path}"
     if close:
         msg += "\nDid you mean: " + ", ".join(view.p(c) for c in close) + " ?"
+    if partial and not close:
+        msg += "\n(only part of the KI was looked at for similar names: it is large or slow to read)"
     stem = re.sub(r"[*?]", "", p.name.split(".", 1)[0])
     if len(stem) >= 2:
         msg += "\nOr find files by name with " + view.call("list_ki_files", pattern=stem) + "."
@@ -2269,6 +2310,21 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  project_mode: bool = False, flow=None) -> str:
     from . import ki_guard
     from contextlib import ExitStack
+    token = (_KI_CALL_DEADLINE.set(_ki_now() + _KI_FIND_SECONDS)
+             if name in ("list_ki_files", "read_ki_file") else None)
+    try:
+        return _execute_tool_in_guard(name, args, ki, cfg, setup_mode=setup_mode,
+                                      setup_context=setup_context, project_mode=project_mode, flow=flow)
+    finally:
+        if token is not None:
+            _KI_CALL_DEADLINE.reset(token)
+
+
+def _execute_tool_in_guard(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
+                           setup_context: dict | None = None,
+                           project_mode: bool = False, flow=None) -> str:
+    from . import ki_guard
+    from contextlib import ExitStack
     roots = [Path(ki.root).absolute()]
     for value in (setup_context or {}).get("managed_ki_roots", []):
         roots.append(Path(value).absolute())
@@ -2468,7 +2524,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         rel = _ki_text_arg("path")
         if not rel.strip("/"):
             raise ToolError("path is empty; e.g. path='SKILL.md'")
-        deadline = _ki_deadline(None)   # one budget for this tool call
+        deadline = _ki_deadline(_KI_CALL_DEADLINE.get())   # the budget made when the call started
         try:
             p, _r = _ki_scoped(rel)
             if not p.is_file():
@@ -2490,7 +2546,7 @@ def _execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                             "list_ki_files(subdir=\"<KI>\", pattern=...) or ki=\"<KI>\")")
             return listing
         view = _ki_view(sub)
-        deadline = _ki_deadline(None)   # one budget for this tool call
+        deadline = _ki_deadline(_KI_CALL_DEADLINE.get())   # the budget made when the call started
         try:
             base, ki_root = _ki_scoped(sub)
             if base.is_file():

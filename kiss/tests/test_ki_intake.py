@@ -137,6 +137,13 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
     with pytest.raises(api.ToolError, match=r"Did you mean: Demo/reader\.py") as miss2:
         call("read_ki_file", {"path": "Demo/reader_x.py"})
     assert follow(str(miss2.value)).startswith("No files match 'reader_x' under Demo/")   # still Demo
+    # review r4: a path copied from a listing works as a pattern, through the real tool call
+    listed = call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    assert "Demo/diagnostics/reader.md" in listed
+    assert call("list_ki_files", {"subdir": "Demo", "pattern": "Demo/diagnostics/reader.md"}).splitlines()[1:] == [
+        "Demo/diagnostics/reader.md"]
+    top_py = call("list_ki_files", {"subdir": "Demo", "pattern": "Demo/*.py"}).splitlines()[1:]
+    assert "Demo/reader.py" in top_py and all(p.count("/") == 1 for p in top_py)   # the top folder only
 
     # review r2: "./Demo/..." keeps the KI name in its hints
     with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):

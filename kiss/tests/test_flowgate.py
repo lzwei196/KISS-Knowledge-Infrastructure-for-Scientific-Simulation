@@ -406,7 +406,7 @@ def test_ki_file_hints_with_odd_ki_names_are_followed_as_written(tmp_path):
     import re as _re
     a = _ki(tmp_path, "A")
     odd = {}
-    for name, folder in (('B "q"', "Bq"), (" C ", "Cs")):
+    for name, folder in (('B "q"', "Bq"), (" C ", "Cs"), (" ", "Ws")):
         k = _ki(tmp_path, folder)
         (k.root / "docs").mkdir(); (k.root / "docs" / "note.md").write_text(folder)
         odd[name] = k

@@ -614,8 +614,28 @@ def test_no_file_system_read_starts_after_the_budget(tmp_path, monkeypatch):
         clock.late, after["n"] = False, 0
         out = run()
         assert after["n"] == 0, (after["n"], out[:200])
-    listing = A._ki_list_folder(k, k, deadline=500.0)
-    assert "were not checked in time" in listing
+    clock.late, after["n"] = False, 0
+    listing = A._ki_list_folder(k, k, deadline=500.0)      # late after the folder read: names sorted
+    assert "were not checked in time" in listing and listing.splitlines()[1:3] == ["SKILL.md", "dag.yaml"]
+    assert ".kdt_state.yaml" not in listing.split("(")[0] and "SKILL.md.bak.2026" not in listing.split("\n(")[0]
+    # counting: late inside a sub-folder's link checks -> no further look
+    (k / "data").mkdir()
+    for i in range(6):
+        (k / "data" / f"s{i}").mkdir(); (k / "data" / f"s{i}" / "f.txt").write_text("x")
+    monkeypatch.setattr(A.os, "lstat", real_lstat)
+    monkeypatch.setattr(A.os, "scandir", real_scandir)
+    looks = {"after": 0}
+
+    def lstat_in_data(path, *a_, **kw):
+        if os.sep + "data" + os.sep in os.fspath(path):
+            looks["after"] += clock.late
+            clock.late = True
+        return real_lstat(path, *a_, **kw)
+
+    monkeypatch.setattr(A.os, "lstat", lstat_in_data)
+    clock.late = False
+    assert "data/  (0+ files)" in A._ki_list_folder(k, k, deadline=500.0)
+    assert looks["after"] == 0
 
 
 def test_every_step_honours_the_call_budget(tmp_path, monkeypatch):
@@ -625,7 +645,7 @@ def test_every_step_honours_the_call_budget(tmp_path, monkeypatch):
     k = _fake_ki(tmp_path)
     late = A._ki_now() - 1.0                                            # a deadline already passed
     assert A._ki_fixed_folder("tools/s2_weather_prep/*.py", k, late) is None
-    assert "entries were not checked in time" in A._ki_list_folder(k, k, deadline=late)
+    assert "(not read: the time for this call ran out" in A._ki_list_folder(k, k, deadline=late)
     is_dir_calls = {"n": 0}
     real_is_dir = Path.is_dir
 
@@ -716,6 +736,36 @@ def test_intake_prefix_with_unicode_case(tmp_path):
     k = _fake_ki(tmp_path)
     view = A._KiView(prefix="STRASSE/")
     assert A._ki_find("Straße/docs/s4_*", k, k, view).splitlines()[1:] == ["STRASSE/docs/s4_genotype_config_skill.md"]
+
+
+def test_call_deadline_is_set_before_the_roots_and_reset(tmp_path, monkeypatch):
+    """Review r7: execute_tool sets the budget before resolving the KI roots and resets it after."""
+    k = _fake_ki(tmp_path)
+    ki, cfg = KI("M", k), paths.KissConfig.default(tmp_path / "project")
+    seen = []
+    real = A._execute_tool_in_guard
+
+    def spy(*a_, **kw):
+        seen.append(A._KI_CALL_DEADLINE.get())
+        return real(*a_, **kw)
+
+    monkeypatch.setattr(A, "_execute_tool_in_guard", spy)
+    A.execute_tool("list_ki_files", {}, ki, cfg)
+    assert seen[-1] is not None and A._KI_CALL_DEADLINE.get() is None
+    A.execute_tool("read_ki_file", {"path": "SKILL.md"}, ki, cfg)
+    assert seen[-1] is not None and A._KI_CALL_DEADLINE.get() is None
+    try:
+        A.execute_tool("list_project_files", {}, ki, cfg)
+    except A.ToolError:
+        pass
+    assert seen[-1] is None                                             # other tools: no budget
+
+
+def test_missing_file_says_partial_even_with_a_suggestion(tmp_path, monkeypatch):
+    k = _fake_ki(tmp_path)
+    monkeypatch.setattr(A, "_ki_walk", lambda *a_, **kw: (["reader.py"], [], True))
+    msg = A._ki_missing_file("readr.py", k / "readr.py", k)
+    assert "Did you mean: reader.py ?" in msg and "only part of the KI was looked at" in msg
 
 
 def test_list_ki_files_schema_offers_pattern():

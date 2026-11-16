@@ -1107,7 +1107,9 @@ def _ki_walk(base: Path, ki_root: Path, *, hidden: bool, deadline: float | None 
         return files, folders, True
     # A KI tree can hold folders another process removes mid-walk, junctions and
     # unreadable entries (Windows): skip those and keep the evidence collected.
-    for top, dirs, names in os.walk(base, onerror=lambda _error: None, followlinks=False):
+    # followlinks=True: links and junctions are taken out of ``dirs`` below (lstat + reparse tag),
+    # so os.walk needs no islink look of its own (3.12+ makes one per folder, with no clock check)
+    for top, dirs, names in os.walk(base, onerror=lambda _error: None, followlinks=True):
         top_p = Path(top)
         dirs.sort()
         if not hidden:
@@ -1146,10 +1148,18 @@ def _ki_count_files(folder: Path, budget: list[int], deadline: float | None = No
     """Visible files under ``folder``, at most _KI_COUNT_CAP, taken from the listing's shared
     ``budget`` (one item list, so many big sub-folders cannot make one listing slow)."""
     n = 0
-    for top, dirs, files in os.walk(folder, onerror=lambda _error: None, followlinks=False):
+    # followlinks=True: links are taken out of ``dirs`` here (see _ki_walk)
+    for top, dirs, files in os.walk(folder, onerror=lambda _error: None, followlinks=True):
         if _ki_out_of_time(deadline):
             return f"{n}+ files"
-        dirs[:] = [d for d in dirs if not _ki_hidden_name(d) and not _ki_is_link(Path(top) / d)]
+        kept = []
+        for d in dirs:   # one look per sub-folder, none after the budget
+            if _ki_out_of_time(deadline):
+                dirs[:] = []
+                return f"{n}+ files"
+            if not _ki_hidden_name(d) and not _ki_is_link(Path(top) / d):
+                kept.append(d)
+        dirs[:] = kept
         k = sum(1 for f in files if not _ki_hidden_name(f))
         n += k
         budget[0] -= k + 1   # a folder costs one too, so many empty folders stay cheap
@@ -1168,13 +1178,21 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW,
     rel = "" if base == ki_root else _ki_rel(base, ki_root) + "/"
     prefix = view.p(rel)
     key, dirs, links, files, hidden = [], [], [], [], []
+    if _ki_out_of_time(deadline):   # never start the folder read after the budget
+        return (f"Folder: {prefix or 'the top of the KI'}  (not read: the time for this call ran out; "
+                "list it again)")
     with os.scandir(base) as it:
         entries = sorted(it, key=lambda e: e.name)
     unchecked = 0
     for e in entries:
-        if _ki_out_of_time(deadline):   # no more per-entry looks after the budget
+        if _ki_out_of_time(deadline):   # no more per-entry looks after the budget; names still sorted
             unchecked += 1
-            files.append(e.name + "  (not checked)")
+            if _ki_hidden_name(e.name):
+                hidden.append(e.name)
+            elif e.name in _KI_KEY_FILES:
+                key.append(e.name)
+            else:
+                files.append(e.name + "  (not checked)")
             continue
         kind = _ki_entry_kind(e)
         if _ki_hidden_name(e.name):
@@ -1212,7 +1230,8 @@ def _ki_list_folder(base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW,
     if not total:
         out.append("(no files shown here)")
     if unchecked:
-        out.append(f"({unchecked} entries were not checked in time: list this folder again to see them)")
+        out.append(f"({unchecked} {'entry was' if unchecked == 1 else 'entries were'} not checked in time: "
+                   "list this folder again to see them)")
     if total > _KI_LIST_CAP:
         out.append(f"(showing {_KI_LIST_CAP} of {total} entries: use pattern=... to narrow it)")
     if hidden:
@@ -1484,12 +1503,14 @@ def _ki_find(pattern: str, base: Path, ki_root: Path, view: _KiView = _KI_PLAIN_
     want_hidden = _ki_pattern_wants_hidden(pat, words)
     pre = "" if base == ki_root else _ki_rel(base, ki_root) + "/"
     # a path pattern starts at subdir when it does not already start with it
-    if (pat and not by_name and pre and not pat.lower().startswith(pre.lower())
+    pre_rx = re.compile(re.escape(pre), re.IGNORECASE)   # the pattern's own case rule
+    if (pat and not by_name and pre and not pre_rx.match(pat)
             and pat.lower().rstrip("/") != pre.rstrip("/").lower()):
         pat = pre + pat
     start = base
     if pat and not by_name:   # walk only the folder the pattern's fixed start names
-        under = _ki_fixed_folder(pat[len(pre):] if pat.lower().startswith(pre.lower()) else pat, base, deadline)
+        m = pre_rx.match(pat) if pre else None
+        under = _ki_fixed_folder(pat[m.end():] if m else pat, base, deadline)
         start = under or base
     files, folders, cut = _ki_walk(start, ki_root, hidden=want_hidden, deadline=deadline)
     if plain_path:  # an existing folder (any case) = everything in it; otherwise a name start (docs/s4)
@@ -1586,17 +1607,23 @@ def _ki_missing_folder(sub: str, base: Path, ki_root: Path, view: _KiView = _KI_
     """A folder that does not exist: the folders that do exist nearby, and files named like it."""
     deadline = _ki_deadline(deadline)   # one budget for the whole call
     parent = base.parent
-    while parent != ki_root and not parent.is_dir():
-        parent = ki_root if _ki_out_of_time(deadline) else parent.parent
+    while parent != ki_root:
+        if _ki_out_of_time(deadline):
+            parent = ki_root
+            break
+        if parent.is_dir():
+            break
+        parent = parent.parent
     rel = "" if parent == ki_root else _ki_rel(parent, ki_root) + "/"
     where = view.p(rel) or "the top of the KI"
     here = []
-    with os.scandir(parent) as it:
-        for e in it:
-            if _ki_out_of_time(deadline):
-                break
-            if not _ki_hidden_name(e.name) and _ki_entry_kind(e) == "dir":
-                here.append(view.p(rel + e.name + "/"))
+    if not _ki_out_of_time(deadline):
+        with os.scandir(parent) as it:
+            for e in it:
+                if _ki_out_of_time(deadline):
+                    break
+                if not _ki_hidden_name(e.name) and _ki_entry_kind(e) == "dir":
+                    here.append(view.p(rel + e.name + "/"))
     here.sort()
     msg = [f"no such folder in this KI: {sub}",
            f"folders in {where}: " + (_ki_join(here) if here else "(none)")]
@@ -1622,16 +1649,21 @@ def _ki_missing_folder(sub: str, base: Path, ki_root: Path, view: _KiView = _KI_
 def _ki_missing_file(path: str, p: Path, ki_root: Path, view: _KiView = _KI_PLAIN_VIEW,
                      deadline: float | None = None) -> str:
     deadline = _ki_deadline(deadline)   # one budget for the whole call
+    late = ("\n(no similar names looked for: the time for this call ran out)")
+    if _ki_out_of_time(deadline):
+        return f"no such file in this KI: {path}" + late
     if p.is_dir():
         rel = "" if p == ki_root else _ki_rel(p, ki_root)
         return (f"{path} is a folder, not a file: list it with "
                 + view.call("list_ki_files", subdir=view.p(rel).rstrip("/") or "."))
+    if _ki_out_of_time(deadline):
+        return f"no such file in this KI: {path}" + late
     if p.parent != ki_root and not p.parent.is_dir():
         folder_msg = _ki_missing_folder(view.p(_ki_rel(p.parent, ki_root)), p.parent, ki_root, view, deadline)
         return f"no such file in this KI: {path}\n" + folder_msg
     wanted = _ki_rel(p, ki_root)
     close: list[str] = []
-    if p.parent != ki_root:   # the folder it names exists: look there first (fast, never cut off)
+    if p.parent != ki_root and not _ki_out_of_time(deadline):   # its own folder first (fast)
         try:
             here = []
             with os.scandir(p.parent) as it:
@@ -1651,7 +1683,7 @@ def _ki_missing_file(path: str, p: Path, ki_root: Path, view: _KiView = _KI_PLAI
     msg = f"no such file in this KI: {path}"
     if close:
         msg += "\nDid you mean: " + ", ".join(view.p(c) for c in close) + " ?"
-    if partial and not close:
+    if partial:
         msg += "\n(only part of the KI was looked at for similar names: it is large or slow to read)"
     stem = re.sub(r"[*?]", "", p.name.split(".", 1)[0])
     if len(stem) >= 2:
@@ -2308,8 +2340,6 @@ _KI_INSPECTION_TOOLS = frozenset({
 def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                  setup_context: dict | None = None,
                  project_mode: bool = False, flow=None) -> str:
-    from . import ki_guard
-    from contextlib import ExitStack
     token = (_KI_CALL_DEADLINE.set(_ki_now() + _KI_FIND_SECONDS)
              if name in ("list_ki_files", "read_ki_file") else None)
     try:

@@ -105,7 +105,49 @@ def test_api_reads_lists_and_diagnostics_use_same_effective_map(repaired):
 
     assert "return 2" in call("read_ki_file", {"path": "dEmO/reader.py"})
     assert "return 2" in call("read_ki_file", {"ki": "DEMO", "path": "reader.py"})
-    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo"})
+    assert "diagnostics/" in call("list_ki_files", {"ki": "Demo"})      # one folder per listing
+    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "subdir": "diagnostics"})
+    assert "diagnostics/reader.md" in call("list_ki_files", {"ki": "Demo", "pattern": "reader"})
+    # a library path keeps its KI name in every path and hint, so a hint can be followed as written
+    assert "Demo/diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    with pytest.raises(api.ToolError, match=r"Did you mean: Demo/reader\.py"):
+        call("read_ki_file", {"path": "Demo/readr.py"})
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):
+        call("list_ki_files", {"subdir": "Demo/nope"})
+    assert "Demo/diagnostics/reader.md" in call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    with pytest.raises(api.ToolError, match=r'ki="Demo"'):
+        call("read_ki_file", {"ki": "Demo", "path": "readr.py"})
+    # review r2: the name-search hint, followed word for word, searches Demo (not the catalogue)
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo", pattern="readr"\)') as miss:
+        call("read_ki_file", {"path": "Demo/readr.py"})
+    assert "Or find files by name" in str(miss.value)
+
+    def follow(text):
+        """Run the last list_ki_files(...) call in a hint exactly as written (values are JSON strings)."""
+        import json as _json
+        import re as _re
+        found = _re.findall(r'list_ki_files\(((?:\w+="(?:[^"\\]|\\.)*"(?:, )?)+)\)', text)[-1]
+        kwargs = {m.group(1): _json.loads(m.group(2))
+                  for m in _re.finditer(r'(\w+)=("(?:[^"\\]|\\.)*")', found)}
+        return call("list_ki_files", kwargs)
+
+    followed = follow(str(miss.value))                     # list_ki_files(subdir="Demo", pattern="readr")
+    assert followed.startswith("No files match 'readr' under Demo/")   # searched Demo, not the catalogue
+    assert "Demo/SKILL.md" not in followed.splitlines()[0]
+    with pytest.raises(api.ToolError, match=r"Did you mean: Demo/reader\.py") as miss2:
+        call("read_ki_file", {"path": "Demo/reader_x.py"})
+    assert follow(str(miss2.value)).startswith("No files match 'reader_x' under Demo/")   # still Demo
+    # review r4: a path copied from a listing works as a pattern, through the real tool call
+    listed = call("list_ki_files", {"subdir": "Demo/diagnostics"})
+    assert "Demo/diagnostics/reader.md" in listed
+    assert call("list_ki_files", {"subdir": "Demo", "pattern": "Demo/diagnostics/reader.md"}).splitlines()[1:] == [
+        "Demo/diagnostics/reader.md"]
+    top_py = call("list_ki_files", {"subdir": "Demo", "pattern": "Demo/*.py"}).splitlines()[1:]
+    assert "Demo/reader.py" in top_py and all(p.count("/") == 1 for p in top_py)   # the top folder only
+
+    # review r2: "./Demo/..." keeps the KI name in its hints
+    with pytest.raises(api.ToolError, match=r'list_ki_files\(subdir="Demo/diagnostics"\)'):
+        call("read_ki_file", {"path": "./Demo/diagnostics"})
     assert "Demo/SKILL.md" == call("list_ki_files", {})
     assert "corrected portable columns" in call("search_diagnostics", {"keyword": "remedy"})
     assert "corrected portable columns" in call("search_diagnostics", {"ki": "Demo", "keyword": "remedy"})

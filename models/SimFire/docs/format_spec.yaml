@@ -254,15 +254,24 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Fire spreads catastrophically fast — fills the grid in minutes. sim/expected RoS ratio ≈ 88×.
-    (Verified 2026-04-29 against simfire 2.0.1.)
-  diagnosis: Wind speed in YAML wind.simple.speed (or perlin.speed.range_*) written in ft/min instead
+    (Checked against simfire 2.0.1.)
+  diagnosis: 'Wind speed in YAML wind.simple.speed (or perlin.speed.range_*) written in ft/min instead
     of mph — SimFire applies mph_to_ftpm internally and the value ends up 88× too high.; The official
     MITRE SimFire docs (`docs/source/config.md` line 285-289) and the source itself (`simfire/utils/config.py:860`
-    ca
+    calls `mph_to_ftpm(yaml["wind"]["simple"]["speed"])`) state that wind.simple.speed is in MPH. SimFire
+    converts to ft/min internally for the Rothermel calculation. If a user pre-converts (e.g. writes 1760
+    thinking "20 mph × 88 = 1760 ft/min"), SimFire reads 1760 mph and multiplies by 88 again, yielding
+    154,880 ft/min internal wind. This drives phi_w to extreme values and the fire fills the grid in minutes.
+    The same applies to wind.perlin.speed.range_min/range_max (config.py:897-901).
+
+    ; [''config.yaml'', ''wind.simple.speed'', ''wind.perlin.speed.range_min'', ''wind.perlin.speed.range_max'']'
   remedy: 'Write the wind speed in mph directly in the YAML; do NOT pre-multiply by 88.; None; [''Open
     config YAML, find wind.simple.speed'', ''If value > 100, it is almost certainly already in ft/min
     — replace with the mph value (typical 0-60 mph for surface wind)'', ''Same fix for wind.perlin.speed.range_min
-    and '
+    and range_max'', ''Sanity-check: at runtime, sim head-fire RoS should be 1-50 ft/min for surface fires;
+    if you observe >2000 ft/min on flat terrain you likely doubled the conversion'']; Use SKILL.md and
+    s3_wind_setup.md as the canonical source; older notes claiming ''must be in ft/min'' are wrong for
+    the YAML input layer.'
   severity: silent
 - id: dt_002
   symptom: Fire spread is ~2.24× faster than intended when input numeric magnitude was meant to be m/s
@@ -270,48 +279,59 @@ known_issues:
   diagnosis: 'wind.simple.speed expects mph, not m/s. Writing 10 (intending 10 m/s ≈ 22 mph) produces
     10 mph internal.; ERA5, MERRA2, and most weather models report wind in m/s. SimFire''s simple.speed
     YAML is in mph, so writing the m/s value directly (e.g. 10) gets interpreted as 10 mph. This is an
-    underestimate '
+    underestimate by ~2.24x in magnitude. Symptom is more subtle than dt_001 because the magnitude is
+    smaller — the fire still spreads, just slower than intended.
+
+    ; [''config.yaml'', ''wind.simple.speed'']'
   remedy: Convert m/s to mph (× 2.237) before writing to YAML.; None; ['If your wind data source is m/s,
     multiply by 2.237 to get mph', 'Write the mph value to wind.simple.speed']; Document the source-data
     unit alongside the YAML and check before run.
   severity: silent
 - id: dt_003
   symptom: Fire spreads extremely fast, consuming entire domain in minutes.
-  diagnosis: Fuel load (w_0) provided in kg/m² instead of lb/ft². ~4.88× too high.; The Rothermel equation
+  diagnosis: 'Fuel load (w_0) provided in kg/m² instead of lb/ft². ~4.88× too high.; The Rothermel equation
     uses w_0 in lb/ft². If fuel load is in metric units (kg/m²), values are approximately 5× too large,
     producing much higher reaction intensity I_R and thus faster fire spread. For example, Chaparral w_0
-    = 1.1
+    = 1.12 kg/m² → 0.23 lb/ft² correctly, but 1.12 lb/ft² would produce extreme fire behavior.
+
+    ; [''Fuel.w_0'', ''presets.py'', ''custom fuel definitions'']'
   remedy: 'Convert fuel load: lb/ft² = kg/m² × 0.2048; None; [''Check fuel parameter source units'', ''If
     kg/m²: multiply by 0.2048 to get lb/ft²'', ''Standard FBFM-13 values are already in lb/ft² — only
     affects custom fuels'']; Verify w_0 is in range 0.01-0.5 lb/ft² for standard fuel types'
   severity: silent
 - id: dt_004
   symptom: Fire never spreads beyond ignition point. All fuel appears non-combustible.
-  diagnosis: Fuel moisture M_f specified as percentage (e.g., 3) instead of fraction (0.03).; The Rothermel
+  diagnosis: 'Fuel moisture M_f specified as percentage (e.g., 3) instead of fraction (0.03).; The Rothermel
     equation computes moisture damping as r_M = M_f / M_x. If M_f = 3.0 (3% as integer) and M_x = 0.20
     (20% extinction), then r_M = 15, which is clamped to 1.0, making eta_M = 0. This zeroes the reaction
-    inten
+    intensity and prevents all fire spread. The correct value is M_f = 0.03.
+
+    ; [''config.yaml'', ''environment.moisture'', ''Environment.M_f'']'
   remedy: 'Express moisture as fraction: divide percentage by 100.; None; [''Open config YAML, find environment.moisture'',
     "If value > 1.0, it''s likely a percentage", ''Divide by 100 (e.g., 3% → 0.03)'']; Validate moisture
     is in range [0.001, 0.99]'
   severity: silent
 - id: dt_005
   symptom: Fire ignores terrain completely. Spreads identically on hills and flat ground.
-  diagnosis: Elevation provided in meters instead of feet. Slope gradient is 3.28× too small.; SimFire
+  diagnosis: 'Elevation provided in meters instead of feet. Slope gradient is 3.28× too small.; SimFire
     computes slope as np.gradient(elevation, pixel_scale) where both elevation and pixel_scale must be
     in feet. If elevation is in meters but pixel_scale is in feet, the gradient is 3.28× too small. Since
-    phi_s dep
+    phi_s depends on slope², the slope factor is ~10.8× too small, making terrain effects negligible.
+
+    ; [''TopographyLayer'', ''RothermelFireManager.slope_mag'']'
   remedy: Multiply elevation by 3.28084 to convert meters → feet.; convert_landfire_to_simfire; ['Check
     elevation data source units', 'LandFire provides meters — must convert to feet', 'convert_landfire_to_simfire.py
-    handles this automatically']; Verify max elevation is in reasonable feet range (e.g., < 20000
+    handles this automatically']; Verify max elevation is in reasonable feet range (e.g., < 20000 ft)
   severity: silent
 - id: dt_006
   symptom: Fire spreads too fast or too slow relative to expected. Burned area doesn't match expected
     physical size.
-  diagnosis: Pixel scale in config doesn't match actual data resolution.; If pixel_scale is 50 ft/pixel
+  diagnosis: 'Pixel scale in config doesn''t match actual data resolution.; If pixel_scale is 50 ft/pixel
     but actual data is 30m (98.4 ft) per pixel, the fire needs to accumulate burn_amounts > 50 ft to spread
     to a neighbor, but the physical distance is actually 98.4 ft. This makes fire spread about 2× too
-    fast in
+    fast in physical space. Conversely, if pixel_scale is too large, fire spreads too slowly.
+
+    ; [''config.area.pixel_scale'', ''RothermelFireManager'']'
   remedy: 'Set pixel_scale = resolution_meters × 3.28084; None; [''For operational mode at 30m: pixel_scale
     = 30 × 3.28084 ≈ 98.4 ft'', ''Or use desired scale and adjust interpretation'']; Cross-check pixel_scale
     × screen_size = expected physical domain'
@@ -322,46 +342,57 @@ known_issues:
     for rendering. On headless servers (SSH, Docker, CI), no display is available. PyGame.init() fails
     with ''No available video device''. This is the most common deployment error.
 
-    ; [''config.simulation.headless'''
+    ; [''config.simulation.headless'', ''game.py'', ''PyGame'']'
   remedy: 'Set headless: true in config, or set SDL_VIDEODRIVER=dummy.; None; [''In config YAML: set simulation.headless:
     true'', ''Or: export SDL_VIDEODRIVER=dummy before running'', ''Also set record: false (recording requires
     display memory)'']; Always use headless: true for server/batch/CI runs'
   severity: fatal
 - id: dt_008
   symptom: Fire starts but stops immediately at adjacent pixels. Fuel code 0 surrounds ignition.
-  diagnosis: All or most pixels have non-burnable fuel code (0, 91-99, nodata).; Non-burnable fuel types
+  diagnosis: 'All or most pixels have non-burnable fuel code (0, 91-99, nodata).; Non-burnable fuel types
     (Urban=91, Water=93, Agriculture=98, etc.) have w_0 = 0.0, which makes the Rothermel RoS = 0. If the
     bounding box is over an urban area, water body, or agricultural land, most pixels will be non-burnable.
-    The
+    The fire at the ignition point burns but cannot spread.
+
+    ; [''FuelLayer'', ''fuel_array'', ''presets.py FuelModelToFuel'']'
   remedy: 'Check bounding box location. Move to area with natural vegetation.; convert_landfire_to_simfire;
     [''Load fuel array and check unique values'', ''If mostly 0/91-99: wrong location for wildfire simulation'',
-    ''Use LANDFIRE viewer to preview fuel data at target location'']; convert_landfire_to_simfire.py rep'
+    ''Use LANDFIRE viewer to preview fuel data at target location'']; convert_landfire_to_simfire.py reports
+    burnable fraction'
   severity: silent
 - id: dt_009
   symptom: Fire ignites but never spreads. Moisture damping coefficient eta_M = 0.
   diagnosis: 'Fuel moisture M_f exceeds or equals moisture of extinction M_x for all fuel types.; When
     M_f >= M_x, the moisture ratio r_M >= 1.0, and the damping coefficient eta_M = 1 - 2.59*r_M + 5.11*r_M²
     - 3.52*r_M³ evaluates to ~0 or negative (clamped to 0). This zeros the reaction intensity I_R and
-    prevents '
+    prevents spread. For example, Short Grass (M_x=0.12) won''t burn if M_f > 0.12.
+
+    ; [''environment.moisture'', ''rothermel.py eta_M calculation'']'
   remedy: 'Reduce M_f below M_x of the target fuel. Typical range: 0.001-0.08.; None; [''Check config
     environment.moisture value'', ''Compare against M_x of dominant fuel type'', ''For SoCal chaparral:
     M_x=0.20, use M_f < 0.20 (typically 0.03-0.05)'', ''For grass: M_x=0.12, use M_f < 0.12'']; Warn if
-    M_f > min(M_x) fo'
+    M_f > min(M_x) for any fuel in the domain'
   severity: degraded
 - id: dt_010
   symptom: Operational mode downloads tiny region. Simulation domain much smaller than expected.
-  diagnosis: Operational area height/width specified in feet instead of meters.; The config operational.height
+  diagnosis: 'Operational area height/width specified in feet instead of meters.; The config operational.height
     and operational.width are in METERS. If specified in feet (e.g., 6000 ft instead of 2000 m), the downloaded
-    region is 3.28× smaller than intended. This is confusing because pixel_scale is in feet, but a
+    region is 3.28× smaller than intended. This is confusing because pixel_scale is in feet, but area
+    dimensions are in meters.
+
+    ; [''config.operational.height'', ''config.operational.width'']'
   remedy: Specify height/width in meters in the operational section.; None; ['Ensure operational.height
     and operational.width are in meters', '2000 meters ≈ 6562 feet ≈ 1.24 miles']; Config validator should
     check area dimensions are reasonable (100-50000 m)
   severity: degraded
 - id: dt_011
   symptom: Fire spreads in cross/diamond pattern instead of realistic ellipse shape.
-  diagnosis: diagonal_spread set to false, limiting fire to 4-connected neighbors.; With diagonal_spread=false,
+  diagnosis: 'diagonal_spread set to false, limiting fire to 4-connected neighbors.; With diagonal_spread=false,
     fire can only spread to 4 adjacent pixels (N,S,E,W). This produces diamond-shaped fire patterns instead
-    of realistic elliptical shapes. The effective spread rate is lower because fire cannot take diago
+    of realistic elliptical shapes. The effective spread rate is lower because fire cannot take diagonal
+    shortcuts, which is not physically realistic.
+
+    ; [''config.fire.diagonal_spread'', ''RothermelFireManager._get_new_locs'']'
   remedy: 'Set diagonal_spread: true for realistic 8-connected fire spread.; None; [''In config: fire.diagonal_spread:
     true'']; Default should always be true for realistic simulations'
   severity: degraded
@@ -371,92 +402,129 @@ known_issues:
     downloads data from USGS LandFire web services. These can be temporarily unavailable, rate-limited,
     or blocked by firewalls. Large area requests may also timeout.
 
-    ; [''landfire package'', ''OperationalFuelLayer'', '
+    ; [''landfire package'', ''OperationalFuelLayer'', ''OperationalTopographyLayer'']'
   remedy: 'Retry later, use smaller area, or pre-download GeoTIFFs.; convert_landfire_to_simfire; [''Check
     network connectivity: ping landfire.gov'', ''Try smaller area (e.g., 1000m × 1000m)'', ''Download
     GeoTIFFs manually from https://landfire.gov/viewer/'', ''Use --fuel-tif and --elev-tif flags with
-    convert_landfir'
+    convert_landfire_to_simfire.py'']; Cache downloaded data in sf_home directory'
   severity: fatal
 - id: dt_013
   symptom: CFD wind field has artifacts, vortices, or unrealistic patterns.
   diagnosis: 'CFD solver not converged due to insufficient training iterations.; The Navier-Stokes CFD
     wind solver requires adequate iterations (time_to_train) to reach steady state. With too few iterations
     (< 500), the velocity field may contain transient artifacts, boundary effects, or unphysical vortices.
-    The '
+    The default of 1000 is generally sufficient for simple terrain.
+
+    ; [''config.wind.cfd.time_to_train'', ''WindControllerCFD'']'
   remedy: 'Increase time_to_train to 2000+ for complex terrain.; None; [''In config: wind.cfd.time_to_train:
     2000'', ''For very rugged terrain: try 5000'', ''Visually inspect wind field: sim.wind_speed, sim.wind_direction''];
     Compare CFD wind to simpler Perlin wind for sanity check'
   severity: silent
 - id: dt_014
   symptom: MemoryError or process killed during GIF save. Large simulation data.
-  diagnosis: Recording frames in memory for GIF creation exceeds available RAM.; When record=true, SimFire
+  diagnosis: 'Recording frames in memory for GIF creation exceeds available RAM.; When record=true, SimFire
     stores every rendered frame as a PIL Image in memory. For long simulations (>6h) on large grids (>200×200),
-    this can consume gigabytes of RAM. save_gif() then attempts to encode all frames, which doubles me
+    this can consume gigabytes of RAM. save_gif() then attempts to encode all frames, which doubles memory
+    usage.
+
+    ; [''Game.frames'', ''sim.save_gif()'', ''Pillow'']'
   remedy: 'Disable recording or save intermediate results.; None; [''Set record: false in config for long
     runs'', ''For visualization, run shorter segments with record: true'', ''Or save fire_map snapshots
     and create animation post-hoc'']; Estimate memory: n_frames × H × W × 3 bytes (RGB)'
   severity: degraded
 - id: dt_015
   symptom: Fire appears briefly then disappears. Burned pixels revert to BURNED status immediately.
-  diagnosis: max_fire_duration too low (1-2 frames). Fire sprites pruned before spreading.; The RothermelFireManager
+  diagnosis: 'max_fire_duration too low (1-2 frames). Fire sprites pruned before spreading.; The RothermelFireManager
     prunes fire sprites after max_fire_duration frames and marks them as BURNED. If this value is too
-    low, fire sprites are removed before they accumulate enough burn_amounts (> pixel_scale ft) to ign
+    low, fire sprites are removed before they accumulate enough burn_amounts (> pixel_scale ft) to ignite
+    neighbors. The fire appears to start and immediately die out.
+
+    ; [''config.fire.max_fire_duration'', ''FireManager._prune_sprites'']'
   remedy: 'Set max_fire_duration to at least 4-5.; None; [''In config: fire.max_fire_duration: 5'', ''For
     slow-burning fuels (litter): may need 8-10'', ''Higher values = more concurrent sprites = more computation''];
     Default of 5 works for most fuel types at update_rate=1'
   severity: silent
 - id: dt_016
-  symptom: Perlin wind field is 88× too strong; sim spreads catastrophically. (Re-verified 2026-04-29.)
-  diagnosis: Perlin range_min/range_max written in ft/min instead of mph. The loader (config.py:897-901)
+  symptom: Perlin wind field is 88× too strong; sim spreads catastrophically.
+  diagnosis: 'Perlin range_min/range_max written in ft/min instead of mph. The loader (config.py:897-901)
     calls mph_to_ftpm on these YAML scalars; pre-multiplied values get multiplied by 88 a second time.;
     `simfire/utils/config.py:897-901` wraps each YAML perlin.speed.range_* with `mph_to_ftpm`. So a YAML
-    value o
+    value of 4136 (intended as 47 mph × 88) becomes 4136 mph × 88 = 363,968 ft/min internal. For 7-47
+    mph wind, write `range_min: 7` and `range_max: 47` directly.
+
+    ; [''config.wind.perlin.speed.range_min'', ''config.wind.perlin.speed.range_max'']'
   remedy: 'Write the mph values directly to range_min and range_max; do NOT multiply by 88.; None; [''In
     config: wind.perlin.speed.range_min: 5    (mph)'', ''In config: wind.perlin.speed.range_max: 30   (mph)'',
     ''If you find values > 100 in this field they are almost certainly already in ft/min and need to be
-    repl'
+    replaced with the mph value'']; Use the s3_wind_setup.md v2 doc as the canonical reference.'
   severity: silent
 - id: dt_018
   symptom: Fire spreads in the OPPOSITE direction from what the user intended (head-fire goes upwind /
     against the meteorological wind they wrote in the config).
-  diagnosis: wind.simple.direction in the YAML is *TO direction* (degrees clockwise from N pointing to
-    where the wind blows TO), not the meteorological 'from' convention.; `simfire/world/rothermel.py:104`
+  diagnosis: 'wind.simple.direction in the YAML is *TO direction* (degrees clockwise from N pointing to
+    where the wind blows TO), not the meteorological ''from'' convention.; `simfire/world/rothermel.py:104`
     computes `wind_angle_radians = np.radians(90 − U_dir)` and projects the wind vector onto the candidate
-    sprea
+    spread direction. Maximum spread occurs when angle_of_travel == U_dir, i.e. the wind blows TOWARD
+    U_dir. Concretely: `direction = 90` means wind blows TOWARD East and the head fire moves East. This
+    is OPPOSITE to standard meteorological convention where "wind direction = 90" means "wind from East".
+    For a Diablo NE wind that meteorologically blows FROM NE (TO SW), use `direction: 225`, NOT `direction:
+    45`.
+
+    ; [''config.wind.simple.direction'', ''config.wind.perlin.direction.range_min'', ''config.wind.perlin.direction.range_max'']'
   remedy: 'Use ''TO direction'' encoding: direction = the bearing the wind blows TOWARD. For a meteorological
     ''wind from X'', add 180 mod 360.; None; [''Want fire to spread East? direction: 90'', ''Want fire
     to spread SW (Diablo wind from NE)? direction: 225'', ''Want fire to spread NE (SW wind from SW)?
-    direction: 45'
+    direction: 45'', ''Sanity-check by running a 30-min sim on flat terrain and confirming head-fire elongation
+    azimuth matches direction'']; Use the lookup table in s3_wind_setup.md and write the TO direction
+    next to the meteorological FROM direction in YAML comments.'
   severity: silent
 - id: dt_017
   symptom: Computed burn area is extremely large or small. Off by orders of magnitude.
   diagnosis: 'Wrong pixel_scale used in area calculation, or forgot ft²→acres conversion.; Burn area =
     burned_pixels × pixel_scale² (ft²). Common errors: 1) Using meters/pixel for pixel_scale when it should
     be feet/pixel 2) Forgetting to divide ft² by 43560 to get acres 3) Using pixel count directly as area
-    (igno'
+    (ignoring scale) Result: area off by 10-10000×.
+
+    ; [''parse_simfire_output.py'', ''manual analysis scripts'']'
   remedy: Verify pixel_scale matches config. Convert ft² ÷ 43560 = acres.; parse_simfire_output; ['Check
     config area.pixel_scale (in feet)', 'area_ft2 = burned_pixels × pixel_scale²', 'area_acres = area_ft2
-    / 43560', 'area_ha = area_acres × 0.404686']; parse_simfire_output.py requires --pixel-scale and report
+    / 43560', 'area_ha = area_acres × 0.404686']; parse_simfire_output.py requires --pixel-scale and reports
+    multiple units
   severity: silent
 - id: dt_019
   symptom: Config() raises KeyError on a section the run does not even use (e.g. a pure functional-terrain
     config).
-  diagnosis: simfire's Config loader reads EVERY section unconditionally, not just the ones the selected
+  diagnosis: 'simfire''s Config loader reads EVERY section unconditionally, not just the ones the selected
     modes need.; Config.__init__ (config.py:263) calls _load_operational() before it ever looks at terrain.topography.type,
-    and _load_operational() does OperationalConfig(**self.yaml_data["operational"]) (config.
+    and _load_operational() does OperationalConfig(**self.yaml_data["operational"]) (config.py:527). A
+    config that omits `operational:` therefore dies even in pure `functional` mode. The same holds for
+    wind.cfd and wind.perlin, which _load_wind reads before dispatching on wind.function. Checked against
+    simfire 2.0.1: the KI''s own run_simfire.py --quick-test shipped such a config and could never run.
+
+    ; [''tools/run_simfire.py'', ''any hand-written YAML'']'
   remedy: 'Every SimFire config must carry ALL sections: area, display, simulation, mitigation, operational,
     terrain, fire, environment, wind{cfd,simple,perlin}.; run_simfire; [''Copy configs/functional_config.yml
-    from the simfire source as the skeleton'', ''Leave unused sections at their example values; they are'
+    from the simfire source as the skeleton'', ''Leave unused sections at their example values; they are
+    parsed but ignored'']; run_simfire.py --quick-test now emits a fully-populated config.'
   severity: fatal
 - id: dt_020
   symptom: Operational terrain/fuel download dies while parsing the LandFire response; the body is an
     HTML page, not JSON.
-  diagnosis: The `landfire` PyPI client (0.5.0) posts to the RETIRED ArcGIS GPServer endpoint; USGS now
+  diagnosis: 'The `landfire` PyPI client (0.5.0) posts to the RETIRED ArcGIS GPServer endpoint; USGS now
     serves the LFPS web page there.; landfire/__init__.py:18-20 builds REQUEST_URL from https://lfps.usgs.gov/arcgis/rest/services/LandfireProductService/GPServer/LandfireProductService
-    and calls .json() on the re
+    and calls .json() on the reply. That path now returns a Next.js HTML document, so EVERY `terrain.{topography,fuel}.type:
+    operational` run fails. dt_012 does not match (no ConnectionError/HTTPError/Timeout - the request
+    succeeds, the body is just HTML). The live API is https://lfps.usgs.gov/api/job/{submit,status} plus
+    /api/products; `Email` is now REQUIRED, `Resample_Resolution` must be >= 31 (omit it for native 30
+    m), and layer ids changed (200F13_19/200F13_20 -> LF2016_FBFM13, 220F13_22 -> LF2022_FBFM13, ELEV2020
+    -> LF2020_Elev). lfps.usgs.gov also fails TLS through the sandbox proxy (SSL_ERROR_SYSCALL) - the
+    session must set trust_env=False.
+
+    ; [''landfire==0.5.0'', ''simfire/utils/layers.py'', ''operational mode'']'
   remedy: 'Install the LFPS v2 shim before building Config.; convert_landfire_to_simfire; [''from convert_landfire_to_simfire
     import install_lfps2_shim'', "install_lfps2_shim(email=''you@example.org'')   # BEFORE Config(...)",
-    "Then use simfire''s operational path unchanged", "The shim also finds the AOI under the '
+    "Then use simfire''s operational path unchanged", "The shim also finds the AOI under the client''s
+    ''Area_Of_Interest'' key (capital O)"]; preflight_check.py now probes https://lfps.usgs.gov/api/products.'
   severity: fatal
 - id: dt_021
   symptom: Simulated fire spreads 2-3x too fast even though the wind speed in the YAML matches the observed
@@ -464,19 +532,31 @@ known_issues:
   diagnosis: 'A 10 m (or 2 m) meteorological wind was written into wind.simple.speed, but Rothermel needs
     the MIDFLAME wind.; Rothermel''s U is the midflame wind - the wind acting on the flame inside/above
     the surface fuel bed - not the open 10 m wind that reanalyses and weather APIs report. The standard
-    chain is:'
-  remedy: Derive wind.simple.speed with the NASA POWER mode of the wind tool, which applies the log profile
-    and the WAF.; convert_wind_to_simfire; ['python tools/convert_wind_to_simfire.py --nasa-power --lat
-    LAT --lon LON --date YYYY-MM-DD --fuel-bed-depth-ft H --output-dir DIR', 'Take H from the DOMINANT
-    bur
+    chain is: reference height -> 20 ft (6.1 m) open wind via the log profile, then 20 ft -> midflame
+    via the Albini & Baughman (1979) unsheltered wind adjustment factor WAF = 1.83 / ln((20 + 0.36 H)
+    / (0.13 H)), H = fuel bed depth in ft (Andrews 2012, RMRS-GTR-266). WAF ~ 0.36 for grass (H = 1 ft)
+    and ~ 0.55 for chaparral (H = 6 ft), so skipping it inflates phi_w by roughly 2-3x. This is SILENT:
+    the units are right, only the reference height is wrong.
+
+    ; [''config.wind.simple.speed'', ''config.wind.perlin.speed.range_min'', ''config.wind.perlin.speed.range_max'']'
+  remedy: 'Derive wind.simple.speed with the NASA POWER mode of the wind tool, which applies the log profile
+    and the WAF.; convert_wind_to_simfire; [''python tools/convert_wind_to_simfire.py --nasa-power --lat
+    LAT --lon LON --date YYYY-MM-DD --fuel-bed-depth-ft H --output-dir DIR'', ''Take H from the DOMINANT
+    burnable FBFM-13 model in the domain, not a guess'', ''Use --start-offset-hours (12 - lon/15) to sample
+    the LOCAL afternoon, not the UTC night'', "Direction: the tool returns a speed-weighted VECTOR mean
+    already flipped to the ''TO'' convention"]; Never write a raw 10 m wind into wind.simple.speed.'
   severity: silent
 - id: dt_022
   symptom: Weather-derived fuel moisture comes out at the floor for every site; relative humidity is exactly
     0.0 everywhere.
-  diagnosis: ki_tools_common.humidity.specific_humidity_to_rh takes temperature in KELVIN; load_forcing
-    returns temp_c in CELSIUS.; The helper's argument is named temp_k and it subtracts 273.15 internally.
-    Passing load_forcing's temp_c evaluates the Tetens saturation vapour pressure ~273 K below the real
-    tempera
+  diagnosis: 'ki_tools_common.humidity.specific_humidity_to_rh takes temperature in KELVIN; load_forcing
+    returns temp_c in CELSIUS.; The helper''s argument is named temp_k and it subtracts 273.15 internally.
+    Passing load_forcing''s temp_c evaluates the Tetens saturation vapour pressure ~273 K below the real
+    temperature, e_s explodes and RH clips to 0.0. Simard EMC then returns ~0.03 % and every site clamps
+    to the dead-fuel-moisture floor - a physically plausible-looking but completely weather-independent
+    number. Check: 31.4 degC / q = 2.1 g/kg gave RH 0.0 before the fix and RH 7.3 % after.
+
+    ; [''tools/derive_fire_environment.py'', ''any ki_tools_common humidity use'']'
   remedy: 'Pass temp_c + 273.15 into specific_humidity_to_rh.; derive_fire_environment; [''Sanity-check
     mean_rh_pct: a real value is 3-95 %, never exactly 0.0 or 100.0'']; derive_fire_environment.py converts
     explicitly and records mean_rh_pct in its provenance block.'
@@ -484,20 +564,34 @@ known_issues:
 - id: dt_023
   symptom: The simulated grid is narrower (fewer columns) than area.screen_size implies, or a 4326 request
     yields cells that are not 30 m.
-  diagnosis: simfire treats 0.00027777777803598015 degrees as 30 m in BOTH lat and lon, and then crops
+  diagnosis: 'simfire treats 0.00027777777803598015 degrees as 30 m in BOTH lat and lon, and then crops
     assuming exactly 30 m cells.; config.py:340-342 computes the bottom-right corner with one isotropic
     degrees-per-pixel constant. That is right for latitude (~30.9 m) but at 40 deg N one such step of
-    LONGITUDE is
+    LONGITUDE is only ~23.5 m. layers.py:123-127 then crops the returned raster to [:floor(height/30),
+    :floor(width/30)]. Once floor(width/30) exceeds ~360 at mid-latitudes the AOI runs out of columns
+    and numpy slicing silently returns a NARROWER array - the domain is truncated east-west with no error.
+    Separately, requesting Output_Projection=4326 from LFPS returns cells that are square in DEGREES (~0.00037
+    deg -> ~41 m N-S, ~32 m E-W at 40 deg N), which contradicts both the crop and area.pixel_scale = int(30/0.3048)
+    = 98 ft.
+
+    ; [''simfire/utils/config.py'', ''simfire/utils/layers.py'', ''area.screen_size'', ''area.pixel_scale'']'
   remedy: Request LandFire in its NATIVE 30 m Albers projection and widen the AOI so the east-west extent
     in METRES is at least the north-south extent.; convert_landfire_to_simfire; ['install_lfps2_shim()
     defaults to output_projection=None (native Albers) and applies isotropize_bbox()', 'After Config(),
-    asser
+    assert cfg.area.screen_size equals (floor(height/30), floor(width/30))', "Take the georeference for
+    any obs comparison from the cached GeoTIFF's own affine transform (mtbs_perimeter_to_grid.grid_reference),
+    never from the config lat/lon"]; grid_reference() raises if the raster is smaller than the requested
+    crop instead of scoring a truncated domain.
   severity: silent
 - id: dt_024
   symptom: Reading the cached LandFire GeoTIFF fails inside the geotiff package.
-  diagnosis: tifffile.aszarr needs zarr >= 3, but zarr >= 3.2 removed zarr.core.chunk_grids.RegularChunkGrid,
-    which tifffile still imports.; simfire's layers._make_data() reads the raster with geotiff.GeoTiff(...).read(),
-    which goes through tifffile.aszarr. Both zarr 2.x AND zarr 3.2+ raise the SAME misleading m
+  diagnosis: 'tifffile.aszarr needs zarr >= 3, but zarr >= 3.2 removed zarr.core.chunk_grids.RegularChunkGrid,
+    which tifffile still imports.; simfire''s layers._make_data() reads the raster with geotiff.GeoTiff(...).read(),
+    which goes through tifffile.aszarr. Both zarr 2.x AND zarr 3.2+ raise the SAME misleading message
+    ("zarr 3.3.0 < 3 is not supported"), because tifffile reports the version it found when the import
+    guard fails for any reason. Checked: zarr 2.12.0 fails, 3.3.0 fails, 3.1.6 works.
+
+    ; [''geotiff'', ''tifffile'', ''zarr'', ''simfire/utils/layers.py'']'
   remedy: pip install 'zarr>=3,<3.2' in the SimFire venv.; None; ['The SimFire venv also needs rasterio
     and xarray, neither of which ships with it', 'python preflight_check.py verifies all four']; preflight_check.py
     imports zarr.core.chunk_grids.RegularChunkGrid explicitly.
@@ -508,8 +602,13 @@ known_issues:
   diagnosis: "fire.fire_initial_position.static.position is (X, Y) = (COLUMN, ROW), not (row, col).; simulation.py\
     \ _create_fire_map does\n  x, y = self.config.fire.fire_initial_position\n  self.fire_map[y, x] =\
     \ BurnStatus.BURNING\nand config.py _load_fire's `random` branch draws pos_x from screen_size[1] (the\
-    \ WIDTH)"
+    \ WIDTH) and pos_y from screen_size[0] (the HEIGHT) - both confirm the (x, y) order. SKILL.md previously\
+    \ annotated the example as \"(row, col)\", which transposes every ignition point. On a SQUARE domain\
+    \ this raises no error at all: the fire simply starts at the mirrored cell, and any perimeter-overlap\
+    \ metric collapses toward zero for a reason that looks like a physics failure.\n; ['config.fire.fire_initial_position.static.position']"
   remedy: 'Write position as (column, row). When deriving the ignition cell from a raster with rasterio.transform.rowcol,
     SWAP before writing the YAML.; None; [''row, col = rasterio.transform.rowcol(transform, x, y)'', ''YAML:  position:
-    (col, row)'', ''Verify: after one update, np.argwhere(sim.fire_map == 1) shoul'
+    (col, row)'', ''Verify: after one update, np.argwhere(sim.fire_map == 1) should be the intended (row,
+    col)'']; Use a non-square test domain once; the transposition then raises IndexError instead of failing
+    silently.'
   severity: silent

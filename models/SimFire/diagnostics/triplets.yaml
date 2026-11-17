@@ -6,7 +6,7 @@
   stage: s3_wind_setup
   failure_domain: unit_conversion
   symptom:
-    description: "Fire spreads catastrophically fast — fills the grid in minutes. sim/expected RoS ratio ≈ 88×. (Verified 2026-04-29 against simfire 2.0.1.)"
+    description: "Fire spreads catastrophically fast — fills the grid in minutes. sim/expected RoS ratio ≈ 88×. (Checked against simfire 2.0.1.)"
     error_pattern: "burned_fraction > 0.5 in < 30 min on flat terrain"
     detection_method: value_comparison
   diagnosis:
@@ -34,6 +34,7 @@
     prevention: "Use SKILL.md and s3_wind_setup.md as the canonical source; older notes claiming 'must be in ft/min' are wrong for the YAML input layer."
   severity: silent
   cross_references: [dt_002, dt_016]
+  seen_at: "2026-04-29"
 
 - id: dt_002
   stage: s3_wind_setup
@@ -402,7 +403,7 @@
   stage: s3_wind_setup
   failure_domain: unit_conversion
   symptom:
-    description: "Perlin wind field is 88× too strong; sim spreads catastrophically. (Re-verified 2026-04-29.)"
+    description: "Perlin wind field is 88× too strong; sim spreads catastrophically."
     error_pattern: "internal max wind speed > ~10000 ft/min for plausible weather"
     detection_method: value_comparison
   diagnosis:
@@ -423,6 +424,7 @@
     prevention: "Use the s3_wind_setup.md v2 doc as the canonical reference."
   severity: silent
   cross_references: [dt_001, dt_002, dt_018]
+  seen_at: "2026-04-29"
 
 - id: dt_018
   stage: s3_wind_setup
@@ -499,7 +501,7 @@
       OperationalConfig(**self.yaml_data["operational"]) (config.py:527). A config that
       omits `operational:` therefore dies even in pure `functional` mode. The same holds
       for wind.cfd and wind.perlin, which _load_wind reads before dispatching on
-      wind.function. Verified 2026-08-09 against simfire 2.0.1: the KI's own
+      wind.function. Checked against simfire 2.0.1: the KI's own
       run_simfire.py --quick-test shipped such a config and could never run.
     affected_components: [tools/run_simfire.py, any hand-written YAML]
   remedy:
@@ -511,6 +513,7 @@
     prevention: "run_simfire.py --quick-test now emits a fully-populated config."
   severity: fatal
   cross_references: [dt_007]
+  seen_at: "2026-08-09"
 
 - id: dt_020
   stage: s2_terrain_setup
@@ -591,7 +594,7 @@
       load_forcing's temp_c evaluates the Tetens saturation vapour pressure ~273 K below
       the real temperature, e_s explodes and RH clips to 0.0. Simard EMC then returns
       ~0.03 % and every site clamps to the dead-fuel-moisture floor - a physically
-      plausible-looking but completely weather-independent number. Verified 2026-08-09:
+      plausible-looking but completely weather-independent number. Check:
       31.4 degC / q = 2.1 g/kg gave RH 0.0 before the fix and RH 7.3 % after.
     affected_components: [tools/derive_fire_environment.py, any ki_tools_common humidity use]
   remedy:
@@ -602,6 +605,7 @@
     prevention: "derive_fire_environment.py converts explicitly and records mean_rh_pct in its provenance block."
   severity: silent
   cross_references: [dt_004, dt_009]
+  seen_at: "2026-08-09"
 
 - id: dt_023
   stage: s2_terrain_setup
@@ -647,7 +651,7 @@
       simfire's layers._make_data() reads the raster with geotiff.GeoTiff(...).read(),
       which goes through tifffile.aszarr. Both zarr 2.x AND zarr 3.2+ raise the SAME
       misleading message ("zarr 3.3.0 < 3 is not supported"), because tifffile reports the
-      version it found when the import guard fails for any reason. Verified 2026-08-09:
+      version it found when the import guard fails for any reason. Checked:
       zarr 2.12.0 fails, 3.3.0 fails, 3.1.6 works.
     affected_components: [geotiff, tifffile, zarr, simfire/utils/layers.py]
   remedy:
@@ -659,6 +663,7 @@
     prevention: "preflight_check.py imports zarr.core.chunk_grids.RegularChunkGrid explicitly."
   severity: fatal
   cross_references: [dt_020]
+  seen_at: "2026-08-09"
 
 - id: dt_025
   stage: s1_configuration
@@ -679,7 +684,7 @@
       which transposes every ignition point. On a SQUARE domain this raises no
       error at all: the fire simply starts at the mirrored cell, and any
       perimeter-overlap metric collapses toward zero for a reason that looks
-      like a physics failure. Verified 2026-08-09.
+      like a physics failure.
     affected_components: [config.fire.fire_initial_position.static.position]
   remedy:
     action: "Write position as (column, row). When deriving the ignition cell from a raster with rasterio.transform.rowcol, SWAP before writing the YAML."
@@ -691,3 +696,4 @@
     prevention: "Use a non-square test domain once; the transposition then raises IndexError instead of failing silently."
   severity: silent
   cross_references: [dt_018]
+  seen_at: "2026-08-09"

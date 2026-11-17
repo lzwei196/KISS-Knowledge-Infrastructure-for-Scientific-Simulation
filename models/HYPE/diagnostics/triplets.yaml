@@ -11,7 +11,7 @@
 # =============================================================================
 # HYPE v5.35.0 — Diagnostic Triplets
 # Generated via Knowledge Dissection Toolkit (KDT)
-# Updated: 2026-03-24 (post Bengbu + Chaohe validation)
+# Updated: 2026-03-24 (after the first real-basin validation runs; where: each entry's seen_at)
 # =============================================================================
   # =========================================================================
   # COMPILATION / INSTALLATION
@@ -32,7 +32,7 @@
   # CROSS-MODEL COUPLING
   # =========================================================================
   # =========================================================================
-  # VALIDATION-DISCOVERED ERRORS (Bengbu + Chaohe runs, 2026-03-24)
+  # VALIDATION-DISCOVERED ERRORS (where and when: each entry's seen_at)
   # =========================================================================
 # =============================================================================
 # Summary Statistics
@@ -44,7 +44,7 @@
 #   - Unit conversion: 3
 #   - Silent errors: 10
 #   - Coupling: 2
-#   - Validation-discovered: 2 (from Bengbu + Chaohe runs)
+#   - Validation-discovered: 2
 #
 # Severity breakdown:
 #   - fatal: 8
@@ -325,7 +325,7 @@
       in the daily sum.
 
       '
-    explanation: 'This was the #1 error found during Bengbu validation. The model ran without any error,
+    explanation: 'This is the most common first-run error here. The model ran without any error,
       but produced zero discharge because all precipitation was zero after rounding. Only discovered by
       checking Pobs.txt values.
 
@@ -345,6 +345,7 @@
   - cm_004
   - err_003
   promoted_from: err_003
+  seen_at: "date not recorded, Bengbu"
 - id: dt_s01
   stage: s4_geodata_generation
   failure_domain: silent_error
@@ -537,9 +538,9 @@
 
       '
     explanation: 'This is an undocumented default behavior. The streamdepth parameter controls tile drainage
-      depth. When set to 0, HYPE interprets it as ''no soil runoff calculation'' for that SLC class. Found
-      during Bengbu validation — the model ran successfully but produced zero discharge until streamdepth
-      was set >0.
+      depth. When set to 0, HYPE interprets it as ''no soil runoff calculation'' for that SLC class. The
+      model runs successfully but produces zero discharge until streamdepth
+      is set >0.
 
       '
     affected_components:
@@ -553,6 +554,7 @@
     prevention: generate_geoclass.py defaults streamdepth to 1.0 m for land classes
   cross_references: []
   promoted_from: err_004
+  seen_at: "date not recorded, Bengbu"
 - id: dt_s09
   stage: s7_execution
   failure_domain: silent_error
@@ -660,8 +662,8 @@
   failure_domain: silent_error
   severity: warning
   symptom:
-    description: 'HYPE runs successfully but discharge is ~20% too high (PBIAS=+19.8%) despite correct
-      forcing units. Bengbu basin, 1981-1990.
+    description: 'HYPE runs successfully but discharge is clearly too high (large positive PBIAS) despite
+      correct forcing units, in a very large basin set up as one lumped subbasin.
 
       '
     error_pattern: ''
@@ -673,7 +675,7 @@
       '
     explanation: 'With a single subbasin for a 121,330 km² basin, there is no attenuation from subbasin-to-subbasin
       routing. Semi-distributed setup (5-10 subbasins) would improve timing and reduce peak overprediction.
-      NSE=0.678 is already good for uncalibrated lumped mode.
+      The NSE can still look good for an uncalibrated lumped run.
 
       '
     affected_components:
@@ -686,25 +688,26 @@
     - Re-run with --num_subbasins 5-10 for large basins
     prevention: Recommend semi-distributed for any basin > 10,000 km²
   cross_references: []
+  seen_at: "2026-03-24, Bengbu (1981-1990)"
 - id: dt_v02
   stage: s3_forcing_preparation
   failure_domain: silent_error
   severity: silent
   symptom:
-    description: 'Multiple HYPE run attempts produced zero discharge. Nine log files (hyss_000_*) before
-      success indicates iterative debugging was needed.
+    description: 'Several HYPE runs in a row produce zero discharge. Each fix of one input error only
+      shows the next one, so many attempts are needed before a good run.
 
       '
     error_pattern: ''
     detection_method: missing_output
   diagnosis:
     root_cause: 'Cascading silent errors: (1) CMFD precip unit (kg/m²/s not converted), (2) streamdepth=0
-      in GeoClass.txt, (3) SLC fractions not validated. Each was fixed sequentially across 9 attempts.
+      in GeoClass.txt, (3) SLC fractions not validated. Each one hides the next, so they are found one run at a time.
 
       '
     explanation: 'This is the canonical example of why the VALIDATION_PROTOCOL requires progressive data
       replacement. All three errors are SILENT — the model runs cleanly each time. Only output inspection
-      revealed the problems. The 9 log files document the discovery sequence.
+      revealed the problems.
 
       '
     affected_components:
@@ -723,3 +726,4 @@
   - dt_u03
   - dt_s08
   - dt_s01
+  seen_at: "2026-03-24, Bengbu and Chaohe runs"

@@ -392,20 +392,24 @@ known_issues:
     ''mydirinfo.txt'' instead of ''mydir/info.txt''.
 
     ; HYPE''s Fortran code does not check or append a trailing separator to the directory argument. This
-    is a fundamental Fortran string handling pattern that affects all p'
+    is a fundamental Fortran string handling pattern that affects all path-related operations.
+
+    ; [''info.txt'', ''all directory paths'', ''run_hype.py'']'
   remedy: 'Always pass directory path with trailing slash: hype ./ not hype .; run_hype; ["Ensure argument
     ends with ''/''"]; run_hype.py auto-appends slash. Never call binary directly without it.'
   severity: fatal
 - id: dt_r02
   symptom: HYPE reports too few values in parameter file for a parameter
-  diagnosis: par.txt has fewer values than max land-use or soil type ID in GeoClass.txt; If GeoClass.txt
+  diagnosis: 'par.txt has fewer values than max land-use or soil type ID in GeoClass.txt; If GeoClass.txt
     has land-use IDs 1, 2, 3, then each land-use-dependent parameter in par.txt MUST have exactly 3 values.
     The count is based on the highest ID, not the number of unique IDs — so if IDs are 1, 3, 5, you need
-    5 v
+    5 values (with 0 for unused IDs 2, 4).
+
+    ; [''par.txt'', ''GeoClass.txt'']'
   remedy: 'Count max landuse/soil IDs in GeoClass.txt, provide exactly that many values; setup_parameters;
     ["grep -v ''^!!'' GeoClass.txt | awk ''{print $2}'' | sort -n | tail -1  # max landuse", "grep -v
     ''^!!'' GeoClass.txt | awk ''{print $3}'' | sort -n | tail -1  # max soil"]; setup_parameters.py auto-counts
-    from '
+    from GeoClass.txt'
   severity: fatal
 - id: dt_r03
   symptom: HYPE error about soil layers in GeoClass.txt
@@ -448,10 +452,12 @@ known_issues:
   severity: fatal
 - id: dt_u01
   symptom: Extreme runoff values or unrealistic flooding. Discharge 8x too high.
-  diagnosis: Precipitation averaged instead of summed when converting 3-hourly to daily; CMFD/MSWX provide
+  diagnosis: 'Precipitation averaged instead of summed when converting 3-hourly to daily; CMFD/MSWX provide
     3-hourly precipitation (mm per 3hr step). For daily total, you must SUM all 8 timesteps. If you AVERAGE
     instead, daily precipitation is 8x too low. Conversely, if you multiply the mean by 24 instead of
-    8, p
+    8, precipitation is 3x too high.
+
+    ; [''Pobs.txt'', ''convert_forcing_to_hype.py'']'
   remedy: 'SUM 8 timesteps per day for precipitation. Verify: annual P ~ 400-1600 mm for most basins.;
     convert_forcing_to_hype; [''Check annual precipitation total against climatology'']; convert_forcing_to_hype.py
     uses sum, not mean, for precipitation'
@@ -473,10 +479,15 @@ known_issues:
     multiplying by 10800 (seconds per 3hr step), the values are so small they round to zero in the daily
     sum.
 
-    ; This was the #1 error found during Bengbu validation. The model ran without any error, but produc'
+    ; This is the most common first-run error here. The model ran without any error, but produced zero
+    discharge because all precipitation was zero after rounding. Only discovered by checking Pobs.txt
+    values.
+
+    ; [''Pobs.txt'', ''convert_forcing_to_hype.py'']'
   remedy: Multiply CMFD precipitation by 10800 to convert kg/m²/s → mm/3hr, then SUM 8 steps for daily.;
     convert_forcing_to_hype; ['python -c "import xarray; ds=xarray.open_dataset(\'prec_file.nc\'); print(ds[\'prec\'].values.mean())"',
-    "If mean is ~1e-5, it's kg/m²/s — multiply by 10800", "If mean is ~0.1-2.
+    "If mean is ~1e-5, it's kg/m²/s — multiply by 10800", "If mean is ~0.1-2.0, it's already mm/3hr"];
+    convert_forcing_to_hype.py checks value magnitude and auto-converts
   severity: silent
 - id: dt_s01
   symptom: Water balance is wrong but model runs successfully with exit code 0
@@ -484,7 +495,7 @@ known_issues:
     sum to 0.8, then 20% of precipitation is lost silently. HYPE produces NO warning about this. The error
     is proportional to the deviation from 1.0 and affects all water balance components.
 
-    ; [''GeoData.txt'', ''com'
+    ; [''GeoData.txt'', ''compute_slc_fractions.py'']'
   remedy: 'Validate: for each subbasin row, sum(SLC_1..SLC_N) must equal 1.0 within 0.001; validate_geodata;
     [''python validate_geodata.py --geodata modelfiles/GeoData.txt'']; Always run validate_geodata.py
     before HYPE execution'
@@ -528,7 +539,7 @@ known_issues:
     SUBID to a forcing station. If SUBIDs don''t match GeoData.txt, HYPE cannot find forcing for some
     subbasins. Those subbasins run with zero precipitation and contribute no discharge.
 
-    ; [''ForcKey.txt'', ''GeoData.txt'''
+    ; [''ForcKey.txt'', ''GeoData.txt'']'
   remedy: Verify all SUBIDs in ForcKey.txt exist in GeoData.txt and vice versa; convert_forcing_to_hype;
     ["diff <(awk 'NR>1{print $1}' ForcKey.txt | sort) <(awk 'NR>1{print $1}' GeoData.txt | sort)"]; convert_forcing_to_hype.py
     reads SUBIDs from GeoData.txt directly
@@ -550,7 +561,7 @@ known_issues:
     TAB-separated columns. If spaces are used instead, the parser may read incorrect column values or
     fail to split columns entirely, resulting in all-zero or all-missing values.
 
-    ; [''Pobs.txt'', ''Tobs.txt'', ''ForcKey.t'
+    ; [''Pobs.txt'', ''Tobs.txt'', ''ForcKey.txt'']'
   remedy: 'Use explicit \t when writing forcing files. Verify with: cat -A Pobs.txt | head; convert_forcing_to_hype;
     [''cat -A forcingdir/Pobs.txt | head -3  # should see ^I (tab) between columns'']; convert_forcing_to_hype.py
     uses sep=''\t'' in pandas to_csv'
@@ -561,7 +572,10 @@ known_issues:
     returns immediately without computing runoff.
 
     ; This is an undocumented default behavior. The streamdepth parameter controls tile drainage depth.
-    When set to 0, HYPE interprets it as ''no soil runoff calcu'
+    When set to 0, HYPE interprets it as ''no soil runoff calculation'' for that SLC class. The model
+    runs successfully but produces zero discharge until streamdepth is set >0.
+
+    ; [''GeoClass.txt'', ''generate_geoclass.py'']'
   remedy: 'Set streamdepth > 0 for all non-water SLC classes. Typical range: 0.5-2.0 m.; generate_geoclass;
     ["awk ''NR>1{print $10}'' GeoClass.txt  # column 10 should be >0 for land classes"]; generate_geoclass.py
     defaults streamdepth to 1.0 m for land classes'
@@ -594,47 +608,56 @@ known_issues:
     balance while HYPE uses daily temperature-based PET. Different temporal resolution of forcing changes
     infiltration/runoff partitioning. Also verify both models use exactly the same basin area.
 
-    ; [''VIC output'', '''
+    ; [''VIC output'', ''HYPE output'']'
   remedy: Verify both models use same basin area and same forcing time period. Compare annual P and ET.;
     compare_vic_hype; ['python compare_vic_hype.py --vic <vic_dir> --hype <hype_dir>']; Always run compare_vic_hype.py
     after both models complete
   severity: warning
 - id: dt_c02
   symptom: HYPE discharge much lower than VIC for same basin and period
-  diagnosis: Precipitation averaged instead of summed when converting 3-hourly to daily; If mean() is
+  diagnosis: 'Precipitation averaged instead of summed when converting 3-hourly to daily; If mean() is
     used instead of sum() for daily P aggregation, HYPE receives 1/8th of the actual precipitation. VIC
-    processes the 3-hourly data directly. Annual P comparison will show HYPE receiving ~100 mm/yr vs VIC's
-    ~800 mm/
+    processes the 3-hourly data directly. Annual P comparison will show HYPE receiving ~100 mm/yr vs VIC''s
+    ~800 mm/yr.
+
+    ; [''Pobs.txt'', ''convert_forcing_to_hype.py'']'
   remedy: '3-hourly precip must be SUMMED for daily total. Cross-check: annual P in Pobs.txt should match
     VIC.; convert_forcing_to_hype; [''Compare annual precipitation between VIC forcing and HYPE Pobs.txt''];
     convert_forcing_to_hype.py uses .sum() explicitly for precipitation'
   severity: silent
 - id: dt_v01
-  symptom: 'HYPE runs successfully but discharge is ~20% too high (PBIAS=+19.8%) despite correct forcing
-    units. Bengbu basin, 1981-1990.
+  symptom: 'HYPE runs successfully but discharge is clearly too high (large positive PBIAS) despite correct
+    forcing units, in a very large basin set up as one lumped subbasin.
 
     '
   diagnosis: 'Lumped (1-subbasin) setup with default parameters. HYPE''s internal routing with MAINDOWN
     in lumped mode has no routing delay — all runoff appears instantly at outlet, causing peak overprediction.
 
     ; With a single subbasin for a 121,330 km² basin, there is no attenuation from subbasin-to-subbasin
-    rout'
+    routing. Semi-distributed setup (5-10 subbasins) would improve timing and reduce peak overprediction.
+    The NSE can still look good for an uncalibrated lumped run.
+
+    ; [''GeoData.txt'', ''delineate_subbasins.py'']'
   remedy: For basins >10,000 km², use semi-distributed setup with multiple subbasins for better routing.;
     delineate_subbasins; ['Re-run with --num_subbasins 5-10 for large basins']; Recommend semi-distributed
     for any basin > 10,000 km²
   severity: warning
 - id: dt_v02
-  symptom: 'Multiple HYPE run attempts produced zero discharge. Nine log files (hyss_000_*) before success
-    indicates iterative debugging was needed.
+  symptom: 'Several HYPE runs in a row produce zero discharge. Each fix of one input error only shows
+    the next one, so many attempts are needed before a good run.
 
     '
   diagnosis: 'Cascading silent errors: (1) CMFD precip unit (kg/m²/s not converted), (2) streamdepth=0
-    in GeoClass.txt, (3) SLC fractions not validated. Each was fixed sequentially across 9 attempts.
+    in GeoClass.txt, (3) SLC fractions not validated. Each one hides the next, so they are found one run
+    at a time.
 
     ; This is the canonical example of why the VALIDATION_PROTOCOL requires progressive data replacement.
-    All three er'
+    All three errors are SILENT — the model runs cleanly each time. Only output inspection revealed the
+    problems.
+
+    ; [''Pobs.txt'', ''GeoClass.txt'', ''GeoData.txt'']'
   remedy: 'Follow VALIDATION_PROTOCOL Step 2: replace one component at a time, verify after each.; ; [''Check
     Pobs.txt annual total first (should be 400-1600 mm)'', ''Check GeoClass.txt streamdepth > 0'', ''Check
     GeoData.txt SLC fractions sum to 1.0'']; Use validate_geodata.py + annual P sanity check before every
-    ru'
+    run'
   severity: silent

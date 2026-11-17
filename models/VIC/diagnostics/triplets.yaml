@@ -158,13 +158,14 @@
   remedy: 'Cap max_workers to 4 when using MSWX data. Kill stuck workers: `pkill -9 -f forcing_1d.py`.
     Add auto-detection: `if ''msxw'' in str(INPUT_DATA_DIR): max_workers = 4`.'
 - id: dt_vic_017
-  name: 'Koksilah River case: CMFD used for Canada'
-  symptom: Agent used CMFD (China-only) forcing for Koksilah River (BC, Canada) — produced meaningless
+  name: 'CMFD used for a basin outside China (the case behind dt_vic_015)'
+  symptom: Agent used CMFD (China-only) forcing for a basin outside China (e.g. in Canada) — produced meaningless
     forcing data that was silently wrong.
   diagnosis: forcing_1d.py INPUT_DATA_DIR defaulted to CMFD; agent did not check basin location vs forcing
-    coverage. This is the discovered instance that led to dt_vic_015.
+    coverage. This is the case that led to dt_vic_015.
   remedy: Added FORCING DATASET SELECTION section to CLAUDE.md. CLAUDE.md now has mandatory forcing check
     before any simulation.
+  seen_at: "date not recorded, Koksilah River, BC, Canada"
 - id: dt_vic_018
   name: forcing_1d.py MSWX hung 15+ minutes (I/O saturation)
   symptom: forcing_1d.py with MSWX hung for 15+ minutes producing zero output — 113 workers saturated
@@ -249,9 +250,9 @@
 
 
     and the shell/subprocess return code is `139` (SIGSEGV) or `-11`. A driver that does `if p.returncode
-    != 0: sys.exit(1)` then aborts the whole run at a stage that actually SUCCEEDED. The 2026-07-09 唐乃亥
-    detached run died exactly here: `state.json` recorded `returncode: 1` at s6 `process_forcing.py`,
-    all 251 forcing files were correct, and the orchestrator captured **null metrics** for a run whose
+    != 0: sys.exit(1)` then aborts the whole run at a stage that actually SUCCEEDED. A detached run
+    can die exactly here: `state.json` records `returncode: 1` at s6 `process_forcing.py`,
+    all forcing files are correct, and the orchestrator captures **null metrics** for a run whose
     physics were fine.'
   diagnosis: 'Two independent conditions must both hold.
 
@@ -307,6 +308,7 @@
     must return nothing. Do **not** "fix" this by making the driver tolerate a nonzero return code: a
     real crash and a teardown crash are then indistinguishable, and the next genuine failure will be silently
     scored.'
+  seen_at: "2026-07-09, Tangnaihai (唐乃亥) detached run"
 - id: dt_vic_024
   name: '`create_global_param()` writes NOTHING and does not raise (dead template path)'
   symptom: 'step s7 prints `✗ 模板文件不存在: .../outputs/pearl_river_calibration_ai/best_run/global_param.txt`,
@@ -323,12 +325,13 @@
     `return False`; no caller checked the return value, so the failure was silent at the point it
 
     occurred. A KI must never depend on `outputs/` for an input.'
-  remedy: "FIXED (2026-07-10, Harbin/Songhua run).\n* The template now ships inside the KI: `docs/vic_param/global_param_template.txt`,\
+  remedy: "FIXED (2026-07-10).\n* The template now ships inside the KI: `docs/vic_param/global_param_template.txt`,\
     \ and is the\n  default value of `VIC_GLOBAL_PARAM_TEMPLATE`.\n* A missing template now raises `FileNotFoundError`\
     \ instead of returning `False`.\n* The template's header documents that its 21 `OUTVAR` lines are\
     \ order-critical: `s5_routing`\n  and SKILL.md slice the flux file as `df.iloc[:, [0,1,2,3,18,16,17]]`\n\
     \  (`year month day OUT_PREC OUT_EVAP OUT_RUNOFF OUT_BASEFLOW`). Reorder an OUTVAR and `rout`\n  is\
     \ silently fed the wrong columns."
+  seen_at: "2026-07-10, Harbin / Songhua run"
 - id: dt_vic_025
   name: A new basin needs FOUR env vars SKILL.md's quickstart table does not list
   symptom: '`s5_routing/build_routing_param.py` raises
@@ -401,11 +404,12 @@
     This is the exact trap dt_vic_021 warns about, at a second basin.'
   remedy: 'profile first (`v = q[q > -90]; v.groupby(v.index.year).size()`), then either
 
-    truncate the validation window to 1986-1987 (what the Harbin real-case did, keeping the
+    truncate the validation window to 1986-1987 (keeping the
 
     standard spinup/cal periods intact) or move the whole experiment to the 2005-2019 block.
 
     Do not silently accept a 5-year `period_validation` string that only 2 years of data back.'
+  seen_at: "date not recorded, Harbin (哈尔滨, Songhua)"
 - id: dt_vic_027
   name: all_metrics / compute_calval_metrics return UPPERCASE keys
   symptom: 'the model finished (`vic rc=0`, `rout rc=0`, routed `.day` on disk) but the
@@ -423,9 +427,9 @@
 
     `kdt_detached_run.py` still writes `DONE`, so the failure looks like "the model produced
 
-    nothing". Verified 2026-07-10: the 哈尔滨 run burned 13 min of VIC + routing and was
+    nothing". For example, one run burned 13 min of VIC + routing and was
 
-    discarded. The same casing bit the Harbin runner and is latent in any new runner.'
+    discarded. The same casing is latent in any new runner.'
   remedy: 'index `m["NSE"]`, `m["KGE"]`, `m["PBIAS"]`, `m["RMSE"]`, `m["r"]`. Do not
 
     "fix" `ki_tools_common` — every other KI depends on the current casing. Always write
@@ -433,18 +437,17 @@
     `result.json` from a `try/except` that emits `status:"failed"` with the traceback, so a
 
     scoring bug can never masquerade as a null-metrics model failure.'
+  seen_at: "2026-07-10, Harbin (哈尔滨) run"
 - id: dt_vic_028
   name: Lohmann VELOCITY default (1.5 m/s) is a Bengbu value; it caps NSE via r
   symptom: 'routed hydrograph has a plausible volume but poor NSE; `r` is stuck around
 
-    0.5-0.6 no matter which soil parameter is calibrated. At 哈尔滨: NSE −0.40, r 0.589,
-
-    PBIAS +28.9%.'
+    0.5-0.6 no matter which soil parameter is calibrated.'
   diagnosis: "`s5_routing/build_routing_param.py` hard-codes `VELOCITY = 1.5` m/s and\n`DIFFUSIVITY =\
     \ 800` m²/s (env `VIC_ROUT_VELOCITY` / `VIC_ROUT_DIFF`, undocumented in\nSKILL.md). Those reproduce\
     \ Bengbu (121,330 km²). At 哈尔滨 (398,330 km², flat Songnen\nPlain) the resulting basin-mean unit-hydrograph\
     \ lag is **6.2 d** while the observed lag\nis **28 d**. Two consequences that are easy to misread:\n\
-    \n* `NSE <= r**2`. With zero-lag r = 0.589 the NSE ceiling is **0.347** — the target\n  NSE >= 0.5\
+    \n* `NSE <= r**2`. With a zero-lag r of about 0.6 the NSE ceiling is only about **0.35** — the target\n  NSE >= 0.5\
     \ was arithmetically unreachable, and no soil parameter could have fixed it.\n* `rout` renormalises\
     \ UH_S (`unit_hyd_routines.f`, `MAKE_UHM` and `MAKE_GRID_UH` both\n  divide by their sum), so routing\
     \ is mass-conserving at ANY velocity. **A velocity\n  error moves timing and can NEVER move PBIAS.**\
@@ -453,7 +456,7 @@
     \ sim)` (lag-correlation) and `basin_mean_uh_lag(uh_s)` (read from\nthe `.uh_s` rout itself writes).\
     \ If the observed lag exceeds the UH lag, IDENTIFY the\nvelocity by bisecting until they agree — on\
     \ the CALIBRATION window only. Do not fit\nvelocity to NSE. At 哈尔滨 this gives v = 0.15 m/s (UH lag\
-    \ 27.8 d), zero-lag r\n0.589 → 0.894, NSE ceiling 0.347 → 0.799.\n\nRead the identified value as an\
+    \ 27.8 d) and lifts the zero-lag r\nand the NSE ceiling a lot.\n\nRead the identified value as an\
     \ **effective basin residence time, not a channel\ncelerity**: Lohmann's linearised Saint-Venant scheme\
     \ lumps hillslope, floodplain,\nwetland and reservoir storage into (velocity, diffusivity). Where\
     \ that storage dominates\n(large flat basins), prefer a routing scheme with explicit storage — CaMa-Flood\
@@ -466,7 +469,7 @@
     \ how small `velocity` gets. The\nbasin-mean UH lag therefore asymptotes to\n\n    uh_lag_max  ≈ \
     \ mean(UH.all)  +  mean_flow_path_in_cells × ~1.3 d\n\nAt 哈尔滨 (mean path 20.4 cells) that ceiling\
     \ is **29.8 d**, measured directly by routing\nat `v = 0.002`. Observed demand was ~33 d. Consequence:\
-    \ dropping `v` from 0.15 to 0.002\nbuys only 2 d of lag and moves held-out NSE by 0.03 (0.488 → 0.521),\
+    \ dropping `v` from 0.15 to 0.002\nbuys only 2 d of lag and moves held-out NSE only a little,\
     \ and a 5-7 day\nresidual lead survives at EVERY attainable velocity.\n\nSo a velocity optimiser will\
     \ happily walk to its lower bound and report \"success\" while\nthe model has stopped responding.\
     \ **Always probe `v → 0` first** (one 7 s `rout` call)\nto learn the ceiling, then:\n\n* if `target_lag\
@@ -475,6 +478,7 @@
     \ constant (the `rout_velocity` `range` lower\n  bound in `calibration.yaml`, 0.10 m/s), report the\
     \ plateau's NSE spread so the reader\n  can see the parameter is unidentifiable, and say so. Do NOT\
     \ tune inside the plateau,\n  and do NOT report the plateau optimum as an identified value."
+  seen_at: "date not recorded, Harbin (哈尔滨, Songhua)"
 - id: dt_vic_029
   name: '`rout` opens `<STA>.uh_s` with Fortran `status=''new''`'
   symptom: 'a second `rout` run in the same directory dies on the OPEN of
@@ -527,9 +531,9 @@
 
     Baseflow quintuples; the baseflow index climbs 0.31 → 0.54. Because the still-filling
 
-    store absorbs water, PBIAS *rises* as the model equilibrates: **+19.5% (1981-82),
+    store absorbs water, PBIAS *rises* steadily as the model equilibrates (by many percentage
 
-    +28.5% (1983-85), +36.8% (1986-87)**. The calibration window is the least equilibrated
+    points from the first to the last years). The calibration window is the least equilibrated
 
     part of the record, so any cal-vs-val gap is a spin-up transient.'
   remedy: 'before scoring, check the storage trend
@@ -543,6 +547,7 @@
     (~95 s per simulated year for 866 cells in water-balance mode). Do NOT read a
 
     `nse_cal > nse_val` gap as overfitting until this check is clean.'
+  seen_at: "date not recorded, Harbin (哈尔滨)"
 - id: dt_vic_031
   name: FROZEN_SOIL TRUE is blocked by bubble = -9999 / fs_active = 0, then by NODES
   symptom: 'two failures in sequence when enabling the frozen-soil module on a cold basin.

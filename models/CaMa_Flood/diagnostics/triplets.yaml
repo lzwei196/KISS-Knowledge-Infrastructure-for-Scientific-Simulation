@@ -124,13 +124,14 @@
   stage: s2_configuration
   failure_domain: data_shape
   symptom: "The run completes, but rivhgt.bin is uniformly 1.0 m and/or rivwth.bin uniformly 2.0 m across the whole basin; flood extent is over-predicted and calibration needs an implausible PMANRIV (e.g. 0.30 vs the natural 0.03) to match observed discharge."
-  diagnosis: "calc_outclm correctly runs on the GLOBAL grid, but its output is a global-sized array (e.g. 1440x720). calc_rivwth reads outclm.bin from the REGIONAL directory with fixed-recl direct access sized nx*ny of the REGIONAL domain, so a raw copy hands it an arbitrary byte slice of the global file. Width and depth then fall back to their WMIN/HMIN floors. set_gwdlr later overwrites WIDTH from GWD-LR satellite data, which MASKS the symptom, but nothing repairs DEPTH - and rivhgt.bin is what the run consumes via CRIVHGT. Measured 2026-08-19: 40 of 43 regional maps on this server had depth pinned at the 1.0 m floor."
+  diagnosis: "calc_outclm correctly runs on the GLOBAL grid, but its output is a global-sized array (e.g. 1440x720). calc_rivwth reads outclm.bin from the REGIONAL directory with fixed-recl direct access sized nx*ny of the REGIONAL domain, so a raw copy hands it an arbitrary byte slice of the global file. Width and depth then fall back to their WMIN/HMIN floors. set_gwdlr later overwrites WIDTH from GWD-LR satellite data, which MASKS the symptom, but nothing repairs DEPTH - and rivhgt.bin is what the run consumes via CRIVHGT. In one check, 40 of 43 existing regional maps had depth pinned at the 1.0 m floor."
   remedy: "CLIP the global array to the regional window using the two diminfo files, and write it in FORTRAN order: calc_rivwth declares rivout(nx,ny) with index = ix + iy*nx, while numpy's tofile() always writes C order - a C-order write puts correct values on the WRONG cells (verified: spearman(rivwth, uparea) fell to 0.008 and the basin outlet kept the 2.0 m floor width). tools/configure_simulation.py now does this via _clip_global_outclm()."
   detection: "python3 -c \"import numpy as np;from scipy.stats import spearmanr;d='<map_dir>/';nx,ny=<nx>,<ny>;u=np.fromfile(d+'uparea.bin',dtype='float32').reshape((nx,ny),order='F');h=np.fromfile(d+'rivhgt.bin',dtype='float32').reshape((nx,ny),order='F');m=(u>0)&(h>0);print('depth max',h[m].max(),'rho',spearmanr(h[m],u[m]).statistic)\"  # depth max <= 1.0 or rho <= 0.3 means broken geometry"
   cross_references:
     - "dt_011 (calc_outclm must run from glb_15min)"
     - "tools/configure_simulation.py _clip_global_outclm"
     - "SKILL.md section 7 (PMANRIV calibration - re-check any PMANRIV calibrated on floor-value geometry)"
+  seen_at: "2026-08-19, regional map check"
 
 - id: dt_011
   name: "calc_outclm run outside glb_15min"

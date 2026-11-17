@@ -827,7 +827,7 @@
   - dt_wasp_015
 
 # ========================================================================
-# REAL EPA WASP 8.5 ENGINE (added 2026-10-07, case wasp_real_engine_wiring_20261006).
+# REAL EPA WASP 8.5 ENGINE (where and when: each entry's seen_at).
 # Every entry below was observed on the real engine (waspccli.exe / wasptool.exe under WINE).
 # ========================================================================
 - id: dt_wasp_027
@@ -840,6 +840,7 @@
   remedy: "Set the flag with the value: PPARAMISUSED <isc> 1 1, PCONSTISUSED <isc> <inst> 1, PTFISUSED <isc> 1 1 (build_wasp_lake_case.py does this). Then confirm the item appears in the .OUT echo of the run."
   detection: "python tools/wasp_wif_api.py --wif case.wif --get 'GPARAMISUSED 32 1' 'GCONSTISUSED 57 1'  -> used must be 1; and grep the item in <model>.OUT"
   cross_references: [dt_wasp_028, dt_wasp_031]
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_028
   name: DO saturation at sea level because elevation was never applied
@@ -851,6 +852,7 @@
   remedy: "Pass --elev to build_wasp_lake_case.py (sets constant 57 and param 24 with used flags) and check '57 ... Elevation above Sea Level' in the .OUT echo."
   detection: "tr -d '\\000' < run/<model>.OUT | grep 'Elevation above Sea Level'"
   cross_references: [dt_wasp_027]
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_029
   name: Cloud cover in tenths or percent
@@ -862,6 +864,7 @@
   remedy: "Write cloud_frac in [0,1] (build_wasp_weather_from_source.py) and keep build_wasp_lake_case.py --cloud-scale 1."
   detection: "awk -F, 'NR>2 && $6>1' weather.csv | head  -> must print nothing"
   cross_references: [dt_wasp_034]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_030
   name: Time series shifted after changing the start date
@@ -873,6 +876,7 @@
   remedy: "Put PSEEDDATE first, then rewrite every flow, boundary, print and time-function series with days relative to the new start (build_wasp_lake_case.py orders commands this way)."
   detection: "python tools/wasp_wif_api.py --wif case.wif --get GSEEDDATE 'GNOQFUNC 1 1 1' 'GBRKTF 17 1 1'  -> point 1 days must be 0.0"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_031
   name: wasp_wif_api.py refuses a command
@@ -884,6 +888,7 @@
   remedy: "Use only keywords listed in docs/s2_parameter_setup.md; never shrink the segment count of a template - isolate unused segments instead (tiny flows), as build_wasp_lake_case.py does."
   detection: "python tools/wasp_wif_api.py --wif x.wif --get GNUMSEG"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_032
   name: wine exit code 2 on a good run
@@ -895,6 +900,7 @@
   remedy: "Judge success like run_wasp_engine.py: close-out line + fresh .OUT + valid .BMD2 header + no ERROR line other than the known 'Failed to locate time function'."
   detection: "grep 'closed_out' run/wasp_engine_summary.json"
   cross_references: [dt_wasp_033]
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_033
   name: Engine never finishes
@@ -906,6 +912,7 @@
   remedy: "Check the weather CSV ranges (validate_outputs in build_wasp_weather_from_source.py) and the case JSON; rerun a 1-year window first (about 5 s per simulated year for the lake box)."
   detection: "ps aux | grep '[w]aspccli'"
   cross_references: [dt_wasp_029]
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_034
   name: 31 'Failed to locate time function' lines
@@ -917,6 +924,7 @@
   remedy: "Treat 31 as the expected count (run_wasp_engine.py counts them); a different count means the deck is read differently - investigate before trusting results."
   detection: "grep known_time_function_errors run/wasp_engine_summary.json"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_035
   name: Lake obs are mostly river samples
@@ -928,6 +936,7 @@
   remedy: "Use prepare_wqp_lake_obs.py --site-types 'Great Lake' --bbox ... (WQP Station service lookup, cached)."
   detection: "python tools/prepare_wqp_lake_obs.py ... prints the station count and type kept"
   cross_references: [dt_wasp_036]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_036
   name: GLNPO profile values have no depth column
@@ -939,17 +948,19 @@
   remedy: "Use prepare_wqp_lake_obs.py --max-depth-m 5 for surface comparisons (parses PRFL-<z>; values without a parsable depth are dropped and counted)."
   detection: "grep -c 'PRFL-' <lake>_Dissolved_oxygen_DO.csv"
   cross_references: [dt_wasp_035, dt_wasp_037]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_037
   name: Observed surface DO far below saturation
   stage: s4_output_parsing
   failure_domain: validation
   severity: degraded
-  symptom: "Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With them the Lake Erie DO NSE is about 0 (all data); without them about 0.8 (sensitivity only)."
+  symptom: "Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With them the Lake Erie DO NSE is about 0 (all data); without them it is much higher (sensitivity only)."
   diagnosis: "A sensor fault is likely for some of these cruises, but low DO alone does not prove it (summer hypolimnetic depletion is real) and no same-depth Winkler sample exists to check them. So they are DIAGNOSTIC (sat_offset_unconfirmed), not excluded. See dt_wasp_041."
   remedy: "Score with prepare_wqp_lake_obs.py + parse_wasp_engine_output.py: the headline is ALWAYS do_all (every station-day); do_sensor_qc (value_qc) leaves out only cruises with proven sensor faults and is reported next to it. Read flagged_cruises / diagnostic_cruises in scores.json; a number without the diagnostic cruises is a sensitivity check, never the result."
   detection: "python -c \"import json;d=json.load(open('scores/scores.json'));print(d['headline'],d.get('flagged_cruises'),d.get('diagnostic_cruises'))\""
   cross_references: [dt_wasp_036, dt_wasp_041]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_038
   name: Box depth sets summer temperature
@@ -961,6 +972,7 @@
   remedy: "Use the observed summer mixed-layer depth (12 m for the Central Basin) when comparing with surface samples; a whole-column comparison needs a layered deck."
   detection: "compare the August maximum of sim_daily_seg1.csv 'Water Temperature' with obs_temperature_surface5m.csv"
   cross_references: []
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_039
   name: Print interval edit has no effect
@@ -972,17 +984,19 @@
   remedy: "Extract only the needed variables and segments (--extract ... --segments 1) and average to days in parse_wasp_engine_output.py."
   detection: "grep n_times run/wasp_engine_summary.json"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_040
   name: Surrogate numbers reported as WASP
   stage: s3_model_execution
   failure_domain: validation
   severity: silent
-  symptom: "A report quotes WASP DO/temperature skill (e.g. R=0.885) but the run used tools/run_wasp.py."
+  symptom: "A report quotes WASP DO/temperature skill (e.g. a high R) but the run used tools/run_wasp.py."
   diagnosis: "run_wasp.py, convert_*_to_wasp.py and parse_output_wasp.py are an analytic Python SURROGATE (sinusoid + Streeter-Phelps), not EPA WASP."
   remedy: "For WASP results use build_wasp_weather_from_source.py -> build_wasp_lake_case.py -> run_wasp_engine.py -> parse_wasp_engine_output.py; label any surrogate number 'surrogate'."
   detection: "check that the run directory holds <model>.BMD2 and wasp_engine_summary.json with closed_out true"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"
 
 - id: dt_wasp_041
   name: Whole-cruise DO sensor faults in WQP/GLNPO data
@@ -994,17 +1008,19 @@
   remedy: "prepare_wqp_lake_obs.py runs cruise QC on the cruise's own data (all depths, before the range filter), sensor methods only (LG301, LG501Y; Winkler LG501/LG501A never flagged). EXCLUDING flags need proof that the sensor is wrong: sensor_dead (> 50 % negative) or winkler_disagree (CTD vs Winkler at the same depth within 1 m, ratio outside 0.85-1.15; near anoxia, Winkler < 1 mg/L, a difference > 0.5 mg/L). Saturation offsets (sat_offset_unconfirmed) and Winkler of unknown depth (winkler_disagree_unmatched_depth) are DIAGNOSTIC only and the data stay in. Each station-day row keeps value (all data) and value_qc (excluded cruises left out)."
   detection: "python -c \"import json;d=json.load(open('obs_do_surface5m.cruise_qc.json'));[print(c,r['flags'],r['diagnostic_flags'],r['col_sat_median'],r['column_mixed'],r['winkler_ratio']) for c,r in d['cruises'].items() if r['flags'] or r['diagnostic_flags']]\""
   cross_references: [dt_wasp_036, dt_wasp_037]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_042
   name: Simulated DO stays at saturation (no algae or nutrients in the deck)
   stage: s2_parameter_setup
   failure_domain: configuration
   severity: degraded
-  symptom: "Simulated surface DO is on average about 1.03 x saturation (scores.json sim_do_over_sat_mean) and never shows algal supersaturation or depletion; DO PBIAS is about +20 % against all data."
+  symptom: "Simulated surface DO is on average about 1.03 x saturation (scores.json sim_do_over_sat_mean) and never shows algal supersaturation or depletion; DO PBIAS is clearly positive against all data."
   diagnosis: "The KI lake-box case keeps only the template's CBOD, DO, solids and temperature systems: no phytoplankton, no nutrients, SOD 0. DO is then reaeration toward saturation minus a small CBOD demand. This is a scope limit of the KI builder, NOT an engine fault; nutrient/algae systems are not configured yet."
   remedy: "Report it as a limit. Do not tune reaeration or SOD to hide it. Algae/nutrient systems (Advanced Eutrophication) are a later capability to build in build_wasp_lake_case.py."
   detection: "python -c \"import json;print(json.load(open('scores/scores.json'))['sim_do_over_sat_mean'])\""
   cross_references: [dt_wasp_037]
+  seen_at: "2026-10-07, Lake Erie Central Basin (run wasp_real_engine_wiring_20261006)"
 
 - id: dt_wasp_043
   name: preflight_forcing cannot identify a point NASA POWER CSV
@@ -1016,3 +1032,4 @@
   remedy: "Minor and not fixed: rely on build_wasp_weather_from_source.py's exit code (it fails on any validation error) and check its printed means; record the preflight message as a warning."
   detection: "head -1 weather_nasa_power.csv  (# source=nasa_power ...)"
   cross_references: []
+  seen_at: "2026-10-07, run wasp_real_engine_wiring_20261006"

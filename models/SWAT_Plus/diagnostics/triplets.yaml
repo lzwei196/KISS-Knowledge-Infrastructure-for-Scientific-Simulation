@@ -37,7 +37,7 @@
   # --- EXECUTION CRASH GENERIC ---
   # --- WATER BALANCE NOT CLOSING ---
   # ===========================================================================
-  # VERIFIED ERRORS (found during HydroCraft integration testing 2026-03-19)
+  # ERRORS FOUND IN INTEGRATION TESTS (when: each entry's seen_at)
   # ===========================================================================
   # ---- ADDED 2026-03-20 FROM SESSION FINDINGS ----
   # --- WATER QUALITY: ZERO NUTRIENT OUTPUT ---
@@ -589,7 +589,7 @@
     prevention: Always generate TxtInOut files with SWAT+ Editor matching the binary version
   severity: fatal
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v002
   stage: s8_model_execution
   failure_domain: runtime
@@ -617,7 +617,7 @@
   severity: fatal
   cross_references:
   - dt_v001
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v003
   stage: s7_simulation_config
   failure_domain: parameter_format
@@ -651,7 +651,7 @@
   cross_references:
   - dt_v001
   - dt_v002
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v004
   stage: s2_hru_definition
   failure_domain: parameter_format
@@ -682,7 +682,7 @@
   severity: fatal
   cross_references:
   - dt_v001
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v005
   stage: s7_simulation_config
   failure_domain: silent_error
@@ -711,7 +711,7 @@
     prevention: generate_hru_from_global.py Step 8 creates empty soils_lte.sol automatically
   severity: silent
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v006
   stage: s9_output_parsing
   failure_domain: unit_conversion
@@ -740,7 +740,7 @@
   severity: silent
   cross_references:
   - cfp_004
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v007
   stage: s9_output_parsing
   failure_domain: parameter_format
@@ -771,7 +771,7 @@
   severity: degraded
   cross_references:
   - dt_v005
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v008
   stage: s1_watershed_delineation
   failure_domain: parameter_format
@@ -811,7 +811,7 @@
   severity: degraded
   cross_references:
   - dt_008
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_020
   stage: s10_water_quality
   failure_domain: silent_error
@@ -1406,7 +1406,7 @@
   symptom:
     description: WQ verifier against a China National guokongzhan (e.g. station 2258 Bengbu Sluice) reports
       r<0.5 and large negative NSE on derived in-stream concentration, despite clean run and water balance.
-      NH3-N PBIAS approaches -3000%.
+      NH3-N PBIAS is hugely negative.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
@@ -1417,7 +1417,7 @@
       comparing TOTAL-N export to obs NH3-N adds a species mismatch.
     explanation: 'This is a domain mismatch, not calibration or a tool bug: no in-stream state variable
       exists to fit, so parameter tuning cannot create the ~0.1 mg/L floor a real sluice holds. The reliable
-      KI output (loads) is fine (station 2258 TP load PBIAS +37.7%, within Moriasi +/-40%).
+      KI output (loads) can still be fine (TP load PBIAS within Moriasi +/-40%).
 
       '
     affected_components:
@@ -1437,6 +1437,7 @@
   cross_references:
   - dt_wq_001
   - dt_036
+  seen_at: "date not recorded, Bengbu Sluice (station 2258)"
 - id: dt_038
   symptom:
     description: Delineated basin area is 5-15% larger than the gauge's published drainage area, and the
@@ -1668,7 +1669,7 @@
     error_pattern: ''
   diagnosis:
     root_cause: 'Membership in cal_parms.cal is NECESSARY BUT NOT SUFFICIENT: the rev59 binary declares
-      many parameter names it never actually applies from calibration.cal. Measured at Zijingguan 2026-07-10
+      many parameter names it never actually applies from calibration.cal. Measured
       by running the real binary once per parameter at an extreme value and md5-ing the 18-yr daily outlet
       series against the uncalibrated run. APPLIED: cn2, esco, epco, k, alpha, lat_ttime, flo_min. SILENT
       NO-OP: canmx, surlag, awc, delay, revap_co, slope_len, perco, dep_imp. Setting soil LYR1/LYR2 does
@@ -1695,6 +1696,7 @@
   cross_references:
   - dt_042
   - dt_044
+  seen_at: "2026-07-10, Zijingguan"
 - id: dt_046
   symptom:
     description: You suspect a routing/topology error (water reaching the stream more than once) because
@@ -1732,7 +1734,7 @@
   symptom:
     description: Daily SWAT+ NSE is stuck near its r^2 ceiling and the simulated flood peak arrives exactly
       ONE DAY after the observed peak, no matter which parameters are swept. Shifting the simulated series
-      back one day would raise r from 0.65 to 0.82 (do NOT do this — it is a fudge).
+      back one day would raise r a lot (do NOT do this — it is a fudge).
     error_pattern: ''
   diagnosis:
     root_cause: 'The lag lives in Muskingum CHANNEL routing, whose coefficients msk_co1/msk_co2/msk_x
@@ -1742,8 +1744,8 @@
       output. Setting codes.bsn rte_cha=0 confirms the diagnosis by throwing the peak 2 days EARLY.'
     evidence:
     - Zijingguan 2023-08-01 flood carries 89.2% of the observed daily variance
-    - 'default msk: peak 08-02, r_val 0.647, NSE_val 0.417 (== r^2 ceiling 0.418)'
-    - 'msk_co1=msk_co2, msk_x 0.1: peak 08-01, r_val 0.823, NSE_val 0.669'
+    - 'default msk: peak 08-02 (one day late), NSE_val equal to its r^2 ceiling'
+    - 'msk_co1=msk_co2, msk_x 0.1: peak 08-01 (on time), r_val and NSE_val both much higher'
     - surq_lag (parameters.bsn) and hydrology.cha `mann` barely move the peak; rte_cha=0 moves it to 07-30
     affected_tools:
     - tools/s6/generate_calibration_file.py
@@ -1759,6 +1761,7 @@
   cross_references:
   - dt_045
   - dt_046
+  seen_at: "date not recorded, Zijingguan (flood of 2023-08-01)"
 - id: dt_048
   stage: s8_run
   failure_domain: dependency_mismatch
@@ -1950,7 +1953,7 @@
       forcing — it simulates weather from wgn statistics. Nothing fails: the run finishes,
       water-balance terms look plausible, and PBIAS can even be calibrated to near zero, which
       makes the defect invisible to score-chasing. Only pattern statistics (r, daily variance,
-      peaks) betray it. Verified at Xixian 2026-08: 209 mm basin rain sat unread in 167 prepared
+      peaks) betray it. In one real basin, 209 mm of basin rain sat unread in 167 prepared
       CMFD files while the model simulated Georgia climatology.'
     affected_tools: [s3/generate_weather_stations.py, s7/validate_txtinout.py]
   remedy:
@@ -1960,17 +1963,15 @@
       single-station wiring while matching .pcp/.tmp files exist.'
     verification: 'KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/validate_txtinout.py <TxtInOut>  # exit 0 AND weather-sta.cli references >1 distinct .pcp files'
     prevention: 'Never judge a SWAT+ run by PBIAS alone; a wiring-dead deck can tune PBIAS to
-      -0.1% while r=0. Check r + daily std + peak ratio first.'
+      near zero while r stays at 0. Check r + daily std + peak ratio first.'
   severity: silent
-  deposited: '2026-08-24 from the Xixian July campaign runner (run_and_score_xixian.py) —
-    the fix had lived outside the KI; this entry moves the knowledge into it (must-teach-KI
-    handoff item 1b).'
+  seen_at: "2026-08-24, Xixian (July campaign)"
 - id: dt_054
   stage: s2_hru_generation
   failure_domain: channel_routing
   symptom:
     description: 'Outlet hydrograph systematically WEEKS late on every event while volume is
-      near-perfect (e.g. train NSE 0.016 with PBIAS 0.07%); a lag scan keeps improving out to
+      near-perfect (e.g. train NSE near 0 with PBIAS near 0); a lag scan keeps improving out to
       -20..-25 days with no sharp peak; calibration pins every speed lever (surlag low bound,
       chn_mann low bound, alpha_bf high bound) and the flood is still late. The run completes
       without any error and forcing dates verify correct.'
@@ -1981,11 +1982,11 @@
       default is 0; with the generator''s textbook msk coefficients (0.75/0.25/0.20) rev59
       Muskingum adds enormous storage delay on multi-channel networks.'
     explanation: 'The delay compounds along the routed chain, so small validation decks can
-      still pass (Xixian, 33 channels, NSE 0.64 with rte_cha=1) while a 61-channel main-stem
-      deck fails totally — which hid the defect until Huaibin. Volume is conserved, so PBIAS
+      still pass (e.g. a 33-channel deck with rte_cha=1) while a 61-channel main-stem
+      deck fails totally — which hid the defect until a large main-stem deck was built. Volume is conserved, so PBIAS
       and water-balance checks stay green; only timing statistics betray it. Proven by a
-      one-flag discriminator 2026-09-06: pristine Huaibin deck, rte_cha 1->0, one untuned run,
-      best-lag -25 d -> +2 d (receipts: outputs/system1_common_theta_work/rte_test/).'
+      one-flag discriminator: pristine deck, rte_cha 1->0, one untuned run,
+      best-lag -25 d -> +2 d.'
     affected_tools: [s2/generate_hru_from_global.py]
   remedy:
     action: 'Generator now writes rte_cha=0 (fixed 2026-09-06). For EXISTING decks: set
@@ -1994,4 +1995,4 @@
       validate the timing on the target network BEFORE any calibration and expose msk_co1/
       msk_co2/msk_x as calibration levers with a liveness probe.'
   severity: silent
-  deposited: '2026-09-06 from the System 1 Huaibin W4 fit post-mortem (one-flag discriminator)'
+  seen_at: "2026-09-06, Huaibin (System 1 W4 fit, folder rte_test)"

@@ -1,0 +1,360 @@
+--- a/kiss_cli/api.py	2026-11-05 15:56:42.250552512 +0800
++++ b/kiss_cli/api.py	2026-11-17 15:12:02.655435682 +0800
+@@ -28,6 +28,7 @@
+ import os
+ import re
+ import shutil
++from . import filetools as _ft
+ import subprocess
+ import sys
+ import time
+@@ -126,7 +127,9 @@
+             "description": (
+                 "Read a file from this model's Knowledge Infrastructure package "
+                 "(SKILL.md, dag.yaml, diagnostics/triplets, docs/, tools/). "
+-                "Always read SKILL.md before proposing how to run the model."
++                "Always read SKILL.md before proposing how to run the model. Lines come back "
++                "numbered ('12: text'); use offset and limit to read a line range or continue "
++                "a large file. To find text inside files, use search_files."
+             ),
+             "input_schema": {
+                 "type": "object",
+@@ -135,6 +138,10 @@
+                              "description": "path relative to the KI root, e.g. 'SKILL.md'"},
+                     "ki": {"type": "string",
+                            "description": "which selected KI to read (multi-model chats); default: the primary KI"},
++                    "offset": {"type": "integer",
++                               "description": "first line to read (1 = the start); default 1"},
++                    "limit": {"type": "integer",
++                              "description": "how many lines to read; default and most 2000"},
+                 },
+                 "required": ["path"],
+             },
+@@ -162,6 +169,33 @@
+             },
+         },
+         {
++            "name": "search_files",
++            "description": (
++                "Search inside text files for a word or regular expression (case is ignored). "
++                "Answers with the matching lines and their line numbers, grouped by file. "
++                "where='ki' searches this KI package (default); 'project' this chat's project"
++                + (" files" if project_mode else " (project chats only)")
++                + (", 'work' the setup workspace" if setup_mode else "") + ". "
++                "Then read a matched file with offset near the line number to see more."
++            ),
++            "input_schema": {
++                "type": "object",
++                "properties": {
++                    "pattern": {"type": "string",
++                                "description": "text or regular expression, e.g. 'TIME_STEP' or 'def (run|main)'"},
++                    "where": {"type": "string", "enum": ["ki", "project", "work"],
++                              "description": "which files: ki (default), project, work"},
++                    "path": {"type": "string",
++                             "description": "folder or file to search in, relative to that root; default: all"},
++                    "include": {"type": "string",
++                                "description": "one file-name filter, e.g. '*.yaml' or '*.{py,txt}'"},
++                    "ki": {"type": "string",
++                           "description": "which selected KI to search (multi-model chats)"},
++                },
++                "required": ["pattern"],
++            },
++        },
++        {
+             "name": "run_preflight",
+             "description": (
+                 "Run this KI's preflight_check.py and return its output. This is "
+@@ -211,18 +245,28 @@
+                 "name": "list_project_files",
+                 "description": (
+                     "List files already present in this chat's local project. "
+-                    "Inspect these before asking the user to supply data."
++                    "Inspect these before asking the user to supply data. With `pattern`, "
++                    "only files whose name or path matches, e.g. 'weather', '*.csv', 'inputs/**/*.txt'."
+                 ),
+                 "input_schema": {"type": "object", "properties": {
+                     "subdir": {"type": "string",
+                                "description": "relative project directory, normally inputs"},
++                    "pattern": {"type": "string",
++                                "description": ("plain words: the name contains them; with * ? or /: a "
++                                                "path pattern (** crosses folders); case is ignored")},
+                 }},
+             },
+             {
+                 "name": "read_project_file",
+-                "description": "Read a text file from this chat's local project.",
++                "description": ("Read a text file from this chat's local project. Lines come back "
++                                "numbered ('12: text'); use offset and limit to read a line range "
++                                "or continue a large file."),
+                 "input_schema": {"type": "object", "properties": {
+                     "path": {"type": "string"},
++                    "offset": {"type": "integer",
++                               "description": "first line to read (1 = the start); default 1"},
++                    "limit": {"type": "integer",
++                              "description": "how many lines to read; default and most 2000"},
+                 }, "required": ["path"]},
+             },
+             {
+@@ -239,6 +283,24 @@
+                 }, "required": ["path", "content"]},
+             },
+             {
++                "name": "edit_project_file",
++                "description": (
++                    "Change part of a text file in the chat project: replace old_string with "
++                    "new_string. Read the file with read_project_file first. old_string must be "
++                    "copied exactly from the file (without the 'N: ' line numbers) and match once; "
++                    "add nearby lines to make it unique, or set replace_all. Use this instead of "
++                    "rewriting a whole file with write_project_file."
++                ),
++                "input_schema": {"type": "object", "properties": {
++                    "path": {"type": "string",
++                             "description": "relative path under inputs, runs, outputs, artifacts, or references"},
++                    "old_string": {"type": "string", "description": "the exact text to replace"},
++                    "new_string": {"type": "string", "description": "the new text (empty = delete it)"},
++                    "replace_all": {"type": "boolean",
++                                    "description": "replace every match; default false (must match once)"},
++                }, "required": ["path", "old_string", "new_string"]},
++            },
++            {
+                 "name": "run_ki_tool",
+                 "description": (
+                     "Run one Python preparation tool shipped inside the selected KI. "
+@@ -435,16 +497,24 @@
+             },
+             {
+                 "name": "list_work_files",
+-                "description": "List files in the writable model setup workspace.",
++                "description": ("List files in the writable model setup workspace. With `pattern`, "
++                                "only files whose name or path matches."),
+                 "input_schema": {"type": "object", "properties": {
+                     "subdir": {"type": "string", "description": "relative workspace path"},
++                    "pattern": {"type": "string",
++                                "description": "plain words, or a path pattern with * ? / (** crosses folders)"},
+                 }},
+             },
+             {
+                 "name": "read_work_file",
+-                "description": "Read a text file from the writable setup workspace.",
++                "description": ("Read a text file from the writable setup workspace. Lines come back "
++                                "numbered; use offset and limit for a line range."),
+                 "input_schema": {"type": "object", "properties": {
+                     "path": {"type": "string"},
++                    "offset": {"type": "integer",
++                               "description": "first line to read (1 = the start); default 1"},
++                    "limit": {"type": "integer",
++                              "description": "how many lines to read; default and most 2000"},
+                 }, "required": ["path"]},
+             },
+             {
+@@ -917,6 +987,68 @@
+     return msg
+ 
+ 
++# --- line-numbered reads, name patterns (local patch 2026-11-17, VENDOR_PATCHES.md #3) ---
++
++def _read_text_window(p: Path, display: str, args: dict, max_bytes: int) -> str:
++    try:
++        offset, limit = _ft.read_args(args)
++        if p.stat().st_size > 200_000_000:
++            raise _ft.FileToolError(f"{display} is too large for the text reader (over 200 MB); "
++                                    "use search_files or a KI tool")
++        with open(p, "rb") as f:
++            if b"\0" in f.read(8192):
++                raise _ft.FileToolError(f"{display} is not a text file; use a data or KI tool to look inside it")
++        return _ft.read_window(p, display, offset, limit, max_bytes)
++    except _ft.FileToolError as e:
++        raise ToolError(str(e)) from None
++
++
++def _name_filter(raw, base_rel: str):
++    """None (no pattern) or a test on a root-relative path, with list_ki_files' pattern rules:
++    plain words must all be in the file name; with * ? or / a path glob (** crosses folders),
++    read from ``base_rel`` when it does not already start there."""
++    if raw is None or not str(raw).strip():
++        return None
++    pat, words, by_name, plain_path = _ki_clean_pattern(str(raw))
++    pre = "" if base_rel in ("", ".") else base_rel.rstrip("/") + "/"
++    if words:
++        return lambda rel: all(_ki_word_in(w, rel.rsplit("/", 1)[-1].lower()) for w in words)
++    if by_name:
++        rx = _ki_glob_regex(pat)
++        return lambda rel: bool(rx.match(rel.rsplit("/", 1)[-1]))
++    if pre and not pat.lower().startswith(pre.lower()):
++        pat = pre + pat
++    if plain_path:
++        rx_dir, rx_start = _ki_glob_regex(pat.rstrip("/") + "/**"), _ki_glob_regex(pat + "**")
++        return lambda rel: bool(rx_dir.match(rel) or rx_start.match(rel))
++    rx = _ki_glob_regex(pat)
++    return lambda rel: bool(rx.match(rel))
++
++
++_NUMBERED_RE = re.compile(r"(\d+): ")
++
++
++def _looks_line_numbered(content: str) -> bool:
++    """3+ lines that all start with consecutive numbers 'N: ', as read output shows them."""
++    rows = content.splitlines()
++    if len(rows) < 3:
++        return False
++    nums = []
++    for row in rows:
++        m = _NUMBERED_RE.match(row)
++        if not m:
++            return False
++        nums.append(int(m.group(1)))
++    return all(b == a + 1 for a, b in zip(nums, nums[1:]))
++
++
++def _capped_list(names: list[str], cap: int) -> str:
++    out = "\n".join(names[:cap])
++    if len(names) > cap:
++        out += f"\n(showing {cap} of {len(names)} files: use pattern=... or subdir=... to narrow it)"
++    return out
++
++
+ _INSTALL_ONLY_PROBE_FLAGS = {"--version", "-version", "-V", "-v", "--help", "-h"}
+ _INSTALL_ONLY_BUILD_NAMES = (
+     "build", "compile", "configure", "setup", "install", "bootstrap",
+@@ -1137,10 +1269,9 @@
+             p, _r = _ki_scoped(rel)
+             if not p.is_file():
+                 raise ToolError(_ki_missing_file(rel, p, _r))
+-            text = p.read_text(encoding="utf-8", errors="replace")
++            return _read_text_window(p, _ki_rel(p, _r), args, 60000)
+         except (OSError, RuntimeError, ValueError) as e:  # link loop, NUL byte, no rights
+             raise ToolError(f"cannot read {rel}: {getattr(e, 'strerror', None) or e}") from None
+-        return text[:60000]
+ 
+     if name == "list_ki_files":
+         sub = str(args.get("subdir") or "").replace("\\", "/").strip().strip("/") or "."
+@@ -1194,22 +1325,27 @@
+         if not base.is_dir():
+             raise ToolError(f"no such project directory: {args.get('subdir')}")
+         names = []
++        keep = _name_filter(args.get("pattern"), base.relative_to(project_root).as_posix())
+         for f in sorted(base.rglob("*")):
+             if not f.is_file() or "memory" in f.relative_to(project_root).parts:
+                 continue
++            if keep is not None and not keep(f.relative_to(project_root).as_posix()):
++                continue
+             try:
+                 names.append(f"{f.relative_to(project_root)} ({f.stat().st_size} bytes)")
+             except OSError:
+                 continue
+-        return "\n".join(names[:1000]) or "(no project files yet)"
++        if keep is not None and not names:
++            return f"no project files match {str(args.get('pattern')).strip()!r}"
++        return _capped_list(names, 1000) or "(no project files yet)"
+ 
+     if project_mode and name == "read_project_file":
+         p = _inside_project(args.get("path") or "")
+         if not p.is_file():
+             raise ToolError(f"no such project file: {args.get('path')}")
+-        if p.stat().st_size > 5_000_000:
+-            raise ToolError("project file is too large for the text reader; use a KI tool")
+-        return p.read_text(encoding="utf-8", errors="replace")[:120000]
++        out = _read_text_window(p, p.relative_to(project_root).as_posix(), args, 120000)
++        _ft.stamp(p)
++        return out
+ 
+     if project_mode and name == "write_project_file":
+         p = _inside_project(args.get("path") or "")
+@@ -1233,7 +1369,74 @@
+                             f"{flow.state.value} (protected or outside the writable subtrees)")
+         p.parent.mkdir(parents=True, exist_ok=True)
+         p.write_text(content, encoding="utf-8")
+-        return f"wrote {rel} ({len(content.encode('utf-8'))} bytes)"
++        _ft.stamp(p)
++        warn = ("\nWARNING: every line starts with a line number ('12: ...'), as read_project_file "
++                "shows them. If you copied them from a read, rewrite the file without them."
++                if _looks_line_numbered(content) else "")
++        return f"wrote {rel} ({len(content.encode('utf-8'))} bytes)" + warn
++
++    if project_mode and name == "edit_project_file":
++        p = _inside_project(args.get("path") or "")
++        rel = p.relative_to(project_root)
++        old, new = args.get("old_string"), args.get("new_string")
++        if not isinstance(old, str) or not isinstance(new, str):
++            raise ToolError("old_string and new_string must be text")
++        if not p.is_file():
++            raise ToolError(f"no such project file: {args.get('path')} (create files with write_project_file)")
++        writable = {"inputs", "runs", "outputs", "artifacts", "references"}
++        calibration_write = (len(rel.parts) >= 2 and rel.parts[0] == "calibration"
++                             and rel.parts[1] in {"cases", "kis"})
++        if not rel.parts or (rel.parts[0] not in writable and not calibration_write):
++            raise ToolError(
++                "project writes must stay under inputs, runs, outputs, artifacts, "
++                "references, calibration/cases, or calibration/kis")
++        if flow is not None and not flow.write_allowed(p):
++            raise ToolError(f"writing {rel.as_posix()} is not allowed in state "
++                            f"{flow.state.value} (protected or outside the writable subtrees)")
++        if p.stat().st_size > 1_000_000:
++            raise ToolError(f"{rel.as_posix()} is over 1 MB; edit_project_file is for small text files")
++        try:
++            _ft.check_seen(p, rel.as_posix())
++            raw = p.read_bytes()
++            if b"\0" in raw[:8192]:
++                raise _ft.FileToolError(f"{rel.as_posix()} is not a text file")
++            content = raw.decode("utf-8")
++            updated, n, firsts = _ft.apply_edit(content, old, new, bool(args.get("replace_all")),
++                                                rel.as_posix())
++        except UnicodeDecodeError:
++            raise ToolError(f"{rel.as_posix()} is not UTF-8 text; rewrite it with write_project_file") from None
++        except _ft.FileToolError as e:
++            raise ToolError(str(e)) from None
++        if len(updated.encode("utf-8")) > 1_000_000:
++            raise ToolError("the edited file would be over 1 MB; use a KI tool")
++        p.write_text(updated, encoding="utf-8", newline="")
++        _ft.stamp(p)
++        what = f"{n} places" if n > 1 else f"line {firsts[0]}"
++        return (f"edited {rel.as_posix()} ({what}). Now:\n"
++                + _ft.edit_snippet(updated, firsts[0], new))
++
++    if name == "search_files":
++        where = str(args.get("where") or "ki").strip().lower()
++        sub = str(args.get("path") or "").replace("\\", "/").strip().strip("/") or "."
++        if where == "ki":
++            base, s_root = _ki_scoped(sub)
++            skip: tuple[str, ...] = ()
++        elif where == "project" and project_mode:
++            base, s_root, skip = _inside_project(sub), project_root, ("memory",)
++            if base != project_root and "memory" in base.relative_to(project_root).parts:
++                raise ToolError(f"no such folder or file: {sub}")   # hidden like list_project_files
++        elif where == "work" and setup_mode:
++            base, s_root, skip = _inside_work(sub), workroot, ()
++        else:
++            raise ToolError("where must be " + " or ".join(
++                ["'ki'"] + (["'project'"] if project_mode else []) + (["'work'"] if setup_mode else [])))
++        if not base.exists():
++            raise ToolError(f"no such folder or file: {sub}")
++        try:
++            return _ft.search(str(args.get("pattern") or ""), base, s_root,
++                              include=str(args.get("include") or ""), skip_names=skip)
++        except _ft.FileToolError as e:
++            raise ToolError(str(e)) from None
+ 
+     if project_mode and name == "run_ki_tool":
+         tool_ki_name, tool_root = getattr(ki, "name", root.name), root
+@@ -1512,14 +1715,18 @@
+         base = _inside_work(args.get("subdir") or ".")
+         if not base.is_dir():
+             raise ToolError(f"no such workspace directory: {args.get('subdir')}")
+-        names = sorted(str(f.relative_to(workroot)) for f in base.rglob("*") if f.is_file())
+-        return "\n".join(names[:800]) or "(empty)"
++        keep = _name_filter(args.get("pattern"), base.relative_to(workroot).as_posix())
++        names = sorted(str(f.relative_to(workroot)) for f in base.rglob("*") if f.is_file()
++                       and (keep is None or keep(f.relative_to(workroot).as_posix())))
++        if keep is not None and not names:
++            return f"no workspace files match {str(args.get('pattern')).strip()!r}"
++        return _capped_list(names, 800) or "(empty)"
+ 
+     if setup_mode and name == "read_work_file":
+         p = _inside_work(args.get("path") or "")
+         if not p.is_file():
+             raise ToolError(f"no such workspace file: {args.get('path')}")
+-        return p.read_text(encoding="utf-8", errors="replace")[:60000]
++        return _read_text_window(p, p.relative_to(workroot).as_posix(), args, 60000)
+ 
+     if setup_mode and name == "write_work_file":
+         p = _inside_work(args.get("path") or "")

@@ -743,7 +743,7 @@
     root_cause: "A recipe that could not be followed, and a status that was not true"
     explanation: >
       The tool had no argument for a loaded series, and daily data is the wrong step for a
-      model that needs the daily cycle. The real Wangjiaba case made its met file by hand.
+      model that needs the daily cycle. A real case had to make its met file by hand.
       The tool now calls load_hourly_forcing itself (3 h for cmfd/mswx, 1 h for nasa_power);
       the agent does not call the loader first.
     affected_components: [convert_met_to_w2]
@@ -755,6 +755,7 @@
     prevention: "SKILL.md, the stage document and the capability list now describe the one route that exists"
   severity: degraded
   cross_references: [dt_026]
+  seen_at: "date not recorded, Wangjiaba"
 
 - id: dt_031
   stage: s3_met_forcing

@@ -35,7 +35,8 @@ inputs:
     category: meteorology
     source_kind: forcing
     model_input_format: met file METFN, wind-direction column
-    notes: the v5 binary on this server reads PHI in radians (0-2*pi; the shipped DeGray met file runs 0-6.29); v4.x documents say degrees - check the version
+    notes: 'the v5 binary on this server reads PHI in radians (0-2*pi; the shipped DeGray met file runs
+      0-6.29); v4.x documents say degrees: check the version'
   - name: cloud cover (CLOUD)
     unit: tenths (0-10)
     category: meteorology
@@ -348,10 +349,12 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Water temperature systematically 3-5 C too warm year-round
-  diagnosis: Cloud cover provided as fraction (0-1) instead of tenths (0-10); CE-QUAL-W2 expects cloud
+  diagnosis: 'Cloud cover provided as fraction (0-1) instead of tenths (0-10); CE-QUAL-W2 expects cloud
     cover in TENTHS (0-10). If cloud cover is passed as fraction (0-1), the model interprets all values
     as near-clear sky (cloud = 0.0-1.0 out of 10). This allows excessive shortwave radiation to reach
-    the water su
+    the water surface, warming the lake by 3-5 C. No error is produced.
+
+    ; [''convert_met_to_w2'', ''w2_con.npt'']'
   remedy: 'Multiply cloud cover by 10 if source data is in fraction (0-1); convert_met_to_w2; [''Check
     cloud cover values in met_wb*.npt: max should be ~8-10, not 0.8-1.0'', ''If max cloud < 2.0, data
     is likely in fraction — multiply by 10'']; convert_met_to_w2.py auto-derives cloud from SW radiation
@@ -359,10 +362,13 @@ known_issues:
   severity: silent
 - id: dt_002
   symptom: Dewpoint temperature always near -40 C or unreasonable values
-  diagnosis: Vapor pressure units wrong in dewpoint conversion (Pa vs kPa vs hPa); The VP-to-TDEW formula
+  diagnosis: 'Vapor pressure units wrong in dewpoint conversion (Pa vs kPa vs hPa); The VP-to-TDEW formula
     TDEW = (237.3*ln(VP/0.6108))/(17.27-ln(VP/0.6108)) requires VP in kPa. CMFD gives kPa directly. ERA5
     gives Pa (divide by 1000). MSWX gives kPa. If VP is in Pa (e.g., 800 Pa instead of 0.8 kPa), the formula
-    p
+    produces extreme negative dewpoints (approximately -40 C), which causes excessive evaporation and
+    thermal errors.
+
+    ; [''convert_met_to_w2'']'
   remedy: 'Ensure VP is in kPa before dewpoint conversion; convert_met_to_w2; [''Check VP values: should
     be 0.1-5.0 kPa (not 100-5000 Pa)'', ''If VP > 10, divide by 1000 (Pa to kPa) or by 10 (hPa to kPa)''];
     convert_met_to_w2.py clips VP to [0.001, 10] kPa and warns if values are suspicious'
@@ -372,37 +378,54 @@ known_issues:
   diagnosis: 'CaMa-Flood mm/day grid-cell runoff not converted to m^3/s point discharge; CaMa-Flood output
     may be in mm/day over a grid cell area. CE-QUAL-W2 expects m^3/s at a specific point. Conversion:
     Q_m3s = Q_mm_day * cell_area_m2 / (86400 * 1000). Omitting this conversion results in discharge that
-    is off b'
+    is off by 5-6 orders of magnitude.
+
+    ; [''convert_inflow_to_w2'']'
   remedy: 'Apply unit conversion with --convert_mm_to_m3s flag; convert_inflow_to_w2; [''Check mean inflow:
     should be comparable to published annual mean discharge'', ''If mean Q < 0.01 m3/s for a large reservoir,
-    units are likely wrong'', ''Use --convert_mm_to_m3s --cell_area_km2 <area>'']; convert_inflow_to_w2.py '
+    units are likely wrong'', ''Use --convert_mm_to_m3s --cell_area_km2 <area>'']; convert_inflow_to_w2.py
+    warns if mean discharge is suspiciously small or large'
   severity: silent
 - id: dt_004
   symptom: Circulation pattern wrong, surface temperatures asymmetric
-  diagnosis: Wind direction (PHI) written in degrees; the v5 binary on this server reads it in radians
-    (0 to 2*pi; the shipped DeGray example holds values such as 4.72). 270 written as degrees is read
-    as 270 radians. No error is raised.
-  remedy: Write PHI in radians; convert_met_to_w2.py takes --wind_dir_deg in degrees and writes radians;
-    the sources have no wind direction, so the tool writes one stated constant (default 270 deg = 4.712 rad)
+  diagnosis: 'Wind direction (PHI) written in degrees; the v5 binary on this server reads it in radians;
+    The v5 binary (model/ce_qual_w2/bin/w2_v5) takes the PHI column of the met file in RADIANS (0 to 2*pi);
+    the shipped DeGray example holds values such as 4.72. A value of 270 written as degrees is read as
+    270 radians, which turns the wind-driven circulation to a wrong direction and changes surface mixing
+    and temperature patterns. No error is raised.
+
+    ; [''convert_met_to_w2'', ''met file'']'
+  remedy: 'Write PHI in radians. convert_met_to_w2.py takes --wind_dir_deg in degrees and writes radians;
+    convert_met_to_w2; [''Look at the PHI column: values between 0 and 6.28 are radians (right for v5)'',
+    ''Values up to 360 are degrees: multiply by pi/180'', ''The forcing sources have no wind direction:
+    the tool writes one stated constant (default 270 deg = 4.712 rad)'']; Build the met file with convert_met_to_w2.py
+    only'
   severity: silent
 - id: dt_005
   symptom: Forcing data misaligned by hours or days, seasonal cycle shifted
-  diagnosis: Julian day computed as integer instead of decimal (1 instead of 1.5 for noon); CE-QUAL-W2
+  diagnosis: 'Julian day computed as integer instead of decimal (1 instead of 1.5 for noon); CE-QUAL-W2
     uses decimal Julian day (JDAY) where 1.0 = midnight Jan 1, 1.5 = noon Jan 1. If JDAY is computed as
     integer day number, all sub-daily timing is lost and the diurnal cycle is shifted. This affects shortwave
-    radi
+    radiation phasing and surface heat flux, causing systematic temperature errors.
+
+    ; [''convert_met_to_w2'']'
   remedy: 'Use JDAY = DOY + hour/24 + minute/1440; convert_met_to_w2; [''Check met file: JDAY values should
     have 3 decimal places (e.g., 1.000, 1.125)'', ''If all JDAY are integers (1.000, 2.000, ...), forcing
     is daily only'']; convert_met_to_w2.py computes decimal JDAY from datetime'
   severity: silent
 - id: dt_006
   symptom: Model reads wrong parameter values, bizarre behavior (e.g., 100 branches, negative layers)
-  diagnosis: Column misalignment in w2_con.npt — 8-char fixed-width fields shifted by 1+ characters; Fortran
-    reads w2_con.npt by COLUMN POSITION (FORMAT statements), not by delimiter. If a value takes 9 characters
-    instead of 8, everything after it shifts right, and the model reads garbage values for all subseque
+  diagnosis: 'Column misalignment in w2_con.npt — 8-char fixed-width fields shifted by 1+ characters;
+    Fortran reads w2_con.npt by COLUMN POSITION (FORMAT statements), not by delimiter. If a value takes
+    9 characters instead of 8, everything after it shifts right, and the model reads garbage values for
+    all subsequent parameters on that line. This is the most dangerous CE-QUAL-W2 error because it produces
+    NO error message.
+
+    ; [''generate_w2_control'']'
   remedy: 'Verify every field in w2_con.npt is exactly 8 characters, right-justified for numbers; generate_w2_control;
     [''Open w2_con.npt in a fixed-width editor or use cut -c to check column positions'', ''Each numeric
-    field: exactly 8 chars, right-justified'', "Use format string ''{:>8.2f}'' in Python"]; generate_'
+    field: exactly 8 chars, right-justified'', "Use format string ''{:>8.2f}'' in Python"]; generate_w2_control.py
+    uses strict fmt_int/fmt_float functions with width enforcement'
   severity: silent
 - id: dt_007
   symptom: Bathymetry file rejected, or widths read as wrong values at runtime
@@ -410,99 +433,122 @@ known_issues:
     strict column-width requirements defined by the Fortran FORMAT statement in the source code. Typically
     8 characters per segment width. If the values overflow the field width, values are misread.
 
-    ; [''build_reserv'
+    ; [''build_reservoir_grid'', ''generate_bathymetry'']'
   remedy: Ensure each width value in bth_wb*.npt is exactly 8 characters; build_reservoir_grid; ['Check
     that width values do not exceed 8 characters (e.g., 99999.9 is 7 chars = OK)', 'For very wide reservoirs
     (>9999 m), use fewer decimal places']; build_reservoir_grid.py formats widths as {:8.1f}
   severity: fatal
 - id: dt_008
   symptom: File not found error for input files despite files existing
-  diagnosis: File path exceeds Fortran CHARACTER*72 limit — path truncated silently; CE-QUAL-W2 Fortran
+  diagnosis: 'File path exceeds Fortran CHARACTER*72 limit — path truncated silently; CE-QUAL-W2 Fortran
     source declares file path variables as CHARACTER*72 (or similar). Paths longer than this limit are
     silently truncated, causing file-not-found errors even when the files exist at the full path. The
-    error messag
+    error message shows the TRUNCATED path, which makes debugging difficult.
+
+    ; [''generate_w2_control'', ''run_w2'']'
   remedy: 'Use relative paths or symlinks to keep all file paths under 72 characters; ; [''Copy/symlink
     all input files to the run directory'', ''Use only filenames (no path) in w2_con.npt since model reads
     from CWD'', "Check: grep -o ''.\\{73,\\}'' w2_con.npt should return nothing"]; generate_w2_control.py
-    uses os.'
+    uses os.path.basename() for file references'
   severity: fatal
 - id: dt_009
   symptom: Model reads past end of met/inflow file, crashes or produces partial results
-  diagnosis: Met or inflow file has fewer timesteps than the simulation period (TMSTRT to TMEND); All
+  diagnosis: 'Met or inflow file has fewer timesteps than the simulation period (TMSTRT to TMEND); All
     time-series input files (met, qin, tin, qot) must cover the FULL simulation period defined by TMSTRT
     and TMEND in w2_con.npt. If the met file ends at JDAY 300 but TMEND is 365, the model crashes when
-    it tries to
+    it tries to read JDAY 301.
+
+    ; [''convert_met_to_w2'', ''convert_inflow_to_w2'', ''generate_w2_control'']'
   remedy: 'Ensure all time-series files cover TMSTRT to TMEND Julian days; ; [''Check last JDAY in each
     input file: tail -1 met_wb1.npt'', ''Must be >= TMEND in w2_con.npt'', ''Extend input files if needed
     (repeat last value)'']; generate_w2_control.py validates JDAY coverage of all input files'
   severity: fatal
 - id: dt_010
   symptom: Model crashes with 'layer error' or 'zero thickness' at startup
-  diagnosis: Active segment has zero width at all layers — no water column; Every active segment (between
+  diagnosis: 'Active segment has zero width at all layers — no water column; Every active segment (between
     boundary segments) must have at least one layer with non-zero width. A segment with all-zero widths
     represents dry land and cannot participate in the hydrodynamic calculation. This typically happens
-    when the
+    when the DEM-based grid includes cells outside the reservoir water body.
+
+    ; [''build_reservoir_grid'']'
   remedy: 'Remove segments with no water column, or set minimum width for at least one layer; build_reservoir_grid;
     [''Check bth_wb*.npt: every active segment column should have at least one non-zero value'', ''Remove
-    or merge segments that are entirely zero'']; build_reservoir_grid.py validates that all active se'
+    or merge segments that are entirely zero'']; build_reservoir_grid.py validates that all active segments
+    have non-zero widths'
   severity: fatal
 - id: dt_011
   symptom: Unrealistic velocities, numerical instability, NaN in output
-  diagnosis: Segment length too short relative to layer thickness — CFL violation; The CFL (Courant-Friedrichs-Lewy)
+  diagnosis: 'Segment length too short relative to layer thickness — CFL violation; The CFL (Courant-Friedrichs-Lewy)
     condition requires that the timestep be small enough for information to propagate no more than one
-    cell per step. If segments are very short but layers are thick, the CFL condition forces extremel
+    cell per step. If segments are very short but layers are thick, the CFL condition forces extremely
+    small timesteps (< 1 second), and numerical errors accumulate.
+
+    ; [''build_reservoir_grid'']'
   remedy: 'Increase segment length or decrease layer thickness to maintain CFL < 1; build_reservoir_grid;
     [''Rule of thumb: segment_length >= 2 * layer_thickness * sqrt(g * max_depth)'', ''Merge short segments'',
     ''Increase --segment_length parameter'']; Check w2l.opt for minimum timestep — if dt < 1s, grid needs
-    co'
+    coarsening'
   severity: fatal
 - id: dt_012
   symptom: Model crashes at branch junction with segment reference error
-  diagnosis: Branch DHS (downstream head segment) points to non-existent or wrong segment; In multi-branch
+  diagnosis: 'Branch DHS (downstream head segment) points to non-existent or wrong segment; In multi-branch
     configurations, DHS specifies which segment in the receiving branch the current branch connects to.
     If DHS references a segment that does not exist or is not in the receiving branch, the model crashes
-    at th
+    at the junction.
+
+    ; [''build_branch_topology'']'
   remedy: Verify DHS references valid segments in the receiving branch; build_branch_topology; ['For each
     branch, check that DHS is within [US, DS] of the receiving branch', 'DHS=0 means external boundary
-    (no receiving branch)', 'Main stem DHS should be 0 (or negative for the dam boundary)']; build_branch_top
+    (no receiving branch)', 'Main stem DHS should be 0 (or negative for the dam boundary)']; build_branch_topology.py
+    validates all DHS references
   severity: fatal
 - id: dt_013
   symptom: Water flows upstream in some segments, unrealistic longitudinal patterns
-  diagnosis: Bottom elevation increases in the downstream direction at some segments; CE-QUAL-W2 assumes
+  diagnosis: 'Bottom elevation increases in the downstream direction at some segments; CE-QUAL-W2 assumes
     gravity-driven flow from upstream to downstream. If the bottom elevation at a downstream segment is
     HIGHER than an upstream segment, a local depression is created that traps water and disrupts the natural
-    flo
+    flow pattern. The model may still run but produces physically unrealistic results.
+
+    ; [''build_reservoir_grid'']'
   remedy: 'Ensure bottom elevations are monotonically non-increasing downstream; build_reservoir_grid;
     [''Sort segments by distance and check: ELBOT[i] >= ELBOT[i+1]'', ''Smooth any uphill jumps by interpolating
     between neighbors'']; build_reservoir_grid.py enforces monotonic bottom elevations'
   severity: silent
 - id: dt_014
   symptom: Model crashes immediately with 'initial water surface below bottom' error
-  diagnosis: Initial water surface elevation (ELWS) is below the bottom elevation at upstream segments;
+  diagnosis: 'Initial water surface elevation (ELWS) is below the bottom elevation at upstream segments;
     If the reservoir is not at full pool, upstream segments with higher bottom elevations may be above
     the initial water surface. CE-QUAL-W2 cannot start with dry upstream segments unless specific wetting/drying
-    o
+    options are enabled.
+
+    ; [''build_init_conditions'', ''generate_w2_control'']'
   remedy: 'Set ELWS >= max(ELBOT) for all active segments, or handle dry cells; build_init_conditions;
     [''Check: ELWS in w2_con.npt must be >= highest bottom elevation of any active segment'', ''If reservoir
     is at partial pool, only include segments below ELWS'']; build_init_conditions.py validates ELWS against
-    al'
+    all segment bottom elevations'
   severity: fatal
 - id: dt_015
   symptom: Constituent concentration always zero despite non-zero inflow concentrations
-  diagnosis: Constituent flag OFF in w2_con.npt but concentration data provided in cin_br*.npt; The CONSTITU
+  diagnosis: 'Constituent flag OFF in w2_con.npt but concentration data provided in cin_br*.npt; The CONSTITU
     card in w2_con.npt has ON/OFF flags for each water quality constituent. If a constituent is OFF, its
     concentration in cin_br*.npt is ignored. Conversely, if a constituent is ON but its column is missing
-    f
+    from cin_br*.npt, the model reads the wrong column for all subsequent constituents (column shift —
+    same problem as dt_006).
+
+    ; [''configure_wq'', ''generate_w2_control'']'
   remedy: Ensure constituent ON/OFF flags exactly match cin_br*.npt column count and order; configure_wq;
     ['Count ON flags in CONSTITU card', 'Count data columns (excluding JDAY) in cin_br*.npt', 'They must
     be equal, and in the same order']; generate_w2_control.py cross-validates constituent flags with inflow
+    file columns
   severity: silent
 - id: dt_016
   symptom: Dissolved oxygen drops to zero immediately (full anoxia everywhere)
-  diagnosis: SOD (sediment oxygen demand) set too high for the reservoir; A SOD value of 5 g/m^2/day (high
-    for a clean reservoir) can deplete all DO in the hypolimnion within days. For most reservoirs, SOD
-    should start at 0.3-0.5 g/m^2/day and be calibrated against observed DO profiles. High SOD without
-    sufficie
+  diagnosis: 'SOD (sediment oxygen demand) set too high for the reservoir; A SOD value of 5 g/m^2/day
+    (high for a clean reservoir) can deplete all DO in the hypolimnion within days. For most reservoirs,
+    SOD should start at 0.3-0.5 g/m^2/day and be calibrated against observed DO profiles. High SOD without
+    sufficient reaeration produces unrealistic anoxia.
+
+    ; [''configure_wq'']'
   remedy: 'Start with SOD = 0.5 g/m^2/day; calibrate against observed DO; configure_wq; [''Check SOD in
     w2_con.npt: typical range 0.1-2.0 g/m^2/day'', ''Clean oligotrophic reservoirs: SOD < 0.5'', ''Eutrophic
     reservoirs: SOD 1.0-3.0'']; configure_wq.py sets SOD = 0.5 as default'
@@ -513,21 +559,24 @@ known_issues:
     above 2.5/day can cause exponential bloom growth that is not nutrient-limited if inflow nutrient concentrations
     are also high. The result is unrealistic algal biomass that dominates the WQ simulation.
 
-    ; [''co'
+    ; [''configure_wq'']'
   remedy: 'Cap algal growth rate at 2.0/day; verify nutrient inflow concentrations; configure_wq; [''Check
     ALG1 growth rate in w2_con.npt: max should be ~2.0/day'', ''Check nutrient loading from cin_br*.npt
     files'', ''Reduce if algal biomass exceeds 200 ug/L chlorophyll'']; configure_wq.py caps growth rate
-    at 2.0/da'
+    at 2.0/day by default'
   severity: silent
 - id: dt_018
   symptom: Dam release temperature wrong — too warm in winter or too cold in summer
   diagnosis: 'Outlet elevation in wrong reference frame (depth from surface vs m ASL); CE-QUAL-W2 outlet
     elevations must be in meters above sea level (m ASL), matching the bathymetry elevation datum. If
     the outlet elevation is specified as depth from surface (e.g., 20 m depth), the model places the outlet
-    at the '
+    at the wrong absolute elevation, drawing water from the wrong thermal layer.
+
+    ; [''configure_w2_outflow'', ''generate_w2_control'']'
   remedy: 'Convert outlet elevation to m ASL: E_outlet = E_surface - depth; configure_w2_outflow; [''Check
     outlet elevation: should be between min(ELBOT) and ELWS'', "If E_outlet > ELWS, it''s wrong (outlet
-    above water surface)", "If E_outlet < min(ELBOT), it''s below the reservoir bottom"]; configure_w2_outflow.p'
+    above water surface)", "If E_outlet < min(ELBOT), it''s below the reservoir bottom"]; configure_w2_outflow.py
+    validates outlet elevation against bathymetry range'
   severity: silent
 - id: dt_019
   symptom: Reservoir drains unrealistically fast or water level stuck at crest
@@ -535,10 +584,11 @@ known_issues:
     in m^3/s. If outflow is in L/s (1000x too large), the reservoir drains in days. If outflow is in m^3/day
     (divide by 86400), the outflow is negligible and the reservoir fills continuously.
 
-    ; [''configure_w2_outfl'
+    ; [''configure_w2_outflow'']'
   remedy: Verify outflow is in m^3/s; check against published dam release records; ; ['Mean outflow should
     be comparable to mean inflow for steady-state', 'If outflow << inflow, water level rises continuously
     — check units', 'If outflow >> inflow, reservoir drains — check units']; configure_w2_outflow.py logs
+    mean outflow for quick sanity check
   severity: silent
 - id: dt_020
   symptom: CaMa-Flood inflow arrives at wrong segment, inflow effect displaced spatially
@@ -547,7 +597,7 @@ known_issues:
     a different location than the W2 upstream boundary, the inflow enters at the wrong point along the
     reservoir.
 
-    '
+    ; [''convert_inflow_to_w2'', ''w2_to_cama_coupling'']'
   remedy: Verify CaMa outlet cell coordinates match W2 inflow segment location; ; ['Plot CaMa outlet cell
     and W2 upstream segment on the same map', 'They should be within 1 CaMa grid cell of each other'];
     convert_inflow_to_w2.py accepts --inflow_lat/lon for spatial indexing
@@ -557,21 +607,27 @@ known_issues:
   diagnosis: 'Double-counting: VIC distributed tributary inflow overlaps with CaMa-routed main inflow;
     If VIC provides local runoff for the entire reservoir catchment as distributed tributary flow, AND
     CaMa-Flood also routes the same runoff as main channel inflow, the reservoir receives double the water.
-    The dist'
+    The distributed tributary tool must subtract the main inflow contributing area from the total catchment
+    area.
+
+    ; [''generate_distributed_inflow'', ''convert_inflow_to_w2'']'
   remedy: Subtract CaMa-routed contributing area from distributed tributary area; generate_distributed_inflow;
     ['Total local area = reservoir_catchment_area - main_inflow_catchment_area', 'Use --contributing_area_km2
-    and --main_inflow_area_km2 correctly']; generate_distributed_inflow.py requires both area par
+    and --main_inflow_area_km2 correctly']; generate_distributed_inflow.py requires both area parameters
+    explicitly
   severity: silent
 - id: dt_022
   symptom: Model runs extremely slowly (hours for small reservoir)
-  diagnosis: Adaptive timestep drops below 1 second due to CFL violation in narrow segments; CE-QUAL-W2's
+  diagnosis: 'Adaptive timestep drops below 1 second due to CFL violation in narrow segments; CE-QUAL-W2''s
     adaptive timestepping reduces dt to maintain CFL stability. Very narrow segments or sharp bathymetry
     transitions force dt to sub-second values, making the simulation extremely slow. Check w2l.opt for
-    minimum
-  remedy: 'Increase minimum segment width, merge narrow segments, smooth bathymetry; build_reservoir_grid;
-    [''Check w2l.opt for timestep warnings'', ''Identify the segment(s) causing small timesteps'', ''Widen
-    narrow segments or increase --segment_length'']; Ensure minimum segment width >= 10m and segment_length
-    >= '
+    minimum timestep warnings.
+
+    ; [''build_reservoir_grid'', ''run_w2'']'
+  remedy: Increase minimum segment width, merge narrow segments, smooth bathymetry; build_reservoir_grid;
+    ['Check w2l.opt for timestep warnings', 'Identify the segment(s) causing small timesteps', 'Widen
+    narrow segments or increase --segment_length']; Ensure minimum segment width >= 10m and segment_length
+    >= 250m
   severity: degraded
 - id: dt_023
   symptom: NaN values in output, model crashes mid-simulation
@@ -579,7 +635,7 @@ known_issues:
     between adjacent segments (e.g., 500m to 50m) create strong velocity gradients that destabilize the
     numerical scheme. Also triggered by extreme meteorological forcing values (e.g., wind > 30 m/s).
 
-    ; [''b'
+    ; [''build_reservoir_grid'', ''convert_met_to_w2'']'
   remedy: Smooth bathymetry transitions; clip extreme forcing values; build_reservoir_grid; ['Ensure adjacent
     segment widths differ by < 50%', 'Clip wind speed to 25 m/s', 'Reduce DLT MAX if instability persists'];
     Check width matrix for sharp transitions; smooth if ratio > 2:1
@@ -590,44 +646,58 @@ known_issues:
     water level drops significantly (drawdown for flood control or power generation), surface layers may
     become thinner than the minimum allowed. If wetting/drying is not enabled, this crashes the model.
 
-    ; [''genera'
+    ; [''generate_w2_control'', ''configure_w2_outflow'']'
   remedy: Increase minimum layer thickness; reduce outflow during drawdown periods; ; ['Check DLT CON
     for minimum layer thickness setting', 'Reduce outflow to prevent surface dropping below layer boundaries',
     'Consider enabling wetting/drying if model version supports it']; Monitor water level output; warn
-    if
+    if level drops > 50% of max depth
   severity: fatal
 - id: dt_025
   symptom: Model completes but no output files are generated
-  diagnosis: Output card groups missing in w2_con.npt or output intervals set to zero; CE-QUAL-W2 can
+  diagnosis: 'Output card groups missing in w2_con.npt or output intervals set to zero; CE-QUAL-W2 can
     run to completion without writing any output if the SNP FREQ, TSR FREQ, or SPR FILE cards are missing,
     disabled, or have zero output intervals. The model exits normally (exit code 0) but produces empty
-    or nonexi
+    or nonexistent output files.
+
+    ; [''generate_w2_control'']'
   remedy: Add SNP FREQ, TSR FREQ, and SPR FILE cards with non-zero intervals to w2_con.npt; generate_w2_control;
     ['Check w2_con.npt for output control cards', 'SNP FREQ should have NSNP >= 1 and SNPD > 0', 'TSR
     FREQ should have NTSR >= 1 and TSRD > 0']; generate_w2_control.py always includes output cards with
+    sensible defaults
   severity: silent
 - id: dt_026
   symptom: The met file could only be made from VIC forcing files (--vic_forcing_dir); with both folders
     given the VIC route won
-  diagnosis: convert_met_to_w2.py built CE-QUAL-W2 input out of another model's input files; Until 2026-10-03
+  diagnosis: 'convert_met_to_w2.py built CE-QUAL-W2 input out of another model''s input files; Until 2026-10-03
     the only working route of the met tool read VIC forcing files, and SKILL.md (quick start, coupling
-    table) and the s3 stage document steered to it. That means running VIC's preparation for a model that
-    is
+    table) and the s3 stage document steered to it. That means running VIC''s preparation for a model
+    that is not VIC. Owner rule 2026-10-02: a KI builds its input straight from the data source with its
+    own tool. The VIC reader and the option are removed and are not to be put back. Coupling on RESULTS
+    (a runoff RESULT fed in as inflow with convert_inflow_to_w2.py) is a different thing and stays.
+
+    ; [''convert_met_to_w2'']'
   remedy: 'Name the source: --source cmfd|mswx|nasa_power --lat --lon --start_year --end_year [--forcing_dir];
     convert_met_to_w2; [''Do not pass --vic_forcing_dir; it no longer exists'', ''Read <output>.summary.json
-    to see the source, the step and what was estimated'']; --source is required and has no default; the'
+    to see the source, the step and what was estimated'']; --source is required and has no default; the
+    tool reads through ki_tools_common.load_forcing.load_hourly_forcing only'
   severity: fatal
 - id: dt_027
   symptom: Met file with air temperature 0, dew point near 3.8 C (vapour pressure 0.8 kPa), wind 2.0 m/s
     or short-wave 0 at every step
-  diagnosis: The old direct reader (read_cmfd_mswx_forcing) could not read the stores and filled made-up
+  diagnosis: 'The old direct reader (read_cmfd_mswx_forcing) could not read the stores and filled made-up
     values for a missing column; It looked for *{year}*.nc at the top of the folder only (CMFD and MSWX
     keep one sub-folder per variable), opened files with no engine inside try/except that hid every failure,
-    sel
+    selected by lat/lon names, looked for a vapour-pressure column the sources do not have (they give
+    specific humidity), had no Kelvin to Celsius step, and wrote constants when a column was missing:
+    TAIR 0, VP 0.8 kPa, WIND 2.0, SW 0. A constant in a met file is a made-up value and gives a wrong
+    lake with no error.
+
+    ; [''convert_met_to_w2'']'
   remedy: Rebuild the met file with the current tool (--source ...); it stops with an error instead of
     filling; convert_met_to_w2; ['Check a met file of unknown origin for columns that never change', 'A
     missing or non-finite value, an uneven time axis or a period not fully covered must stop the tool
-    with noth
+    with nothing written']; check_standard_series() and check_period_covered() run before the file is
+    opened; the file is written under a temporary name and renamed
   severity: silent
 - id: dt_028
   symptom: NASA POWER was named in the met tool's title but there was no code for it
@@ -642,10 +712,12 @@ known_issues:
   severity: fatal
 - id: dt_029
   symptom: A tool loads an old copy of ki_tools_common (missing functions, old loader behaviour)
-  diagnosis: convert_met_to_w2.py put KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect first on
+  diagnosis: 'convert_met_to_w2.py put KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect first on
     sys.path; That folder can hold an older copy of ki_tools_common, which then wins over the installed
     package (KISSPATH_KI_TOOLS_COMMON). The line is removed; the tool imports
-    the instal
+    the installed package.
+
+    ; [''convert_met_to_w2'']'
   remedy: Do not add toolkit folders to sys.path in a KI tool; run it with KISSPATH_PYTHON_ENV/bin/python;
     ; ["python -c 'import ki_tools_common; print(ki_tools_common.__file__)' must print the models/ki_tools_common
     path"]; No sys.path edit in convert_met_to_w2.py
@@ -653,10 +725,12 @@ known_issues:
 - id: dt_030
   symptom: 'SKILL.md said: call load_daily_forcing, then convert_met_to_w2.py — the tool could not take
     the loader''s output; CAPABILITY_INVENTORY said CMFD/MSWX met forcing DONE'
-  diagnosis: A recipe that could not be followed, and a status that was not true; The tool had no argument
-    for a loaded series, and daily data is the wrong step for a model that needs the daily cycle. The
-    real Wangjiaba case made its met file by hand. The tool now calls load_hourly_forcing itself (3 h
-    for cmfd/m
+  diagnosis: 'A recipe that could not be followed, and a status that was not true; The tool had no argument
+    for a loaded series, and daily data is the wrong step for a model that needs the daily cycle. A real
+    case had to make its met file by hand. The tool now calls load_hourly_forcing itself (3 h for cmfd/mswx,
+    1 h for nasa_power); the agent does not call the loader first.
+
+    ; [''convert_met_to_w2'']'
   remedy: Run convert_met_to_w2.py with --source; do not call the loader by hand and do not write the
     met file by hand; convert_met_to_w2; ['See docs/s3_met_forcing_skill.md']; SKILL.md, the stage document
     and the capability list now describe the one route that exists
@@ -667,20 +741,32 @@ known_issues:
   diagnosis: 'The met file form did not match what the v5 binary reads, and PHI was written in degrees;
     w2_v5 (time-varying-data.f90) reads the first character of the met file: ''$'' means CSV (skip 3 header
     lines in all, then comma or blank separated rows); anything else means fixed 8-character columns after
-    3 hea'
+    3 header lines (the DeGray example met.npt). The old tool wrote ''$'' with 2 header lines and 10-character
+    columns, so the first data row was skipped as a header. PHI is in RADIANS (the model uses cos(PHI
+    - PHI0); the DeGray file holds 4.37-5.24): 270 read as radians is a different direction. JDAY is local
+    standard time (the model works out the sun from it); the sources are in UTC, so UTC stamps shift the
+    day cycle by the time zone (6 h at DeGray). With SROC OFF in the control file the model ignores the
+    SRO column and computes short-wave from CLOUD.
+
+    ; [''convert_met_to_w2'', ''generate_w2_control'']'
   remedy: 'Use the current tool: v5 CSV form, 3 header lines, PHI in radians, JDAY in local standard time
     (UTC offset int(lon/15) h); convert_met_to_w2; ["head -4 met file: line 1 starts with ''$'', line
     3 is JDAY,TAIR,TDEW,WIND,PHI,CLOUD,SRO, line 4 is the first data row", ''PHI must be between 0 and
-    6.29'', ''The'
+    6.29'', ''The sources have no wind direction: the summary says which constant was written'', ''Set
+    SROC ON in the control file to make the model use the SRO column'']; convert_met_to_w2.py writes the
+    v5 CSV form and says in <output>.summary.json what was estimated'
   severity: silent
 - id: dt_032
   symptom: run_w2.py stops in preflight on a v5 case; parse_w2_output.py finds no time series
-  diagnosis: The run and parse tools knew only the v4.x file names; The v5 binary on this server reads
+  diagnosis: 'The run and parse tools knew only the v4.x file names; The v5 binary on this server reads
     w2_con.csv and writes tsr_<n>_seg<segment>.csv, snp.opt, spr.csv; its .w2l file is binary, not a log;
     stop reasons go to w2.err. run_w2.py asked for w2_con.npt, so the shipped DeGray example could not
-    be run th
+    be run through the KI. Both tools now take either form. w2_con.csv also names the files of options
+    that are switched off (lpr.npt, pre_br1.npt, ...): those are warnings, not errors.
+
+    ; [''run_w2'', ''parse_w2_output'']'
   remedy: Run run_w2.py --run_dir <dir with w2_con.csv and the inputs>; read tsr_*_seg*.csv (column T2(C));
     run_w2; ["Copy the example's input files into a run folder; outputs of an earlier run in the example
     folder prove nothing", 'A non-empty w2.err after the run is the stop reason']; run_w2.py removes an
-    o
+    old w2.err before the run and reads it after
   severity: fatal

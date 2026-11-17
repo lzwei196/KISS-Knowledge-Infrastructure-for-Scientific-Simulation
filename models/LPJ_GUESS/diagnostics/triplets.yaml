@@ -365,11 +365,12 @@
   severity: degraded
   stage: s4_run_engine
   failure_domain: configuration
-  symptom: "At a planted conifer site the engine grows broadleaf trees: DE-Tha cmass.out is TeBS-dominated, monthly GPP is zero all winter and summer peaks are low (GPP PBIAS -35 percent, NEE NSE ~0) while r is still 0.96."
+  symptom: "At a planted conifer site the engine grows broadleaf trees: DE-Tha cmass.out is TeBS-dominated, monthly GPP is zero all winter and summer peaks are low (GPP biased low by about a third, NEE NSE ~0) while r is still high."
   diagnosis: "global.ins runs all 12 global PFTs as potential natural vegetation (Natural stand type, no management). Tharandt is a planted Norway spruce stand; the engine's competition outcome is temperate broadleaf summergreen (TeBS)."
-  remedy: "First report the default (untuned) run. To represent the real stand, switch PFTs off through the run tool, e.g. --set 'pft \"TeBS\" ( include 0 )' for every PFT not present. DE-Tha with only BNE + C3G: GPP NSE 0.69 -> 0.80, PBIAS -35 -> -26 percent, RECO NSE 0.85 -> 0.87. Label such runs as a configuration choice, not as calibration."
+  remedy: "First report the default (untuned) run. To represent the real stand, switch PFTs off through the run tool, e.g. --set 'pft \"TeBS\" ( include 0 )' for every PFT not present. At DE-Tha, keeping only BNE + C3G improved GPP NSE and bias and left RECO about the same. Label such runs as a configuration choice, not as calibration."
   detection: "awk 'NR==1||$3==<last year>' run/cmass.out"
   cross_references: [dt_lpjguess_008]
+  seen_at: "2026-10-07, DE-Tha (Tharandt)"
 - id: dt_lpjguess_028
   applies_to: real_engine
   name: BLAZE fire needs files not on the server
@@ -419,9 +420,10 @@
   stage: s4_run_engine
   failure_domain: validation
   symptom: "run_lpjguess_engine.py example exits 5 ('output differs from reference')."
-  diagnosis: "The demo (global_demo.ins, 13 cells, years 500-599) is deterministic: on 2026-10-07 all 19 .out files were byte-identical to the build-time run in <engine>/run_global_demo. A difference means the binary, the shipped .ins/env files or the reference changed."
+  diagnosis: "The demo (global_demo.ins, 13 cells, years 500-599) is deterministic: all 19 .out files were byte-identical to the build-time run in <engine>/run_global_demo. A difference means the binary, the shipped .ins/env files or the reference changed."
   remedy: "Check the binary realpath and mtime against BUILD_LOG.md and diff the .ins files against src/data/ins before trusting any other result. Do not raise --tolerance to make it pass."
   detection: "python tools/run_lpjguess_engine.py example --out_dir /tmp/lpj_demo  (comparison block in the JSON)"
+  seen_at: "2026-10-07"
 - id: dt_lpjguess_033
   applies_to: both (warns against the surrogate)
   name: Surrogate numbers mistaken for the model
@@ -430,19 +432,21 @@
   failure_domain: validation
   symptom: "A KI result shows GPP NSE ~0.90 for LPJ-GUESS from run_lpjguess.py with LUE_max/T_opt/VPD parameters."
   diagnosis: "run_lpjguess.py (with convert_forcing_to_lpjguess.py, convert_parameters_to_lpjguess.py, parse_output_lpjguess.py) is a Python light-use-efficiency SURROGATE calibrated per site; LPJ-GUESS has no LUE_max parameter. Its skill says nothing about the real engine."
-  remedy: "Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. Real-engine reference (untuned, DE-Tha 1996-2014 monthly): GPP NSE 0.69, r 0.96."
+  remedy: "Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. The untuned real engine scores clearly lower than the surrogate at the same site."
   detection: "check that the run JSON has 'binary': '<engine>/build/guess'"
+  seen_at: "2026-10-07, DE-Tha (Tharandt)"
 - id: dt_lpjguess_034
   applies_to: real_engine
   name: Engine NEE excludes fire flux and has no managed-stand history
   severity: degraded
   stage: s5_parse_engine_output
   failure_domain: validation
-  symptom: "Monthly NEE has the right timing (r 0.83 at DE-Tha) but far too small a sink (obs -1.67, engine -0.28 gC m-2 d-1; NSE ~0)."
+  symptom: "Monthly NEE has the right timing (high r) but far too small a sink (e.g. DE-Tha obs -1.67, engine -0.28 gC m-2 d-1; NSE ~0)."
   diagnosis: "mnee = mrh - mnpp (positive = source) and leaves out fire and harvest C. The 500-year spin-up (calendar years before the forcing; 296 ppm before 1901, the real CO2 record after) grows unmanaged natural vegetation, so the engine has no young-stand or management legacy; a growing managed forest is a much larger sink."
   remedy: "Score NEE but read it with that caveat; compare GPP and RECO first. Annual cflux.out carries the full NEE including fire for budget work."
   detection: "parse summary.json metrics.NEE obs_mean vs sim_mean"
   cross_references: [dt_lpjguess_027]
+  seen_at: "2026-10-07, DE-Tha (Tharandt)"
 - id: dt_lpjguess_035
   applies_to: real_engine
   name: No N-deposition file means constant pre-industrial N input

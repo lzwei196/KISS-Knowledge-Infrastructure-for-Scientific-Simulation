@@ -267,7 +267,7 @@ known_issues:
     mm/d. If precipitation is in m/d (e.g., from ERA5 native units), the model receives 1000x too much
     water. All storage and flux calculations scale linearly with input, so Q_sim will be ~1000x too large.
 
-    ; [''all '
+    ; [''all elements'', ''all models'']'
   remedy: 'Multiply precipitation by 1000 to convert m/d to mm/d; convert_forcing.py --p-unit m/d; [''Check
     source data documentation for native units'', ''Apply conversion: P_mm = P_m * 1000'', ''Verify mean
     daily P is 1-15 mm/d for the region'']; Always use convert_forcing.py which validates magnitudes'
@@ -278,7 +278,7 @@ known_issues:
     passed as mm/d, the model sees 50-200 mm/d of potential ET demand. This exceeds any realistic precipitation,
     causing storage to deplete rapidly and streamflow to drop to near zero.
 
-    ; [''UnsaturatedReservoir'', ''Pro'
+    ; [''UnsaturatedReservoir'', ''ProductionStore'', ''InterceptionFilter'']'
   remedy: 'Divide PET by 30.44 to convert mm/month to mm/d; convert_forcing.py --pet-unit mm/month; [''Check
     PET source: monthly totals vs daily values'', ''Apply: PET_daily = PET_monthly / days_in_month'',
     ''Verify PET is 0-10 mm/d'']; Validate PET < 15 mm/d before running model'
@@ -288,26 +288,33 @@ known_issues:
   diagnosis: 'Timestep (dt) doesn''t match forcing temporal resolution; The ODE solver uses dt in the
     finite difference equation: dS/dt ≈ (S^{n+1} - S^n) / dt. If forcing is hourly but dt=1.0 (day), the
     solver treats each hourly value as a full day''s worth of input. This creates a 24x error in water
-    volume per ste'
+    volume per step.
+
+    ; [''all ODEsElement subclasses'']'
   remedy: 'Set model.set_timestep(dt) to match forcing resolution; ; [''For daily data: set_timestep(1.0)'',
     ''For hourly data: set_timestep(1.0/24.0)'', ''For sub-daily: dt = hours / 24.0'']; Include timestep
     metadata in forcing file and validate at load time'
   severity: silent
 - id: dt_004
   symptom: Large initial transient spike or dip in first ~50 timesteps; model then stabilizes
-  diagnosis: Initial storage state (S0) in wrong units (m or cm instead of mm); If S0 is set to 0.01 (thinking
-    meters) instead of 10 (mm), the reservoir starts nearly empty and must fill up from precipitation,
+  diagnosis: 'Initial storage state (S0) in wrong units (m or cm instead of mm); If S0 is set to 0.01
+    (thinking meters) instead of 10 (mm), the reservoir starts nearly empty and must fill up from precipitation,
     causing an artificial initial transient. The model eventually equilibrates but the warmup period may
-    be
+    be very long.
+
+    ; [''PowerReservoir'', ''UnsaturatedReservoir'', ''ProductionStore'', ''RoutingStore'']'
   remedy: Ensure S0 is in mm; typical values are 0-500 mm; ; ['Set S0 relative to storage capacity (e.g.,
     S0 = 0.5 * Smax)', 'Run sufficient warmup period (1-2 years)', 'Exclude warmup from metric calculation'];
     Validate S0 is same order of magnitude as Smax
   severity: silent
 - id: dt_005
   symptom: Model runs but produces physically implausible Q; hydrograph shape bears no relation to forcing
-  diagnosis: Input array order is swapped (P and PET positions exchanged); SuperflexPy elements have different
-    input order conventions. InterceptionFilter (GR4J) expects [PET, P] but UnsaturatedReservoir (HBV)
-    expects [P, PET]. If swapped, precipitation is treated as ET demand and vice versa, producing nonsensic
+  diagnosis: 'Input array order is swapped (P and PET positions exchanged); SuperflexPy elements have
+    different input order conventions. InterceptionFilter (GR4J) expects [PET, P] but UnsaturatedReservoir
+    (HBV) expects [P, PET]. If swapped, precipitation is treated as ET demand and vice versa, producing
+    nonsensical water partitioning.
+
+    ; [''InterceptionFilter'', ''UnsaturatedReservoir'', ''ProductionStore'']'
   remedy: 'Check the first element''s set_input() docstring for correct order; ; [''GR4J: model.set_input([PET,
     P])'', ''HBV:  model.set_input([P, PET])'', "Always verify via model''s first layer element documentation"];
     Add explicit input order to model config; verify with a 1-timestep test'
@@ -317,7 +324,9 @@ known_issues:
   diagnosis: 'Parameter name doesn''t include hierarchical prefix; SuperflexPy automatically prefixes
     parameter names through the hierarchy: unit_id + ''_'' + element_id + ''_'' + param_name. Calling
     set_parameters({''x1'': 300}) fails because the actual key is ''model_ps_x1''. Without the prefix,
-    set_parameters silently '
+    set_parameters silently ignores the unknown key in some versions.
+
+    ; [''all elements accessed through Unit/Node/Network'']'
   remedy: 'Use model.get_parameters_name() to discover full prefixed names; ; [''names = model.get_parameters_name()'',
     "print(names)  # Shows [''model_ps_x1'', ...]", "model.set_parameters({''model_ps_x1'': 300.0})"];
     Always discover names before setting; build parameter dict programmatically'
@@ -327,37 +336,47 @@ known_issues:
   diagnosis: 'LagElement state initialized with array instead of None; UnitHydrograph1/2 states must be
     initialized as {''lag'': None}. The framework dynamically creates the lag array based on the lag-time
     parameter and the number of input fluxes. Pre-allocating an array of wrong size causes broadcast errors
-    when t'
+    when the lag convolution runs.
+
+    ; [''UnitHydrograph1'', ''UnitHydrograph2'', ''all LagElement subclasses'']'
   remedy: 'Set states={''lag'': None} when creating lag elements; ; ["uh1 = UnitHydrograph1(parameters={''lag-time'':
     2.0}, states={''lag'': None}, id=''uh1'')", ''After reset, re-set lag states to None if needed''];
     Never manually set lag state arrays'
   severity: fatal
 - id: dt_008
   symptom: IndexError or wrong flux routing in models with Splitter elements
-  diagnosis: Splitter weight or direction matrix dimensions don't match element topology; The Splitter's
+  diagnosis: 'Splitter weight or direction matrix dimensions don''t match element topology; The Splitter''s
     weight matrix shape must be [n_downstream][n_upstream_fluxes] and direction must be [n_downstream][n_upstream_fluxes].
-    If the upstream element produces 1 flux but weight has 2 columns, or if there are 2 downs
+    If the upstream element produces 1 flux but weight has 2 columns, or if there are 2 downstream elements
+    but only 1 row, indexing fails.
+
+    ; [''Splitter'', ''Junction'']'
   remedy: 'Verify matrix dimensions match the number of upstream fluxes and downstream elements; ; [''Count
     upstream fluxes: n_up = len(upstream_element.get_output())'', ''Count downstream elements in the next
     layer'', ''weight shape: [n_downstream][n_up]'', ''direction shape: [n_downstream][n_up]'']; Test
-    with a 1-ti'
+    with a 1-timestep dry run before full simulation'
   severity: fatal
 - id: dt_009
   symptom: First model run takes 5-30 seconds; subsequent runs are fast
-  diagnosis: Numba JIT compilation triggered on first call; When using Numba-accelerated solvers (ImplicitEulerNumba,
+  diagnosis: 'Numba JIT compilation triggered on first call; When using Numba-accelerated solvers (ImplicitEulerNumba,
     PegasusNumba), the first invocation triggers just-in-time compilation of the decorated functions.
-    This is a one-time cost per Python session. The delay is proportional to the number of JIT-compil
+    This is a one-time cost per Python session. The delay is proportional to the number of JIT-compiled
+    functions.
+
+    ; [''all Numba variants'']'
   remedy: Wait for compilation to complete; this is normal behavior; ; ['Run a short warmup simulation
     first to trigger compilation', 'Or use Python variants (ImplicitEulerPython) for quick tests', 'Numba
     compilation caches persist across runs in __pycache__']; Use Python variants during development; Numba
-    fo
+    for production runs
   severity: degraded
 - id: dt_010
   symptom: Negative storage values; streamflow oscillates or diverges; NaN in output
-  diagnosis: Explicit Euler solver produces negative storage for large timesteps or fluxes; The Explicit
+  diagnosis: 'Explicit Euler solver produces negative storage for large timesteps or fluxes; The Explicit
     Euler method S^{n+1} = S^n + dt * f(S^n) can produce negative S when outflow exceeds storage within
     one timestep. This causes NaN when computing S^alpha (negative base, fractional exponent). The implicit
-    Eule
+    Euler avoids this through its stability properties.
+
+    ; [''all ODEsElement with ExplicitEuler'']'
   remedy: Switch to ImplicitEuler solver with Pegasus root finder; ; ['Replace ExplicitEulerPython with
     ImplicitEulerPython', 'Add root_finder=PegasusPython() to ImplicitEuler', 'Or reduce timestep (dt)
     to improve explicit stability']; Default to ImplicitEuler for production; ExplicitEuler only for debugging
@@ -372,7 +391,7 @@ known_issues:
   remedy: 'Fix topology to be a tree (DAG): each node has at most one downstream, no cycles; ; ["Draw
     the network on paper; verify it''s a tree", ''Check topology dict: no node should appear as both upstream
     and downstream of another'', ''Outlet node must have None as downstream'']; Validate topology for
-    cycles bef'
+    cycles before constructing Network'
   severity: silent
 - id: dt_012
   symptom: Node output is systematically too high or too low; doesn't match individual unit runs
@@ -407,9 +426,12 @@ known_issues:
   severity: silent
 - id: dt_015
   symptom: Implicit solver warning about non-convergence; output has subtle errors
-  diagnosis: Pegasus root finder fails to converge for extreme parameter combinations; The implicit Euler
+  diagnosis: 'Pegasus root finder fails to converge for extreme parameter combinations; The implicit Euler
     scheme requires finding S^{n+1} such that S^{n+1} - S^n - dt*f(S^{n+1}) = 0. For very large k or alpha
     values, the root function becomes extremely steep, and the Pegasus bracketing algorithm may not converge
+    within its iteration limit.
+
+    ; [''PegasusPython'', ''PegasusNumba'', ''ImplicitEuler solvers'']'
   remedy: Reduce timestep, check parameter ranges, or increase root finder iterations; ; ['Check k * S^alpha
     is not producing huge values', 'Reduce dt to improve solver conditioning', 'Try Runge-Kutta 4 as alternative'];
     Validate parameters are within documented ranges before running
@@ -420,7 +442,7 @@ known_issues:
     time-varying parameters as numpy arrays. If a parameter array has 100 elements but forcing has 365
     timesteps, the solver crashes when accessing parameter[ind] for ind >= 100.
 
-    ; [''all ParameterizedElement subc'
+    ; [''all ParameterizedElement subclasses'']'
   remedy: Ensure time-varying parameter arrays match forcing length; ; ['param_array = np.full(n_timesteps,
     param_value)', 'Or use scalar value for constant parameters']; Validate array lengths match before
     model.set_input()
@@ -440,43 +462,81 @@ known_issues:
   symptom: GR4J exchange flux (F) has wrong sign; water balance doesn't close for networks
   diagnosis: 'x2 sign convention inverted: in SuperflexPy, positive x2 = groundwater LOSS; CORRECTED 2026-08-21
     against the source. This entry previously asserted the opposite and would have made an agent read
-    every calibrated x2 backwards. Read the code, not the convention you remember: superflexpy/implementatio'
+    every calibrated x2 backwards. Read the code, not the convention you remember: superflexpy/implementation/elements/gr4j.py,
+    RoutingStore.get_output() documents its second return value verbatim as "Exchange flux (F), positive
+    if loss"; the flux function computes F = x2 * (S/x3)**omega, and the routing store''s ODE enters that
+    term with a MINUS sign, so a positive x2 drains the store. FluxAggregator then subtracts F from the
+    direct branch as well (Qr + max(0, Q2_out - F)), so the exchange is applied TWICE per timestep. Therefore
+    x2 > 0 = the catchment EXPORTS water (losing stream) and x2 < 0 = the catchment IMPORTS water (gaining
+    stream). What is opposite to other implementations is the classic Perrin (2003) GR4J, where the exchange
+    term is ADDED. Confirmed numerically on GRDC_6503201 (R. Erne at Belturbet): a calibrated x2 = -0.61
+    produced exchange_loss_total = -472 mm over 1979-1990, i.e. a net IMPORT, exactly as the corrected
+    sign predicts.
+
+    ; [''RoutingStore'', ''FluxAggregator'']'
   remedy: 'Check x2 sign: positive = EXPORT (loss), negative = IMPORT (gain); run_superflexpy.py --diagnostics   #
     emits the F series and the exchange total; [''For gaining streams: x2 < 0 (typical: -5.0 to -0.1)'',
-    ''For losing streams: x2 > 0 (typical: 0.1-3.0)'', ''For neutral: x2 ~ 0'', ''Verify with diagnostics.'
+    ''For losing streams: x2 > 0 (typical: 0.1-3.0)'', ''For neutral: x2 ~ 0'', ''Verify with diagnostics.water_balance_terms_mm.exchange_loss_total:
+    positive = net loss'']; Read RoutingStore.get_output()''s docstring in the installed package before
+    trusting any prose about x2'
   severity: silent
 - id: dt_019
   symptom: Calibration converges to nonsense, or the same parameter vector scores differently on repeat
     evaluation; the optimiser's best score cannot be reproduced by re-running with its best parameters
-  diagnosis: get_output() called repeatedly without model.reset_states() in between; SuperflexPy components
-    CARRY STATE FORWARD. Each get_output() call leaves reservoir storage at the last timestep's value
+  diagnosis: 'get_output() called repeatedly without model.reset_states() in between; SuperflexPy components
+    CARRY STATE FORWARD. Each get_output() call leaves reservoir storage at the last timestep''s value
     and leaves the LagElement convolution memory partially filled, and the next call starts from there.
-    In a ca
+    In a calibration loop every trial is therefore evaluated from a different initial condition determined
+    by whichever trial ran before it -- the optimiser is fitting evaluation ORDER, not parameters -- and
+    no error is raised. Measured on GR4J with 500 days of forcing: run 1 vs run 2 with IDENTICAL parameters
+    and no reset differ by up to 5.45 mm/d; with reset_states() in between they are bit-identical (max
+    difference 0.0). The package''s own shipped example is explicit about the ordering -- examples/02_calibrate_a_model.ipynb,
+    function calibrate(): set_parameters -> reset_states -> get_output.
+
+    ; [''Unit'', ''Node'', ''Network'', ''all ODEsElement'', ''all LagElement'']'
   remedy: 'Call model.reset_states() before EVERY get_output() in any loop; run_superflexpy.py --calibrate   #
     its run_once() already does this; [''Do not hand-roll the calibration loop; use run_superflexpy.py
     --calibrate'', ''If you must loop manually, follow examples/02_calibrate_a_model.ipynb exactly'',
-    ''Self-c'
+    ''Self-check: run the SAME parameter vector twice; the two Q arrays must be bit-identical'']; Treat
+    a non-reproducible repeat run as a hard failure, not as noise'
   severity: silent
 - id: dt_020
   symptom: Model cannot reach the observed runoff volume however it is calibrated; PBIAS stuck strongly
     negative and NSE plateaus, while the internal water balance closes perfectly
-  diagnosis: Reanalysis potential-evaporation product far exceeds the PET demand a conceptual structure
+  diagnosis: 'Reanalysis potential-evaporation product far exceeds the PET demand a conceptual structure
     is calibrated against; Caravan / ERA5-Land potential_evaporation_sum is a well-watered-surface potential
-    and in humid maritime catchments it exceeds precipitation. GR4J's InterceptionFilter removes min(P,
-    PET)
+    and in humid maritime catchments it exceeds precipitation. GR4J''s InterceptionFilter removes min(P,
+    PET) BEFORE anything else, so an inflated PET removes precipitation the catchment demonstrably converted
+    to runoff, and no combination of x1/x2/x3/x4 can put it back. Measured on GRDC_6503201 (R. Erne at
+    Belturbet, Ireland, 1979-1990): P = 995 mm/yr, Caravan PET = 1208 mm/yr, observed Q = 604 mm/yr. Raw
+    PET makes interception alone remove 444 mm/yr, capping the model''s possible runoff at 551 mm/yr --
+    BELOW the observed 604 mm/yr. The structure is fine; the forcing product is the constraint. HBV does
+    not have this failure mode: UnsaturatedReservoir''s Ce IS a PET correction coefficient. Calibrated
+    on the same catchment, GR4J cpet = 0.44 and HBV Ce = 0.39 -- two independent structures agreeing the
+    raw product is roughly 2.3x too large.
+
+    ; [''InterceptionFilter'', ''ProductionStore'', ''UnsaturatedReservoir'']'
   remedy: 'Calibrate a PET correction coefficient alongside the structural parameters; run_superflexpy.py
     --calibrate --free-params x1 x3 x4 x2 cpet; [''GR4J has no internal PET coefficient: add cpet to --free-params
-    (bounds 0.2-2.0)'', ''HBV already has one: put Ce in --free-params instead; do NOT also use cpet'''
+    (bounds 0.2-2.0)'', ''HBV already has one: put Ce in --free-params instead; do NOT also use cpet'',
+    ''Sanity check first: sum(min(P, PET)) must be well below sum(P) - sum(Q_obs)'', ''Also pass convert_forcing.py
+    --pet-min 0 (see dt_021)'']; Compare annual P, PET and Q_obs totals BEFORE calibrating; PET above
+    P in a humid catchment is the tell'
   severity: silent
 - id: dt_021
   symptom: A handful of days show precipitation the forcing file does not contain; the conservation check
     is off by a few mm
-  diagnosis: Negative daily PET values from a reanalysis product passed through unfiltered; Reanalysis
+  diagnosis: 'Negative daily PET values from a reanalysis product passed through unfiltered; Reanalysis
     daily potential evaporation goes slightly negative on condensation days (34 of 4383 days across the
-    Irish Caravan gauges, minimum -0.45 mm/d). GR4J's InterceptionFilter computes remove = min(PET, P)
-    and returns
+    Irish Caravan gauges, minimum -0.45 mm/d). GR4J''s InterceptionFilter computes remove = min(PET, P)
+    and returns P - remove: with PET negative, remove is negative and the filter ADDS |PET| mm of precipitation
+    that never fell. The ProductionStore''s evaporation term reverses sign for the same reason. Small
+    in magnitude, invisible in any output, and it corrupts a conservation check.
+
+    ; [''InterceptionFilter'', ''ProductionStore'']'
   remedy: Floor PET at zero when converting the forcing; convert_forcing.py --pet-min 0; ['Always pass
     --pet-min 0 for ERA5 / ERA5-Land / Caravan / MSWX PET', 'Check conversions_applied.PET_floor in the
     forcing JSON for how many days were clipped', 'An ALL-negative PET series is a different bug -- the
-    sign wa
+    sign was never flipped; use --pet-sign flip']; convert_forcing.py --format caravan hard-fails on an
+    all-negative PET series rather than running with zero evaporative demand
   severity: silent

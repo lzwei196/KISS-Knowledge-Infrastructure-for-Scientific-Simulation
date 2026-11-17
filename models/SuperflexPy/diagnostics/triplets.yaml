@@ -569,7 +569,7 @@
       evaluated from a different initial condition determined by whichever
       trial ran before it -- the optimiser is fitting evaluation ORDER, not
       parameters -- and no error is raised.
-      Measured 2026-08-21 on GR4J with 500 days of forcing: run 1 vs run 2
+      Measured on GR4J with 500 days of forcing: run 1 vs run 2
       with IDENTICAL parameters and no reset differ by up to 5.45 mm/d; with
       reset_states() in between they are bit-identical (max difference 0.0).
       The package's own shipped example is explicit about the ordering --
@@ -588,6 +588,7 @@
 
   severity: silent
   cross_references: [dt_007, dt_008]
+  seen_at: "2026-08-21, GR4J test (500 days of forcing)"
 
 - id: dt_020
   stage: s1_forcing_preparation

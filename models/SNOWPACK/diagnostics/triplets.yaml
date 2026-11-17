@@ -538,7 +538,7 @@
   severity: silent
   cross_references: [dt_003]
 
-# ── Triplets dt_021–dt_028: lessons from 49-site SNOTEL batch (2026-04-30) ──
+# ── Triplets dt_021–dt_028: lessons from a multi-site SNOTEL batch (where and when: each entry's seen_at) ──
 
 - id: dt_021
   stage: s3_configuration
@@ -572,6 +572,7 @@
       reads it as minutes; so generate with step=60, which yields 60-min steps.
   severity: fatal
   cross_references: [dt_005]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_022
   stage: s5_production_run
@@ -620,6 +621,7 @@
       halving is hardcoded and cannot be disabled via ini.
   severity: fatal
   cross_references: [dt_018, dt_023]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_023
   stage: s3_configuration
@@ -659,6 +661,7 @@
       mechanism that cannot be disabled. Don't try to.
   severity: silent
   cross_references: [dt_022]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_024
   stage: s3_configuration
@@ -695,6 +698,7 @@
       TS_START = 0.01 gives correct daily output at midnight.
   severity: silent
   cross_references: [dt_021]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_025
   stage: s3_configuration
@@ -723,6 +727,7 @@
       HydroCraft-local issue with the compiled MeteoIO version.
   severity: fatal
   cross_references: []
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_026
   stage: s3_configuration
@@ -748,6 +753,7 @@
     prevention: "Always apply the METEOFILE1 patch after generate_config.py for this build."
   severity: fatal
   cross_references: [dt_016]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_027
   stage: s2_profile_setup
@@ -785,6 +791,7 @@
       In Python: sno_text = sno_text.replace('\nfields =', '\nCanopyDirectThroughfall = 1.00\nErosionLevel = 0\nTimeCountDeltaHS = 0.000000\nfields =')
   severity: fatal
   cross_references: [dt_004]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"
 
 - id: dt_028
   stage: s5_production_run
@@ -792,7 +799,7 @@
   symptom:
     description: >
       At maritime Pacific sites (coastal CA, OR, WA), simulated snow depth
-      is 80–145% higher than observed (PBIAS > +80%). Continental interior
+      is far higher than observed (PBIAS > +80%). Continental interior
       sites (CO, ID, UT, WY, MT) with the same pipeline show PBIAS < 40%.
       NSE is negative at maritime sites despite acceptable R (0.7–0.9).
     error_pattern: ""
@@ -823,3 +830,4 @@
       instead of hardcoding 0.80 for all sites.
   severity: silent
   cross_references: [dt_019, dt_011]
+  seen_at: "2026-04-30, 49-site SNOTEL batch"

@@ -59,7 +59,9 @@ inputs:
     category: forcing
     source_kind: forcing
     model_input_format: .met column
-    notes: Wet duration fraction of day. Read only with SWRAIN=2. convert_forcing_to_swap writes 0 (no source gives rain duration), so use SWRAIN 0 with its single .met file; SWRAIN 1 or 3 (and SWMETDETAIL 1) make SWAP drop .met and read yearly <METFIL>.YYY files, which this converter does not write.
+    notes: Wet duration fraction of day. Read only with SWRAIN=2. convert_forcing_to_swap writes 0 (no
+      source gives rain duration), so use SWRAIN 0 with its single .met file; SWRAIN 1 or 3 (and SWMETDETAIL
+      1) make SWAP drop .met and read yearly <METFIL>.YYY files, which this converter does not write.
   parameters:
   - name: ORES (theta_r)
     unit: cm3/cm3
@@ -268,7 +270,7 @@ outputs:
   - name: actual_soil_evaporation
     unit: cm
     description: Actual bare-soil evaporation from the surface compartment.
-    validation_rank: 1
+    validation_rank: 2
     emitted_in: .inc / .wba
     observability:
       comparable_obs_shapes:
@@ -285,7 +287,7 @@ outputs:
   - name: evapotranspiration
     unit: cm/d
     description: Total actual evapotranspiration (transpiration + soil evaporation + interception).
-    validation_rank: 2
+    validation_rank: 1
     emitted_in: .inc / .wba
     observability:
       comparable_obs_shapes:
@@ -478,60 +480,80 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Extreme evapotranspiration, soil dries to wilting point immediately. ET values 100+ mm/d.
-  diagnosis: Radiation input in W/m² instead of kJ/m²/d — radiation approximately 200× too low or too
+  diagnosis: 'Radiation input in W/m² instead of kJ/m²/d — radiation approximately 200× too low or too
     high depending on direction; SWAP expects solar radiation in kJ/m²/d in the .met file. CMFD and MSWX
     provide radiation in W/m² (instantaneous). The correct conversion is W/m² × 86400/1000 = kJ/m²/d.
-    If W/m² valu
+    If W/m² values (0-400) are passed directly, SWAP interprets them as kJ/m²/d, which is far too low
+    (typical range is 2000-30000 kJ/m²/d). Internally SWAP multiplies by 1000 to get J/m²/d, giving values
+    only 0-400000 J/m²/d instead of 2-30 MJ/m²/d.
+
+    ; [''convert_forcing_to_swap'', ''readmeteo.f90'']'
   remedy: Multiply W/m² by 86.4 (= 86400/1000) to get kJ/m²/d; convert_forcing_to_swap; ['Check max Rad
     in .met file — should be 5000-35000 kJ/m²/d for mid-latitudes', 'If max Rad < 500, values are likely
-    in W/m² — multiply by 86.4', 'If max Rad > 100000, values may be in J/m²/d — divide by 1000']; validate_o
+    in W/m² — multiply by 86.4', 'If max Rad > 100000, values may be in J/m²/d — divide by 1000']; validate_outputs()
+    in convert_forcing_to_swap checks Rad range
   severity: silent
 - id: dt_002
   symptom: Extreme evaporation, no soil moisture left. ET dominated by soil evaporation.
   diagnosis: 'Humidity column contains relative humidity (0-1 or 0-100) instead of vapor pressure (kPa);
     SWAP .met Hum column expects actual vapor pressure in kPa (typically 0.3-5 kPa). If relative humidity
     fraction (0-1) is used, SWAP interprets 0.7 as 0.7 kPa, far below actual (~1.5 kPa), creating a huge
-    vapor '
+    vapor pressure deficit that drives extreme evaporation. If RH percentage (0-100) is used, values of
+    70 are interpreted as 70 kPa, which exceeds saturation, producing numerical issues.
+
+    ; [''convert_forcing_to_swap'', ''penmon.f90'']'
   remedy: 'Convert specific humidity to vapor pressure: e = q * P / (0.622 + 0.378*q); convert_forcing_to_swap;
     [''Check Hum values in .met file — should be 0.1-7 kPa for most climates'', ''If all Hum < 1.0 and
     > 0, likely relative humidity fraction — convert'', ''If all Hum 30-100, likely RH percentage — convert
-    v'
+    via Magnus formula'']; validate_outputs() checks for Hum < 0.01 or Hum > 10'
   severity: silent
 - id: dt_003
   symptom: Soil always waterlogged, continuous runoff, groundwater at surface.
-  diagnosis: MSWX 3-hourly rainfall passed as daily without aggregation — 8× too much rain per record;
+  diagnosis: 'MSWX 3-hourly rainfall passed as daily without aggregation — 8× too much rain per record;
     MSWX provides precipitation in mm/3hr. There are 8 records per day. SWAP expects mm/day in the .met
     Rain column. If each 3-hourly value is written as a daily record, the model receives 8 separate days
-    of rainfa
-  remedy: Sum all 8 three-hourly MSWX precipitation values to get daily total (hand-made .met only; convert_forcing_to_swap reads daily totals from the shared loader); convert_forcing_to_swap;
+    of rainfall for each actual day, causing 8× too much precipitation.
+
+    ; [''convert_forcing_to_swap'']'
+  remedy: Sum all 8 three-hourly MSWX precipitation values to get daily total (only for a hand-made .met;
+    convert_forcing_to_swap gets daily totals from ki_tools_common.load_forcing); convert_forcing_to_swap;
     ['Check mean annual rainfall — should match climate normals for the site', 'If annual total is 8×
-    expected, MSWX records not aggregated']; convert_forcing_to_swap reads daily totals (precip_mm) from the shared loader, which sums sub-daily records
+    expected, MSWX records not aggregated']; convert_forcing_to_swap reads daily totals (precip_mm) from
+    the shared loader, which sums sub-daily records
   severity: silent
 - id: dt_004
   symptom: Temperature sum for crop development never reached. Crops never emerge or mature.
-  diagnosis: Temperature in Kelvin instead of Celsius — values ~293 instead of ~20; SWAP expects temperature
+  diagnosis: 'Temperature in Kelvin instead of Celsius — values ~293 instead of ~20; SWAP expects temperature
     in °C. CMFD/MSWX provide temperature in K. If not converted, Tmin/Tmax of ~280-300 K cause crop temperature
-    sums to accumulate at extreme rates (or SWAP crashes). The Penman-Monteith calculation also uses
-  remedy: Subtract 273.15 from temperature values (hand-made .met only; convert_forcing_to_swap gets degC from the shared loader); convert_forcing_to_swap; ['Check Tmin/Tmax in .met
-    file — should be -50..50°C', 'If values are 230-320, they are in Kelvin — subtract 273.15']; validate_outputs()
+    sums to accumulate at extreme rates (or SWAP crashes). The Penman-Monteith calculation also uses temperature,
+    producing wildly wrong ET.
+
+    ; [''convert_forcing_to_swap'', ''readmeteo.f90'']'
+  remedy: Subtract 273.15 from temperature values (only for a hand-made .met; convert_forcing_to_swap
+    gets degC from ki_tools_common.load_forcing); convert_forcing_to_swap; ['Check Tmin/Tmax in .met file
+    — should be -50..50°C', 'If values are 230-320, they are in Kelvin — subtract 273.15']; validate_outputs()
     checks temperature range
   severity: fatal
 - id: dt_005
   symptom: All water drains instantly, no retention. Soil moisture drops to residual immediately.
-  diagnosis: Ksat in m/s instead of cm/d — value thousands of times too high; SWAP KSATFIT and KSATEXM
+  diagnosis: 'Ksat in m/s instead of cm/d — value thousands of times too high; SWAP KSATFIT and KSATEXM
     expect saturated hydraulic conductivity in cm/day. If values from databases in m/s (e.g., 1e-5 m/s)
     are entered without conversion, they are interpreted as 1e-5 cm/d, which is far too low. Conversely,
-    if m/d is
+    if m/d is used directly (e.g., 1.0 m/d), it is interpreted as 1.0 cm/d — 100× too low.
+
+    ; [''convert_soil_to_swap'', ''readswap.f90'']'
   remedy: 'Convert to cm/d: m/s × 8640000, m/d × 100, cm/hr × 24; convert_soil_to_swap; [''Check KSATFIT
     values — sand: 100-1000 cm/d, clay: 0.1-10 cm/d'', ''If all KSATFIT < 0.001, values likely in m/s
     — multiply by 8.64e6'']; validate_outputs() checks Ksat against texture-typical ranges'
   severity: silent
 - id: dt_006
   symptom: SWAP crashes or produces NaN. Error in soil hydraulic calculations.
-  diagnosis: ORES >= OSAT — residual water content exceeds or equals saturated content; The van Genuchten
+  diagnosis: 'ORES >= OSAT — residual water content exceeds or equals saturated content; The van Genuchten
     water retention function requires ORES < OSAT strictly. If parameters are entered in wrong order or
     from different sources with inconsistent values, ORES >= OSAT causes division by zero in the retention
-    curv
+    curve calculation.
+
+    ; [''convert_soil_to_swap'', ''WC_K_models_04_11.f90'']'
   remedy: 'Verify ORES < OSAT for every soil layer; typical: ORES=0.01-0.10, OSAT=0.35-0.55; convert_soil_to_swap;
     [''Check MvG parameter table in .swp file'', ''Ensure column order matches: ORES OSAT ALFA NPAR KSATFIT
     LEXP ALFAW H_ENPR KSATEXM BDENS'']; convert_soil_to_swap validates ORES < OSAT before writing'
@@ -562,21 +584,23 @@ known_issues:
 - id: dt_009
   symptom: SWAP cannot find swap.swp file. Immediate crash on startup.
   diagnosis: 'SWAP not run from the correct working directory; SWAP reads the .swp named by its first
-    command-line argument (''.swp'' added when missing, lowercased on Linux), or ''swap.swp'' when there is
-    no argument, from the current working directory (CWD). If run from the wrong directory, it cannot find
-    the input file.
+    command-line argument (''.swp'' is added when missing; the name is lowercased on Linux), or ''swap.swp''
+    when there is no argument, from the current working directory (CWD). If run from the wrong directory,
+    it cannot find the input file.
 
     ; [''run_swap'']'
   remedy: 'cd to the directory containing swap.swp before running the binary; run_swap; [''cd /path/to/case/directory/'',
-    ''ls swap.swp  # verify file exists'', ''/path/to/swap  # run from case directory'']; run_swap wrapper
-    runs in --work-dir and passes --swp-file as SWAP''s argument'
+    ''ls swap.swp  # verify file exists'', ''/path/to/swap  # run from case directory (or: /path/to/swap
+    name  for name.swp)'']; run_swap wrapper runs in --work-dir and passes --swp-file as SWAP''s argument'
   severity: fatal
 - id: dt_010
   symptom: SWAP takes extremely long or appears to hang. Timestep becomes tiny.
-  diagnosis: Convergence failure in Richards' equation solver — DTMAX too large for soil type; For clay
-    soils with steep retention curves (low NPAR), the Richards' equation solver requires small timesteps.
+  diagnosis: 'Convergence failure in Richards'' equation solver — DTMAX too large for soil type; For clay
+    soils with steep retention curves (low NPAR), the Richards'' equation solver requires small timesteps.
     If DTMAX is too large (e.g., 0.1d), the solver backtracks repeatedly, reducing dt to DTMIN and iterating
-    sl
+    slowly.
+
+    ; [''soilwater.f90'', ''headcalc.f90'']'
   remedy: 'Reduce DTMAX to 0.01 or 0.005 for clay soils; None; [''In .swp: set DTMAX = 0.01'', ''Increase
     MAXIT to 50 if needed'', ''For extreme cases: DTMAX = 0.001'']; Set DTMAX based on soil texture: sand=0.04,
     loam=0.02, clay=0.01'
@@ -597,17 +621,20 @@ known_issues:
     list-directed read (READ *,) for .met files. This expects comma-separated or space-separated values
     with consistent column count. Extra columns, missing values, or tab characters can cause parse failures.
 
-    ; [''rea'
+    ; [''readmeteo.f90'', ''readswap.f90'']'
   remedy: 'Verify .met file format: comma-delimited, consistent column count per row; None; [''Check .met
     file: head -15 file.met'', ''Verify 12 columns per data row'', "Remove any tab characters: sed -i
     ''s/\\t/,/g'' file.met", ''Ensure no blank lines between data rows'']; convert_forcing_to_swap writes
-    consistent CS'
+    consistent CSV format'
   severity: fatal
 - id: dt_013
   symptom: Crop growth produces zero biomass. DVS never advances.
-  diagnosis: CROPSTART date is after the actual growing season, or TSTART is after CROPSTART; If CROPSTART
+  diagnosis: 'CROPSTART date is after the actual growing season, or TSTART is after CROPSTART; If CROPSTART
     is set to May 1 but the simulation starts June 1, the first crop emergence is missed. With CROPTYPE=2
-    (WOFOST), DVS advancement depends on thermal time accumulation starting from CROPSTART. Missing early-se
+    (WOFOST), DVS advancement depends on thermal time accumulation starting from CROPSTART. Missing early-season
+    warmth means the crop never matures.
+
+    ; [''cropgrowth.f90'', ''readswap.f90'']'
   remedy: 'Ensure TSTART <= CROPSTART and CROPSTART matches local growing season; None; [''Check crop
     table in .swp: CROPSTART CROPEND CROPFIL CROPTYPE'', ''Verify simulation period covers entire crop
     cycle'']; Configuration validation checks date consistency'
@@ -618,26 +645,30 @@ known_issues:
     If CROPEND of crop N overlaps CROPSTART of crop N+1, behavior is undefined. Between crops (gap periods),
     soil is treated as bare — this may be intentional (fallow) or a configuration error.
 
-    ; [''readswap.f90'', '''
+    ; [''readswap.f90'', ''cropgrowth.f90'']'
   remedy: Ensure no overlap and intentional gaps between crops; None; ['Sort crop table by CROPSTART',
     'Verify CROPEND(N) < CROPSTART(N+1) for all N']; Configuration validation checks crop date ordering
   severity: degraded
 - id: dt_015
   symptom: Profile discretization mismatch — NCOMP × HCOMP ≠ HSUBLAY.
-  diagnosis: Inconsistent profile discretization table; SWAP requires NCOMP × HCOMP = HSUBLAY for each
+  diagnosis: 'Inconsistent profile discretization table; SWAP requires NCOMP × HCOMP = HSUBLAY for each
     sub-layer. If this constraint is violated, the total profile depth will be wrong, and compartment
-    boundaries won't align with layer boundaries. SWAP may not check this rigorously and produce subtly
-    wrong result
+    boundaries won''t align with layer boundaries. SWAP may not check this rigorously and produce subtly
+    wrong results.
+
+    ; [''calcgrid.f90'', ''readswap.f90'']'
   remedy: 'Recalculate NCOMP = HSUBLAY / HCOMP for each sub-layer; None; [''For each row: verify NCOMP
     × HCOMP = HSUBLAY'', ''Verify total depth = sum of all HSUBLAY values'']; Configuration validation
     checks arithmetic consistency'
   severity: silent
 - id: dt_016
   symptom: Wind-adjusted ET is wrong. Penman-Monteith produces unrealistic aerodynamic term.
-  diagnosis: ALTW (wind measurement height) set incorrectly — default is 10m but data may be at 2m; The
+  diagnosis: 'ALTW (wind measurement height) set incorrectly — default is 10m but data may be at 2m; The
     Penman-Monteith equation adjusts wind speed from measurement height (ALTW) to standard heights using
     log-profile equations. If ALTW=10m but wind data is actually measured at 2m, the model under-adjusts
-    the win
+    the wind speed, producing lower aerodynamic resistance and different ET.
+
+    ; [''penmon.f90'']'
   remedy: 'Set ALTW to actual wind measurement height of the forcing dataset; None; [''CMFD: ALTW = 10.0
     (10m reference height)'', ''MSWX: ALTW = 10.0 (10m reference height)'', ''Local station: check metadata
     for anemometer height'']; Document ALTW for each forcing source in configuration'
@@ -649,7 +680,7 @@ known_issues:
     in mg/cm³ (= mg/mL = g/L). Literature and field data typically report mg/L (= mg/dm³ = μg/cm³). 1
     mg/L = 0.001 mg/cm³. Entering mg/L values directly gives 1000× too high concentrations.
 
-    ; [''solute.f'
+    ; [''solute.f90'', ''readswap.f90'']'
   remedy: 'Divide mg/L values by 1000 to get mg/cm³; None; [''Check CPRE, CDRAIN, CIRRS values in .swp'',
     ''If values > 1.0, likely in mg/L — divide by 1000'', ''Typical CPRE for rainfall: 0.001-0.01 mg/cm³''];
     Configuration validation checks concentration ranges'
@@ -657,14 +688,17 @@ known_issues:
 - id: dt_018
   symptom: run_swap.py reports '[FAIL] SWAP exited with code 100' even though stdout says 'Swap normal
     completion!', swap.ok is written and result.blc/.inc/.vap are complete.
-  diagnosis: SWAP 4.2.0's main program ends with `Call Exit(100)` — exit code 100 IS normal completion,
-    not an error.; src/swap_main.f90 (line ~72) ends with `Call Exit(100)` after writing 'Swap normal
-    completion!'. Any wrapper that tests `returncode != 0` declares every successful run a failure and
-    skips output
-  remedy: Treat rc 0 or 100 AND ' Swap normal completion!' on stdout as success (a fatal input error also
-    exits 0; a *.ok file is not proof, an old swap.ok survives a failed run); tools/run_swap.py
-    (swap_run_succeeded(); fixed 2026-08-11, tightened 2026-10-04); ['Never gate SWAP success on the exit
-    code alone, and never on a *.ok file']; run_swap.swap_run_succeeded() encodes this
+  diagnosis: 'SWAP 4.2.0''s main program ends with `Call Exit(100)` — exit code 100 IS normal completion,
+    not an error.; src/swap_main.f90 (line ~72) ends with `Call Exit(100)` after writing ''Swap normal
+    completion!''. Any wrapper that tests `returncode != 0` declares every successful run a failure and
+    skips output validation. Check: tests/cases/1.hupselbrook shows this.
+
+    ; [''swap_main.f90'', ''tools/run_swap.py'']'
+  remedy: Treat rc 0 or 100 AND ' Swap normal completion!' on stdout as success. A fatal input error also
+    exits 0; a *.ok file is not proof (an old swap.ok survives a failed run).; tools/run_swap.py (swap_run_succeeded();
+    fixed 2026-08-11, tightened 2026-10-04); ['Never gate SWAP success on the exit code alone, and never
+    on a *.ok file; require the normal-completion line and the .blc/.inc outputs']; run_swap.swap_run_succeeded()
+    encodes this
   severity: fatal
 - id: dt_019
   symptom: Parsed .inc CSV is numerically garbage (fields shifted one column, values carrying trailing
@@ -672,11 +706,15 @@ known_issues:
   diagnosis: 'SWAP .inc/.vap are COMMA-separated (blank-padded) and written in latin-1; the .blc labels
     are ''Gross Rainfall''/''Plant Transpiration'' in a two-column INPUT|OUTPUT table, not ''Rain + snow
     :'' key-value lines.; Splitting .inc/.vap data rows on whitespace shifts every field by one. The .vap
-    units header '
+    units header contains ''ºC'' (0xBA) so a UTF-8 open crashes. parse_blc''s pre-2026-08-11 patterns
+    ("Water balance components", "Rain + snow :") appear nowhere in SWAP 4.2.0 output, so it silently
+    returned [] for every run.
+
+    ; [''tools/parse_swap_output.py'', ''swapoutput.f90'']'
   remedy: 'Split .inc/.vap on '','', open SWAP output with encoding=''latin-1'', parse .blc as the two-column
     table.; tools/parse_swap_output.py (fixed 2026-08-11); [''Sanity check: water_balance.csv must have
     one row per balance period'', ''Check balance_deviation_cm ~ 0 for every period'']; parse_swap_output
-    writes '
+    writes water_balance.csv + soil_profiles.csv'
   severity: silent
 - id: dt_020
   symptom: .met file written from CMFD is all-NaN, or the MSWX run prints 'MSWX reader not yet implemented,
@@ -685,28 +723,44 @@ known_issues:
   diagnosis: 'convert_forcing_to_swap.py had a hand-rolled NetCDF reader that never assigned what it read
     into its result dict, and an MSWX path that silently substituted generate_synthetic_met().; All-NaN
     columns pass every np.nanmax() range check, so the run proceeds on empty forcing. SKILL.md already
-    mandates '
+    mandates ki_tools_common.load_forcing; the tool now calls it for cmfd / mswx / nasa_power / gswp3
+    and FAILS on any NaN column. ''synthetic'' is an explicit, loudly-warned choice.
+
+    ; [''tools/convert_forcing_to_swap.py'']'
   remedy: Use --source nasa_power|mswx|cmfd|gswp3; never accept a synthetic fallback in a scored run.;
     tools/convert_forcing_to_swap.py (fixed 2026-08-11); ['Check July Rad ~ 20000-30000 kJ/m2/d and Hum
     ~ 1-3 kPa in the .met']; validate_outputs() now errors on any NaN in rad/tmin/tmax/hum/wind/rain
   severity: fatal
 - id: dt_021
   symptom: 'HISTORICAL (fixed): convert_soil_to_swap.py printed ''WARNING: No texture data, defaulting
-    to loam'' for every site even with a valid --hwsd. The current tool has no loam default.'
-  diagnosis: 'Old read_hwsd_at_point() never joined HWSD_DATA. Now (checked 2026-10-05) it reads the raster
-    and HWSD_DATA.csv itself (not lookup_hwsd): dominant component (max SHARE, min SEQ), T_/S_ texture
-    classes, BDENS = REF_BULK_DENSITY x 1000 mg/cm3. Missing map unit, texture, density or CRS stops the
-    tool. --hwsd plus any manual texture option is refused since 2026-10-05.'
-  remedy: 'Use --hwsd auto --hwsd-crs EPSG:4326 alone (the server hwsd.bil has no CRS), or manual texture
-    alone; check <output>.summary.json (source, mu_id, bulk_density).'
+    to loam'' for EVERY site even when --hwsd pointed at a valid hwsd.bil. The current tool has no loam
+    default and never prints that line; if you see it, the soil file was made by an old copy of the tool.'
+  diagnosis: 'Old read_hwsd_at_point() read MU_GLOBAL and then `return None` -- the HWSD attribute join
+    was never implemented, so --hwsd had no effect and every site got loam.; What the tool does now (checked
+    2026-10-05): read_hwsd_at_point() reads the raster and HWSD_DATA.csv itself (it does not call ki_tools_common.soil_utils.lookup_hwsd).
+    It takes the dominant component (max SHARE, then min SEQ), classifies T_ and S_ sand/silt/clay with
+    the USDA triangle and uses T_/S_REF_BULK_DENSITY x 1000 as BDENS (mg/cm3). A missing map unit, texture,
+    bulk density or CRS raises an error and the tool stops; nothing is defaulted. The server hwsd.bil
+    has no CRS, so --hwsd auto needs --hwsd-crs EPSG:4326. Since 2026-10-05 --hwsd together with --texture/--sand/--silt/--clay/--subsoil-texture
+    is refused (before, a failed HWSD read fell back to the manual texture with only a stderr warning
+    and the summary did not record it).
+
+    ; [''tools/convert_soil_to_swap.py'']'
+  remedy: 'Rebuild the soil table with the current tool: either --hwsd auto --hwsd-crs EPSG:4326 alone,
+    or manual texture alone. Check <output>.summary.json: source, mu_id, texture classes and bulk_density
+    (''HWSD horizon values'' or ''texture-class estimates'').; tools/convert_soil_to_swap.py; [''Open
+    <output>.summary.json and confirm source/mu_id match the intended soil source'']; The tool stops on
+    any missing HWSD value; there is no default soil.'
   severity: silent
 - id: dt_022
   symptom: SWAP aborts in rdinit_/rddata_ with 'Inconsistent variable type' pointing at the first row
     of the crop rotation (or any other) table.
-  diagnosis: The table's COLUMN-NAME line was deleted (or reordered) when the table body was replaced
-    — SWAP's ttutil rddata reads tables by their header names.; A `^\s*CROPSTART...` regex matches the
+  diagnosis: 'The table''s COLUMN-NAME line was deleted (or reordered) when the table body was replaced
+    — SWAP''s ttutil rddata reads tables by their header names.; A `^\s*CROPSTART...` regex matches the
     newline ENDING the previous line, so a line-index computed from it points one line too early and eats
-    the header
+    the header. Use `^[ \t]*` when locating a table header.
+
+    ; [''tools/assemble_swap_config.py'', ''rddata.for'']'
   remedy: Keep the header line; only replace rows between it and '* End of table'.; tools/assemble_swap_config.py
     (added 2026-08-11); ['Compare the assembled .swp table block against the base file']; assemble_swap_config.check_config()
     re-validates crop dates, MvG ranges and file-name case
@@ -715,10 +769,13 @@ known_issues:
   symptom: 'Irrigated site: SWAP applies 500-850 mm/yr of scheduled irrigation and simulated ET is ~50%
     above eddy-covariance ET.'
   diagnosis: 'SCHEDULE=1 with the shipped Hupselbrook maizes.crp defaults (TCS=1, TREL=0.95) irrigates
-    whenever Tact/Tpot drops below 0.95 — near-zero water stress all season.; Verified 2026-08-11 at FLUXNET
-    US-Ne1 (irrigated maize, Mead NE): uncalibrated daily ET vs LE_F_MDS gave r=0.76, PBIAS +48%; against
-    the '
-  remedy: 'For a real irrigated field prefer prescribed events (SWIRFIX=1) from the site record; if scheduling,
+    whenever Tact/Tpot drops below 0.95 — near-zero water stress all season.; Against FLUXNET LE_F_MDS
+    a large part of such an ET excess can be the energy-balance closure gap; compare against the energy-balance-corrected
+    LE_CORR too. The rest is over-irrigation. Real US-Ne1 pivot application is ~200-300 mm/yr.
+
+    ; [''maizes.crp'', ''irrigation.f90'']'
+  remedy: For a real irrigated field prefer prescribed events (SWIRFIX=1) from the site record; if scheduling,
     relax TREL (~0.7-0.8) or use TCS=2/TCS=4 with a site depletion threshold.; tools/assemble_swap_config.py
-    --irrigation DATE,DEPTH,CONC,TYPE; [''Compare annual irrigation_cm in parsed/water_balance.csv '
+    --irrigation DATE,DEPTH,CONC,TYPE; ['Compare annual irrigation_cm in parsed/water_balance.csv against
+    the site record']; Report annual irrigation totals alongside ET
   severity: calibration

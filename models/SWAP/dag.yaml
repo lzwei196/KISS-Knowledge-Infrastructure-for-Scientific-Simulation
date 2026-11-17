@@ -44,7 +44,7 @@ inputs:
     - {category: forcing, name: "Wind", unit: "m/s", source_kind: forcing, model_input_format: ".met column", notes: "Wind speed at the ALTW measurement height."}
     - {category: forcing, name: "Rain", unit: "mm/d", source_kind: forcing, model_input_format: ".met column", notes: "Daily precipitation; optional sub-daily rainfall intensities for runoff/macropore studies."}
     - {category: forcing, name: "ETref", unit: "mm/d", source_kind: forcing, model_input_format: ".met column", notes: "Reference ET, used only when SWETR=1 (otherwise ET computed internally by Penman-Monteith)."}
-    - {category: forcing, name: "Wet", unit: "fraction", source_kind: forcing, model_input_format: ".met column", notes: "Wet duration fraction of day."}
+    - {category: forcing, name: "Wet", unit: "fraction", source_kind: forcing, model_input_format: ".met column", notes: "Wet duration fraction of day. Read only with SWRAIN=2. convert_forcing_to_swap writes 0 (no source gives rain duration), so use SWRAIN 0 with its single .met file; SWRAIN 1 or 3 (and SWMETDETAIL 1) make SWAP drop .met and read yearly <METFIL>.YYY files, which this converter does not write."}
   parameters:
     - {category: soil_hydraulic, name: "ORES (theta_r)", unit: "cm3/cm3", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Residual water content; must be strictly < OSAT."}
     - {category: soil_hydraulic, name: "OSAT (theta_s)", unit: "cm3/cm3", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Saturated water content (typ 0.35-0.55)."}

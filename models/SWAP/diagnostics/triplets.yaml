@@ -447,7 +447,7 @@
   severity: silent
   cross_references: []
 
-# --- Added 2026-08-11 from the US-Ne1 real-case run (all VERIFIED on disk) ---
+# --- Findings from a real-case run (where and when: each entry's seen_at) ---
 
 - id: dt_018
   stage: s4_execution
@@ -462,7 +462,7 @@
       src/swap_main.f90 (line ~72) ends with `Call Exit(100)` after writing
       'Swap normal completion!'. Any wrapper that tests `returncode != 0`
       declares every successful run a failure and skips output validation.
-      Verified 2026-08-11 on tests/cases/1.hupselbrook.
+      Check: tests/cases/1.hupselbrook shows this.
     affected_components: [swap_main.f90, tools/run_swap.py]
   remedy:
     action: "Treat rc 0 or 100 AND ' Swap normal completion!' on stdout as success. A fatal input error also exits 0; a *.ok file is not proof (an old swap.ok survives a failed run)."
@@ -472,6 +472,7 @@
     prevention: "run_swap.swap_run_succeeded() encodes this"
   severity: fatal
   cross_references: []
+  seen_at: "2026-08-11, US-Ne1; 2026-08-11, test case 1.hupselbrook"
 
 - id: dt_019
   stage: s5_output_parsing
@@ -498,6 +499,7 @@
     prevention: "parse_swap_output writes water_balance.csv + soil_profiles.csv"
   severity: silent
   cross_references: [dt_017]
+  seen_at: "2026-08-11, US-Ne1"
 
 - id: dt_020
   stage: s1_met_forcing
@@ -522,6 +524,7 @@
     prevention: "validate_outputs() now errors on any NaN in rad/tmin/tmax/hum/wind/rain"
   severity: fatal
   cross_references: [dt_001, dt_002, dt_004]
+  seen_at: "2026-08-11, US-Ne1"
 
 - id: dt_021
   stage: s2_soil_parameters
@@ -553,6 +556,7 @@
     prevention: "The tool stops on any missing HWSD value; there is no default soil."
   severity: silent
   cross_references: [dt_011]
+  seen_at: "2026-08-11, US-Ne1"
 
 - id: dt_022
   stage: s3_config_assembly
@@ -576,6 +580,7 @@
     prevention: "assemble_swap_config.check_config() re-validates crop dates, MvG ranges and file-name case"
   severity: fatal
   cross_references: [dt_006, dt_013]
+  seen_at: "2026-08-11, US-Ne1"
 
 - id: dt_023
   stage: s3_config_assembly
@@ -587,11 +592,10 @@
   diagnosis:
     root_cause: "SCHEDULE=1 with the shipped Hupselbrook maizes.crp defaults (TCS=1, TREL=0.95) irrigates whenever Tact/Tpot drops below 0.95 — near-zero water stress all season."
     explanation: >
-      Verified 2026-08-11 at FLUXNET US-Ne1 (irrigated maize, Mead NE):
-      uncalibrated daily ET vs LE_F_MDS gave r=0.76, PBIAS +48%; against the
-      energy-balance-corrected LE_CORR, PBIAS +17.6%, KGE 0.36 — i.e. ~30 of
-      the 48 points are the FLUXNET closure gap, the rest is over-irrigation.
-      Real US-Ne1 pivot application is ~200-300 mm/yr.
+      Against FLUXNET LE_F_MDS a large part of such an ET excess can be the
+      energy-balance closure gap; compare against the energy-balance-corrected
+      LE_CORR too. The rest is over-irrigation. Real US-Ne1 pivot application
+      is ~200-300 mm/yr.
     affected_components: [maizes.crp, irrigation.f90]
   remedy:
     action: "For a real irrigated field prefer prescribed events (SWIRFIX=1) from the site record; if scheduling, relax TREL (~0.7-0.8) or use TCS=2/TCS=4 with a site depletion threshold."
@@ -601,3 +605,4 @@
     prevention: "Report annual irrigation totals alongside ET"
   severity: calibration
   cross_references: [dt_008]
+  seen_at: "2026-08-11, US-Ne1 (Mead NE)"

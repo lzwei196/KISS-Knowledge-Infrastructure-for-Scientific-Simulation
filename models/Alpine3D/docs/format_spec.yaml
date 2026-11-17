@@ -377,11 +377,18 @@ known_issues:
     in SMET files to be in Kelvin. A value of 20 (°C) is interpreted as 20 K (-253°C), far below the T_CRAZY_MIN
     threshold (default 210 K).
 
-    ; MeteoIO reads raw values from SMET fields and passes them directly t'
+    ; MeteoIO reads raw values from SMET fields and passes them directly to SNOWPACK. The min_max filter
+    on TA (default range 240–320 K) will flag Celsius values as nodata, leaving gaps that crash the interpolation
+    or energy balance.
+
+    ; [''convert_forcing_to_smet.py'', ''io.ini [Filters] section'']'
   remedy: 'Add 273.15 to all temperature values before writing SMET files; convert_forcing_to_smet; [''Open
     the SMET file and check TA values: they should be 230–320 range'', ''If values are -40 to +40, they
     are in Celsius — add 273.15'', ''Also check TSS, TSG fields if present'']; In convert_forcing_to_smet.py,
-    val'
+    validate that mean(TA) > 200 before writing. Add assertion: assert ta_values.mean() > 200, "TA appears
+    to be in Celsius"
+
+    '
   severity: silent
 - id: dt_002
   symptom: 'Entire domain shows 100% relative humidity. Snowfall occurs every timestep even when observations
@@ -392,7 +399,10 @@ known_issues:
     min_max filter clips values to max=1.0, so all values above 1 become 1.0 (saturated atmosphere).
 
     ; With RH=1.0 everywhere, the dewpoint equals air temperature. The precipitation phase algorithm sees
-    constant satu'
+    constant saturation and generates precipitation at every timestep where temperature is below the rain/snow
+    threshold.
+
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Divide RH values by 100 if they are in percent range; convert_forcing_to_smet; [''Check SMET
     file: RH values should be 0.0–1.0'', ''If values are 30–100, divide by 100'']; Add check: if rh_values.max()
     > 1.5, assume percent and divide by 100.
@@ -410,7 +420,7 @@ known_issues:
     ; The VW filter range (default 0.2–50 m/s) will pass most km/h values but the physics will compute
     vastly excessive sensible heat flux and snow erosion.
 
-    ; [''convert_forcing'
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Divide wind speed by 3.6 to convert km/h to m/s; convert_forcing_to_smet; [''Check VW values:
     typical mountain values are 0–15 m/s'', ''If values are frequently >20, they may be in km/h'']; Validate:
     assert vw_values.quantile(0.99) < 30, "VW may be in km/h"
@@ -426,7 +436,10 @@ known_issues:
     convention: 0=N, 90=E, 180=S, 270=W.
 
     ; All DW values in radians (0–2π ≈ 0–6.28) fall in the 0–6.28° range, meaning the model sees nearly
-    all wind coming from the North. The Liston wind interpolation algorithm'
+    all wind coming from the North. The Liston wind interpolation algorithm adjusts for terrain, but with
+    wrong input directions the corrections are meaningless.
+
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Convert radians to degrees: DW_deg = DW_rad * 180 / π; convert_forcing_to_smet; [''Check DW
     values: should span 0–360'', ''If max(DW) < 7, values are likely in radians'']; Add check: if dw_values.max()
     < 10, assume radians and convert.
@@ -442,7 +455,9 @@ known_issues:
     is correct, but 1 mm input as 1.0 m gives 1000x excess.
 
     ; SMET PSUM field is in kg/m² which equals mm water equivalent. Some reanalysis datasets (e.g., ERA5)
-    provide precipitation in meters. The factor-1000 er'
+    provide precipitation in meters. The factor-1000 error causes extreme snow accumulation.
+
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Multiply by 1000 if precipitation is in meters (m → mm); convert_forcing_to_smet; [''Check
     PSUM values: hourly values should typically be 0–10 mm'', ''If values are 0–0.01, they are likely
     in meters'']; Validate: warn if max(PSUM) < 0.1 over a month (likely in meters).
@@ -478,7 +493,7 @@ known_issues:
     ; With ISWR=25 W/m² (instead of 290), the energy balance receives only 8.6% of the actual solar forcing.
     Snow melt is severely underestimated.
 
-    ; [''convert_forcing_to_sme'
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Convert MJ/m²/day to W/m²: multiply by 1e6/86400 = 11.574; convert_forcing_to_smet; [''Check
     ISWR values: peak summer values should be 800–1200 W/m²'', ''If peak values are 20–35, they are in
     MJ/m²/day'']; Validate: assert iswr_values.max() > 100, "ISWR appears to be in MJ/m²/day"
@@ -494,7 +509,10 @@ known_issues:
     = ~26 MJ/m²/day.
 
     ; With ILWR=26 W/m² instead of 300, the atmosphere appears almost transparent to longwave radiation.
-    The ALLSKY_LW generator may replace these values if configured, masking the error for ILWR'
+    The ALLSKY_LW generator may replace these values if configured, masking the error for ILWR but not
+    for stations with measurements.
+
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Convert MJ/m²/day to W/m²: multiply by 1e6/86400 = 11.574; convert_forcing_to_smet; [''Check
     ILWR values: should be 150–400 W/m²'', ''If values are 10–35, they are in MJ/m²/day'']; Validate:
     assert ilwr_values.mean() > 100, "ILWR appears to be in MJ/m²/day"
@@ -512,7 +530,7 @@ known_issues:
     ; HS in SMET is in meters. This field is used both for validation and, when ENFORCE_MEASURED_SNOW_HEIGHTS=TRUE,
     to force the snow depth, making errors catastrophic.
 
-    ; [''convert_forcing_t'
+    ; [''convert_forcing_to_smet.py'']'
   remedy: 'Divide HS values by 100 to convert cm to m; convert_forcing_to_smet; [''Check HS values: typical
     values are 0–5 m'', ''If values are 0–500, they are in cm'']; Validate: assert hs_values.max() < 20,
     "HS appears to be in cm"
@@ -528,7 +546,10 @@ known_issues:
     mm (÷1000), or feet (×0.3048).
 
     ; Each layer''s thickness (hl field) in the .sno file must be in meters. The sum of all layer thicknesses
-    must equal the total column height. Wrong thickness causes element co'
+    must equal the total column height. Wrong thickness causes element count explosion or impossibly thin
+    elements that trigger the MINIMUM_L_ELEMENT check.
+
+    ; [''generate_sno_files.py'']'
   remedy: 'Ensure all Layer_Thick values are in meters; generate_sno_files; [''Check .sno file: Layer_Thick
     for soil should be 0.1–2.0 m'', ''Sum of thicknesses should equal total column height'']; Assert:
     0.01 < layer_thick < 10.0 for each layer.
@@ -544,7 +565,9 @@ known_issues:
     unrealistic snow microstructure.
 
     ; Typical fresh snow grain radius is 0.1–0.3 mm, old snow 0.5–2.0 mm. Values in µm (100–300) are 1000x
-    too large in mm scale, causing the albedo model to predict extremely low al'
+    too large in mm scale, causing the albedo model to predict extremely low albedo (dark snow).
+
+    ; [''generate_sno_files.py'']'
   remedy: 'Ensure rg is in mm. Convert µm: ÷1000. Convert m: ×1000; generate_sno_files; [''Check rg values:
     should be 0.1–5.0 mm for snow'', ''If values are 100–5000, they are in µm'']; Assert: 0.05 < rg <
     10.0 for each layer.
@@ -560,7 +583,10 @@ known_issues:
     density: 1.5–2.7 g/cm³ = 1500–2700 kg/m³.
 
     ; With density 1.8 kg/m³ (instead of 1800), the soil has essentially no thermal mass and heats/cools
-    instantly with air temperature. Permafrost simulations will show n'
+    instantly with air temperature. Permafrost simulations will show no permafrost. Soil temperature has
+    no seasonal lag.
+
+    ; [''generate_sno_files.py'']'
   remedy: 'Multiply soil density by 1000 to convert g/cm³ to kg/m³; generate_sno_files; [''Check Rho_S
     values: should be 1000–2700 kg/m³'', ''If values are 1.0–2.7, they are in g/cm³'']; Assert: rho_s
     > 500 for soil layers.
@@ -593,7 +619,10 @@ known_issues:
     0.1–5 mm = 0.0001–0.005 m.
 
     ; With ROUGHNESS_LENGTH=2.0 (mm entered as m), the surface roughness is 1000x too large. The Monin-Obukhov
-    turbulent flux parameterization scales with ln(z/z0), so excessive ro'
+    turbulent flux parameterization scales with ln(z/z0), so excessive roughness dramatically increases
+    exchange coefficients.
+
+    ; [''io.ini [Snowpack] section'']'
   remedy: 'Divide by 1000: ROUGHNESS_LENGTH = 0.002 (not 2.0); None; [''Check ROUGHNESS_LENGTH: should
     be 0.0001–0.01 m'', ''If value is 0.1–10, it may be in mm or cm'']; Validate in run_alpine3d.py: warn
     if ROUGHNESS_LENGTH > 0.05
@@ -609,12 +638,19 @@ known_issues:
     the accumulation period is shorter than the timestep, precipitation is undercounted. If longer, it
     may be double-counted.
 
-    ; The ACCUMULATE resampler sums precipitation over the specified period. If CALCULATION_ST'
+    ; The ACCUMULATE resampler sums precipitation over the specified period. If CALCULATION_STEP_LENGTH=15
+    min, then PSUM::ARG1::PERIOD should be 900 s. Setting PERIOD=1800 with a 15-min timestep means each
+    timestep gets 30 min of accumulated precip, doubling the input.
+
+    ; [''io.ini [Interpolations1D] and [Snowpack] sections'']'
   remedy: 'Ensure PSUM::ARG1::PERIOD (seconds) = CALCULATION_STEP_LENGTH (minutes) × 60. Example: 15 min
     timestep → PERIOD = 900
 
     ; None; [''Check CALCULATION_STEP_LENGTH in [Snowpack] (in minutes)'', ''Check PSUM::ARG1::PERIOD
-    in [Interpolations1D] (in seconds)'', ''Verify: PERIOD = STEP × 60'']; Validate in run_alp'
+    in [Interpolations1D] (in seconds)'', ''Verify: PERIOD = STEP × 60'']; Validate in run_alpine3d.py:
+    assert period == step_length * 60
+
+    '
   severity: degraded
 - id: dt_016
   symptom: 'Alpine3D runs but produces incorrect spatial patterns. Each grid cell behaves as if it were
@@ -625,7 +661,10 @@ known_issues:
     (it defaults to FALSE for standalone SNOWPACK).
 
     ; When ALPINE3D=FALSE, SNOWPACK operates in point mode even though Alpine3D is calling it. The distributed
-    forcing and terrain effects are not properly communi'
+    forcing and terrain effects are not properly communicated to the snow model. Results will be physically
+    incorrect.
+
+    ; [''io.ini [SnowpackAdvanced] section'']'
   remedy: 'Set ALPINE3D = TRUE in [SnowpackAdvanced]; None; [''Open io.ini'', ''Find [SnowpackAdvanced]
     section'', ''Set ALPINE3D = TRUE'']; run_alpine3d.py validates this automatically before execution.
 
@@ -640,7 +679,10 @@ known_issues:
     (xllcorner, yllcorner, cellsize). Alpine3D reads both grids and indexes them by row/column, so a mismatch
     causes out-of-bounds access.
 
-    ; Both the DEM (.dem) and land-use (.lus) files must be ARC ASCII grids w'
+    ; Both the DEM (.dem) and land-use (.lus) files must be ARC ASCII grids with identical headers. Even
+    a 1-cell difference causes undefined behavior.
+
+    ; [''DEM and land-use grid files'']'
   remedy: 'Ensure DEM and land-use grids have identical ARC headers; None; [''Compare headers of .dem
     and .lus files'', ''ncols, nrows, xllcorner, yllcorner, cellsize must be identical'', ''Regenerate
     land-use grid from DEM extent if needed'']; run_alpine3d.py compares grid headers before execution.
@@ -656,10 +698,16 @@ known_issues:
     DEM is in UTM but COORDSYS=CH1903, or DEM is in WGS84 but COORDSYS=UTM.
 
     ; MeteoIO uses COORDSYS to convert between station coordinates and grid coordinates. If the coordinate
-    system is wrong, stations are placed '
+    system is wrong, stations are placed at incorrect grid cells and elevations, making all spatial interpolation
+    incorrect.
+
+    ; [''io.ini [Input] COORDSYS'', ''DEM file coordinate system'']'
   remedy: 'Verify COORDSYS matches the DEM''s actual coordinate system; None; [''Check DEM xllcorner/yllcorner
     values'', ''If values are ~46/~9 (lat/lon), use COORDSYS=WGS84 or LATLON'', ''If values are ~600000/~200000,
-    likely CH1903'', ''If values are ~500000/~5000000, likely UTM'']; run_alpine3d.py checks coordinate '
+    likely CH1903'', ''If values are ~500000/~5000000, likely UTM'']; run_alpine3d.py checks coordinate
+    ranges against COORDSYS.
+
+    '
   severity: silent
 - id: dt_019
   symptom: 'MeteoIO refuses the SMET file at startup with "Inconsistent geographic coordinates ... Latitude/longitude
@@ -671,26 +719,37 @@ known_issues:
     (e.g. "12T" for 40-48 N, "12S" for 32-40 N). MeteoIO expects MGRS-style band letters; "N" is rejected
     for sites in band T.
 
-    ; MeteoIO''s Coords class interprets the second character of COORDPARAM as an MGRS band'
+    ; MeteoIO''s Coords class interprets the second character of COORDPARAM as an MGRS band letter, not
+    as a hemisphere flag. Common mistake when converting CH1903 examples (which need no zone) to UTM.
+
+    ; [''io.ini [INPUT]/[OUTPUT] COORDPARAM'', ''SMET station header epsg vs lat/lon mismatch'']'
   remedy: 'Use MGRS band letter, e.g. 12T for 40-48 N, 11T for Idaho/Utah, 10T for WA/OR; None; [''Identify
     latitude band: <32 R, 32-40 S, 40-48 T, 48-56 U'', ''Set COORDPARAM=<zone><band> in BOTH [INPUT] and
     [OUTPUT]'', "Confirm SMET ''easting''/''northing'' match lat/lon under same EPSG"]; build_site.py
-    computes ban'
+    computes band automatically from latitude.
+
+    '
   severity: blocking
 - id: dt_020
-  symptom: Sim SWE is plausible-looking (right timing, r ~ 0.7) but PBIAS is strongly negative (around
+  symptom: 'Sim SWE is plausible-looking (right timing, r ~ 0.7) but PBIAS is strongly negative (around
     -70%) — the model produces only a fraction of the snow water observed at the SNOTEL pillow. Annual
-    sum of "observed" precip is often less than the pillow's peak SWE for that year, which is physically
-    impossib
+    sum of "observed" precip is often less than the pillow''s peak SWE for that year, which is physically
+    impossible without correction.
+
+    '
   diagnosis: 'Gauge undercatch on solid precipitation. NRCS SNOTEL precipitation gauges underreport snowfall
     by 20-60% in wind. Without correction, the model receives less water than actually fell.
 
     ; Hellmann-shielded gauge catch ratio for snow is approximately exp(-0.056 * VW) where VW is wind
-    speed. At VW=2 m/s'
+    speed. At VW=2 m/s correction is ~+12%; at VW=5 m/s it is ~+33%.
+
+    ; [''io.ini [FILTERS] PSUM filter chain'']'
   remedy: 'Enable PSUM::filter::undercatch_wmo with type=Hellmannsh; None; [''Append to io.ini [FILTERS]:
     PSUM::filterN = undercatch_wmo'', ''                            PSUM::argN::type = Hellmannsh'', ''Ensure
     VW field exists in SMET (use cosine seasonal cycle if no obs)'']; Stillberg''s reference io.ini already
-    en'
+    enables this; do not drop it when adapting to new sites.
+
+    '
   severity: silent
 - id: dt_021
   symptom: 'Run aborts mid-simulation with "Not enough input meteo data on YYYY-MM-DDTHH:MM:SS" and a
@@ -702,11 +761,17 @@ known_issues:
     at any time step. Even a single NaN TA value in the SMET causes failure once the model reaches that
     timestamp.
 
-    ; The interpolators require at least one valid value across the station set. A SMET row with TA=-9'
+    ; The interpolators require at least one valid value across the station set. A SMET row with TA=-999
+    and no other station means no value exists for the algorithm.
+
+    '
   remedy: 'Linearly interpolate short TA gaps (limit ~7 days) before writing SMET; convert_forcing_to_smet;
     ["df[''TA''] = df[''TA''].interpolate(limit=7, limit_direction=''both'')", ''For PSUM accumulator
     gaps: ffill().bfill() then diff()'', ''Drop sites where the longest NaN run exceeds ~30 days (sensor
-    dead)'']; buil'
+    dead)'']; build_site.py performs limit=7 day TA interpolation and prints the number of filled NaN
+    values; sites with 1000+ NaN are clearly unusable (Brooklyn Lake WY 367 had a 1136-day run of NaN).
+
+    '
   severity: blocking
 - id: dt_022
   symptom: 'Sim SWE is collapsed near zero across all winters even though TA and PSUM look reasonable.
@@ -717,35 +782,82 @@ known_issues:
     what MeteoIO''s own generators would have produced. Common upstream mistakes: clear-sky-only ILWR
     (too low), latitude/DOY ISWR (no cloud effect), constant RH (breaks Unsworth ILWR closure).
 
-    ; MeteoIO ships robus'
-  remedy: Do NOT supply ISWR/ILWR in the SMET; let MeteoIO generators fill them; None; ["Remove ISWR and
-    ILWR columns from SMET 'fields ='", 'Add to io.ini [GENERATORS]:', '  ISWR::generator1 = CLEARSKY_SW',
-    '  ILWR::generator1 = ALLSKY_LW', '  ILWR::arg1::type = Unsworth', '  ILWR::generator2 = CLEARSKY_LW',
+    ; MeteoIO ships robust radiation generators (CLEARSKY_SW, ALLSKY_LW Unsworth, CLEARSKY_LW Dilley)
+    that use solar position + TA + RH to produce physically consistent values. Replacing them with hand-rolled
+    formulas typically lowers the surface energy budget enough to delay melt and suppress accumulation.
+
+    '
+  remedy: 'Do NOT supply ISWR/ILWR in the SMET; let MeteoIO generators fill them; None; ["Remove ISWR
+    and ILWR columns from SMET ''fields =''", ''Add to io.ini [GENERATORS]:'', ''  ISWR::generator1 =
+    CLEARSKY_SW'', ''  ILWR::generator1 = ALLSKY_LW'', ''  ILWR::arg1::type = Unsworth'', ''  ILWR::generator2
+    = CLEARSKY_LW'', ''  ILWR::arg2::type = Dilley'']; build_site.py omits ISWR/ILWR from the SMET fields
+    by design.
+
+    '
   severity: silent
 - id: dt_023
   symptom: 'At a deep MARITIME snow site (e.g. Paradise WA, Mt Rainier) the simulated SWE has decent timing
     (r ~ 0.6) but two compounding errors: (1) accumulation reaches only ~40% of the observed pillow, and
     (2) the pack peaks in Jan-Mar and melts out months early, so the Apr-Jun sim/obs SWE ratio collapses
-    to'
-  diagnosis: Two independent maritime failure modes stack. First, the SNOTEL gauge undercatch is far larger
-    than the wind-only undercatch_wmo correction can recover (gauge ~1660 mm/yr cannot build a 2.3 m SWE
-    pillow; true precip incl. orographic enhancement is ~3000+ mm/yr). Second, the single-station forcing
-    fa
+    to <0.10, so net SWE is far too low. dt_020''s undercatch_wmo filter alone does NOT fix it.
+
+    '
+  diagnosis: 'Two independent maritime failure modes stack. First, the SNOTEL gauge undercatch is far
+    larger than the wind-only undercatch_wmo correction can recover (gauge ~1660 mm/yr cannot build a
+    2.3 m SWE pillow; true precip incl. orographic enhancement is ~3000+ mm/yr). Second, the single-station
+    forcing fabricates a +/-6 K diurnal TA cycle and uses a high ROUGHNESS_LENGTH (0.01 m); together these
+    drive excessive turbulent melt energy, so a warm maritime pack ablates far too fast.
+
+    ; Continental sites tolerate the defaults because the pack is cold and melt is radiation-limited.
+    Maritime packs are near-isothermal and turbulent-flux-limited, so roughness and the synthetic diurnal
+    amplitude dominate the melt rate.
+
+    ; [''SMET PSUM magnitude (gauge undercatch)'', ''SMET TA diurnal disaggregation amplitude'', ''io.ini
+    [SNOWPACK] ROUGHNESS_LENGTH'', ''io.ini [Interpolations2D] PSUM_PH snow threshold'']'
   remedy: 'Maritime mode: multiplicative precip correction + suppress turbulent melt; convert_forcing_to_smet.py
     --precip-undercatch-factor 1.9; [''Multiply PSUM by ~1.9 (convert_forcing_to_smet.py --precip-undercatch-factor),'',
-    ''  OR set precip_factor in build_site.py SITES[...] for SNOTEL disaggregation.'', ''D'
+    ''  OR set precip_factor in build_site.py SITES[...] for SNOTEL disaggregation.'', ''Damp synthetic
+    diurnal TA amplitude from 6 K to ~2.5 K (diurnal_amp).'', ''Lower ROUGHNESS_LENGTH from 0.01 to ~0.003
+    m to cut turbulent melt.'', ''Raise PSUM_PH snow threshold from 274.35 to ~275.35 K so more wet'',
+    ''  precip is treated as snow.'']; build_site.py now carries per-site maritime overrides (precip_factor,
+    diurnal_amp, roughness, snow_thresh_K) on Paradise_WA. Continental sites keep factor=1.0 / amp=6 /
+    roughness=0.01 defaults.
+
+    '
   severity: silent
 - id: dt_024
-  symptom: Simulated SWE has GOOD timing (r 0.7-0.85) but is systematically 40-60% too low at EVERY SNOTEL
-    site, continental and maritime alike, and NSE stalls around 0.31-0.39 no matter what is tuned. The
-    forcing SMET's annual PSUM total is roughly HALF the site's known annual precipitation, and often
-    less th
-  diagnosis: The NRCS SNOTEL daily export column "Precipitation Accumulation (in) Start of Day Values"
+  symptom: 'Simulated SWE has GOOD timing (r 0.7-0.85) but is systematically 40-60% too low at EVERY SNOTEL
+    site, continental and maritime alike, and NSE stays low no matter what is tuned. The forcing SMET''s
+    annual PSUM total is roughly HALF the site''s known annual precipitation, and often less than the
+    observed peak SWE.
+
+    '
+  diagnosis: 'The NRCS SNOTEL daily export column "Precipitation Accumulation (in) Start of Day Values"
     is the DAILY INCREMENT in inches, NOT a water-year cumulative, despite its name. Applying .diff().clip(lower=0)
-    to it (as t3_runs/build_site.py build_snotel_forcing did) keeps only the day-over-day INCREASES of
-  remedy: Use the SNOTEL precipitation column AS IS (daily increment); convert in -> mm; convert_forcing_to_smet.py
-    --precip-unit in --daily-disaggregate; ["Do NOT .diff() the 'Precipitation Accumulation ... Start
-    of Day Values' column.", 'Pass it straight through as the daily total, declaring --precip-unit i
+    to it keeps only the day-over-day INCREASES of an already-incremental series and silently discards
+    ~44% of the precipitation.
+
+    ; In a SNOTEL export the raw column sums to a plausible annual precipitation, while the differenced
+    series loses roughly 40-55% of it; the largest single value over years is a few inches (a water-year
+    cumulative would reach tens of inches), and many day-to-day steps are negative. Because the loss is
+    a near-constant fraction, TIMING survives (r stays high) and only the magnitude collapses -- which
+    is why the deficit was repeatedly misdiagnosed as gauge undercatch, orographic enhancement or pillow
+    over-read, and "corrected" with a multiplicative factor (dt_023''s x1.9 is close to the reciprocal
+    of the loss at the maritime site).
+
+    ; [''SNOTEL daily CSV precipitation column interpretation'', ''SMET PSUM magnitude'', ''any precip_factor
+    tuned to compensate for it'']'
+  remedy: 'Use the SNOTEL precipitation column AS IS (daily increment); convert in -> mm; convert_forcing_to_smet.py
+    --precip-unit in --daily-disaggregate; ["Do NOT .diff() the ''Precipitation Accumulation ... Start
+    of Day Values'' column.", ''Pass it straight through as the daily total, declaring --precip-unit in.'',
+    ''Sanity check: annual PSUM should EXCEED observed peak SWE, typically'', ''  peak_SWE / annual_P
+    ~ 0.6-0.9 at a continental SNOTEL site.'', ''Re-derive any precip_factor AFTER fixing this; a factor
+    >1.5 on SNOTEL'', ''  forcing is now a red flag that the differencing bug is still present.'']; convert_forcing_to_smet.py
+    accepts --precip-unit in and carries the daily->hourly disaggregation, so the SNOTEL recipe no longer
+    needs the out-of-KI driver. SKILL.md''s "READ FIRST" section documents the column semantics with the
+    per-site evidence table.
+
+    '
   severity: silent
 - id: dt_025
   symptom: 'Alpine3D aborts at startup unable to read an initial snow cover, or starts but the snowpack
@@ -755,8 +867,26 @@ known_issues:
   diagnosis: 'Three independent .sno format contracts are easy to break, and generate_sno_files.py violated
     all three before 2026-08-09: (1) FILE NAME -- Alpine3D looks for <ix>_<iy>_<EXPERIMENT>.sno (ix =
     column, iy = row from the BOTTOM) or <EXPERIMENT>_<landuse_code>.sno (SnowpackInterface.cc ~L1258-1260).
-    Not'
-  remedy: Regenerate .sno with the corrected tool and the run's EXPERIMENT name; generate_sno_files.py
-    --naming landuse --experiment <EXPERIMENT> --landuse-code <code> --epsg <epsg>; ['Confirm [Output]::EXPERIMENT
-    in io.ini, then check that a matching', '  <EXPERIMENT>_<luscode>.sno or <ix>_<iy>_<EXPERIMENT>.
+    Nothing else is found. (2) LAYER COLUMNS are parsed POSITIONALLY (SmetIO.cc ~L417-457) and must be
+    the 18 numeric fields "... rg rb dd sp mk mass_hoar ne CDot metamo". Omitting `ne` shifts every later
+    column one position left, so CDot is read as the element count and the layer initialises with ne=0.
+    (3) HEADER KEYS are looked up literally: SoilAlbedo (not SoilAlb) and CanopyLeafAreaIndex (not CanopyLAI).
+
+    ; Additionally, layers are read BOTTOM -> TOP, so a surface-first thickness list puts the thin skin
+    layer at the base of the soil column, and projected DEM metres must go in easting/northing/epsg rather
+    than the latitude/longitude header keys.
+
+    ; [''input/snowfiles/*.sno file names'', ''.sno fields line and layer column order'', ''.sno header
+    key spelling'']'
+  remedy: 'Regenerate .sno with the corrected tool and the run''s EXPERIMENT name; generate_sno_files.py
+    --naming landuse --experiment <EXPERIMENT> --landuse-code <code> --epsg <epsg>; [''Confirm [Output]::EXPERIMENT
+    in io.ini, then check that a matching'', ''  <EXPERIMENT>_<luscode>.sno or <ix>_<iy>_<EXPERIMENT>.sno
+    exists.'', ''Count tokens on the fields line: 19 including timestamp.'', ''Confirm the ne column exists
+    and is 1, not absent.'', ''Confirm header keys SoilAlbedo / CanopyLeafAreaIndex.'', ''Confirm the
+    FIRST [DATA] row is the DEEPEST (thickest, warmest) layer.'']; generate_sno_files.py emits all of
+    the above correctly and exposes --experiment / --naming / --landuse-code / --epsg. SKILL.md''s "SNO
+    (Initial Snow/Soil Profile)" section and Critical Domain Knowledge item 7 now state the conventions
+    explicitly.
+
+    '
   severity: fatal

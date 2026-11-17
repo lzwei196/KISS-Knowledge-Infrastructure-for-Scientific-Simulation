@@ -710,8 +710,8 @@
       simulated SWE has decent timing (r ~ 0.6) but two compounding errors:
       (1) accumulation reaches only ~40% of the observed pillow, and
       (2) the pack peaks in Jan-Mar and melts out months early, so the
-      Apr-Jun sim/obs SWE ratio collapses to <0.10. Net SWE PBIAS approaches
-      -77%. dt_020's undercatch_wmo filter alone does NOT fix it.
+      Apr-Jun sim/obs SWE ratio collapses to <0.10, so net SWE is far too
+      low. dt_020's undercatch_wmo filter alone does NOT fix it.
     error_pattern: null
     detection_method: metric_inspection
   diagnosis:
@@ -749,6 +749,7 @@
       sites keep factor=1.0 / amp=6 / roughness=0.01 defaults.
   severity: silent
   cross_references: [dt_020, dt_014]
+  seen_at: "date not recorded, Paradise WA (SNOTEL 679)"
 
 - id: dt_024
   stage: s2_meteorological_forcing
@@ -757,7 +758,7 @@
     description: >
       Simulated SWE has GOOD timing (r 0.7-0.85) but is systematically
       40-60% too low at EVERY SNOTEL site, continental and maritime alike,
-      and NSE stalls around 0.31-0.39 no matter what is tuned. The forcing
+      and NSE stays low no matter what is tuned. The forcing
       SMET's annual PSUM total is roughly HALF the site's known annual
       precipitation, and often less than the observed peak SWE.
     error_pattern: null
@@ -766,21 +767,20 @@
     root_cause: >
       The NRCS SNOTEL daily export column "Precipitation Accumulation (in)
       Start of Day Values" is the DAILY INCREMENT in inches, NOT a water-year
-      cumulative, despite its name. Applying .diff().clip(lower=0) to it (as
-      t3_runs/build_site.py build_snotel_forcing did) keeps only the
+      cumulative, despite its name. Applying .diff().clip(lower=0) to it
+      keeps only the
       day-over-day INCREASES of an already-incremental series and silently
       discards ~44% of the precipitation.
     explanation: >
-      Verified at SNOTEL 590 over 2005-10..2015-09: raw column sums to
-      1069 mm/yr vs 604 mm/yr after differencing; the largest single value in
-      ten years is 2.10 in (a water-year cumulative would exceed 40 in); only
-      70% of day-to-day steps are non-negative. Same ratio at 828 (1106 vs
-      669), 637 (1200 vs 718) and 679 Paradise (3832 vs 1740). Because the
-      loss is a near-constant fraction, TIMING survives (r stays high) and
-      only the magnitude collapses -- which is why the deficit was repeatedly
+      In a SNOTEL export the raw column sums to a plausible annual precipitation,
+      while the differenced series loses roughly 40-55% of it; the largest single
+      value over years is a few inches (a water-year cumulative would reach tens
+      of inches), and many day-to-day steps are negative. Because the loss is a
+      near-constant fraction, TIMING survives (r stays high) and only the
+      magnitude collapses -- which is why the deficit was repeatedly
       misdiagnosed as gauge undercatch, orographic enhancement or pillow
       over-read, and "corrected" with a multiplicative factor (dt_023's x1.9
-      is close to the reciprocal of the Paradise loss, 3832/1740 = 2.2).
+      is close to the reciprocal of the loss at the maritime site).
     affected_components:
       - SNOTEL daily CSV precipitation column interpretation
       - SMET PSUM magnitude
@@ -802,6 +802,7 @@
       semantics with the per-site evidence table.
   severity: silent
   cross_references: [dt_005, dt_020, dt_023]
+  seen_at: "date not recorded, SNOTEL 590, 828, 637 and 679 (Paradise)"
 
 - id: dt_025
   stage: s3_initial_conditions

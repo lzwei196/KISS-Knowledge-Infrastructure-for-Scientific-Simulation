@@ -502,7 +502,7 @@
     prevention: generate_namelists.py defaults RESTART_FREQUENCY_HOURS to -9999
   severity: silent
   cross_references: []
-  verified: '2026-03-19'
+  seen_at: "2026-03-19"
 - id: dt_v005
   stage: s3_wrfinput
   failure_domain: silent_error
@@ -515,8 +515,8 @@
     explanation: 'In cold-start mode (no restart file), cells with zero vegetation (water bodies, barren
       land) have SHDFAC=0 and VAI=0 (no shading). Noah-MP''s energy balance computes unrestricted solar
       absorption → ground temperature explodes beyond 600K → longwave emission goes negative. This is
-      most severe in summer (high solar radiation) for large domains with many non-vegetated cells. The
-      Chaohe 7-day January test did not hit this because solar radiation was low.
+      most severe in summer (high solar radiation) for large domains with many non-vegetated cells. A short
+      January test may not hit this because solar radiation is low.
 
       '
     affected_components:
@@ -536,7 +536,7 @@
   severity: fatal
   cross_references:
   - dt_009
-  verified: '2026-03-20'
+  seen_at: "2026-03-20, Chaohe"
 - id: dt_v006
   stage: s8_forcing
   failure_domain: dependency_mismatch
@@ -562,7 +562,7 @@
     prevention: run_wrfhydro.py auto-detects memory and recommends nproc
   severity: fatal
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v007
   stage: s4_fulldom
   failure_domain: silent_error
@@ -591,7 +591,7 @@
   severity: silent
   cross_references:
   - dt_010
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v008
   stage: s8_forcing
   failure_domain: unit_conversion
@@ -622,7 +622,7 @@
       turns it off
   severity: silent
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v009
   stage: s11_output
   failure_domain: silent_error
@@ -652,7 +652,7 @@
     prevention: Always use CHRTOUT for discharge comparison, not LDASOUT SFCRNOFF
   severity: silent
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v010
   stage: s4_fulldom
   failure_domain: parameter_format
@@ -683,7 +683,7 @@
   cross_references:
   - dt_001
   - dt_v007
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v011
   stage: s8_forcing
   failure_domain: unit_conversion
@@ -713,7 +713,7 @@
   severity: silent
   cross_references:
   - dt_011
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v012
   stage: s2_geo_em
   failure_domain: parameter_format
@@ -748,7 +748,7 @@
   severity: degraded
   cross_references:
   - dt_008
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v013
   stage: s6_groundwater
   failure_domain: parameter_format
@@ -776,7 +776,7 @@
     prevention: Document Zmax calibration need; default 50m gives minimal GW storage
   severity: degraded
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v014
   stage: s10_execution
   failure_domain: dependency_mismatch
@@ -808,7 +808,7 @@
   severity: degraded
   cross_references:
   - dt_019
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v015
   stage: s1_domain
   failure_domain: silent_error
@@ -822,8 +822,8 @@
       runoff smoothed out
     explanation: 'At 0.25° (~28km), small basins like Chaohe (8,783 km²) have only ~11 LSM cells. Mountainous
       terrain is averaged, orographic precipitation enhancement is lost, and the basin''s hydrological
-      response is diluted. Bengbu (121,330 km², flat) works well at 0.25° (r=0.84) because the landscape
-      scale matches the grid. Tested: Chaohe 0.25° gives r=-0.10, Q=6 m³/s vs VIC 27 m³/s (literature
+      response is diluted. Bengbu (121,330 km², flat) works well at 0.25° because the landscape
+      scale matches the grid. Tested: Chaohe 0.25° gives a negative r, Q=6 m³/s vs VIC 27 m³/s (literature
       31-47).
 
       '
@@ -839,7 +839,7 @@
     prevention: Pipeline auto-warns when basin has < 50 LSM cells
   severity: silent
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v016
   stage: s4_fulldom
   failure_domain: silent_error
@@ -870,7 +870,7 @@
   severity: silent
   cross_references:
   - dt_v015
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v017
   stage: s10_execution
   failure_domain: silent_error
@@ -901,7 +901,7 @@
   severity: silent
   cross_references:
   - dt_v016
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v018
   stage: s9_namelists
   failure_domain: silent_error
@@ -930,7 +930,7 @@
     prevention: generate_namelists.py should default to RUNOFF_OPTION=5 for Chinese basins
   severity: silent
   cross_references: []
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v019
   stage: s9_namelists
   failure_domain: runtime
@@ -957,7 +957,7 @@
   severity: fatal
   cross_references:
   - dt_v018
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v020
   stage: s1_domain
   failure_domain: silent_error
@@ -991,7 +991,7 @@
   cross_references:
   - dt_v015
   - dt_v018
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v021
   stage: s4_fulldom
   failure_domain: parameter_format
@@ -1022,7 +1022,7 @@
   severity: silent
   cross_references:
   - dt_v016
-  verified: '2026-03-21'
+  seen_at: "2026-03-21"
 - id: dt_v022
   stage: s8_forcing
   failure_domain: unit_conversion
@@ -1057,7 +1057,7 @@
   cross_references:
   - dt_v005
   - dt_v008
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v023
   stage: s3_wrfinput
   failure_domain: runtime
@@ -1091,7 +1091,7 @@
   severity: fatal
   cross_references:
   - dt_v014
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v024
   stage: s9_namelists
   failure_domain: dependency_mismatch
@@ -1129,7 +1129,7 @@
   severity: silent
   cross_references:
   - dt_015
-  verified: '2026-03-20'
+  seen_at: "2026-03-20"
 - id: dt_v035
   stage: s4_fulldom
   failure_domain: missing_variable
@@ -1461,7 +1461,7 @@
   severity: fatal
   cross_references:
   - dt_v018
-  discovered: 2026-07-10 Zijingguan (Juma/Haihe) real case
+  seen_at: "2026-07-10, Zijingguan (Juma / Haihe)"
 - id: dt_v044
   symptom:
     description: WRF-Hydro completes and CHRTOUT carries flow (max/mean streamflow >> 0 across most features),
@@ -1472,14 +1472,14 @@
       an `order>=min_order` filter and no flow guard. On a coarse routing grid the nearest channel cell
       can be a disconnected order-1/2 stub carrying zero discharge. If min_order exceeds the domain''s
       max Strahler order the order filter collapses to all-features, guaranteeing the dead stub is chosen.
-      (Tangnaihai: min_order=4, max order 3, picked idx 192 fid 193 at 4.8km, mean_Q=0.)'
+      (Example: min_order=4 on a domain whose max order was 3; the picked stub had mean_Q=0.)'
   remedy:
     action: 'Add a flow guard: sample mean streamflow per feature over non-spinup CHRTOUT files, require
       has_flow = meanq > max(1e-3, 1e-3*nanmax(meanq)); eligibility = (order>=min_order) & has_flow, relaxing
-      to has_flow-only then all-features. Recovers r=0.92 at Tangnaihai (idx 189, 10.9km).'
+      to has_flow-only then all-features.'
   format_spec_violated: none
   canonical_intent: ki_local_if_pass
-  added_by_run: WRF_Hydro_retry1
+  seen_at: "date not recorded, Tangnaihai (run WRF_Hydro_retry1)"
 - id: dt_v045
   stage: s9_calibration
   failure_domain: silent_error
@@ -1496,7 +1496,7 @@
       floor of 0.85 corrupts 10.5% of land cells (CLAY: smcref 0.4120 vs smcmax 0.3978), and hard_bounds
       reach 0.7. The liveness probe displaces to the far range end, i.e. exactly 0.85 — the worst corner
       — so measured sensitivity there (max|dQ| 3509 m3/s, above the basin''s own 2416 m3/s peak) conflates
-      the parameter with the invalid state. SECOND, INDEPENDENT MECHANISM (verified 2026-09-09): the warm-start
+      the parameter with the invalid state. SECOND, INDEPENDENT MECHANISM: the warm-start
       restart carries SMC filled against the ORIGINAL porosity (95th pct SMC/smcmax = 0.911), so shrinking
       smcmax leaves cells supersaturated at t=0 — 346/1976 land layer-cells at 0.85, 209 (10.6%) at the
       ordering ''valid floor'' 0.8803, 162 at 0.89, 38 at 0.95, and 4 at both 1.0 and 1.10 (those 4 pre-exist
@@ -1505,12 +1505,10 @@
       (bit-equal to soil_properties smcmax) which the subsurface routing reads and which smcmax_mult never
       touches, so every multiplier leaves the LSM and the routing disagreeing about porosity. NOTE the
       binding ratio was derived from soil_properties.nc, the file this build never opens — derive it at
-      the EFFECTIVE address or it will be wrong on the next domain. MEASURED 2026-09-09: scaling hydro2dtbl
+      the EFFECTIVE address or it will be wrong on the next domain. MEASURED: scaling hydro2dtbl
       SMCMAX1 by the same 1.10 (decks otherwise identical) gives max|dQ| = 1516.25 with the peak FALLING
       to 2279.1 — the correct direction. So 71% of the apparent sensitivity is the LSM/routing porosity
-      disagreement, not the parameter. Coherent ranking at Wangjiaba: gw_coeff 1886 > gw_zmax 1650 > smcmax
-      1516 > gw_expon 1362 > mann_n_mult 419 > lksatfac 373 > ovroughrtfac 120 > retdeprtfac 5.9 — smcmax
-      is THIRD, not first.'
+      disagreement, not the parameter.'
   remedy:
     action: 'SCALE hydro2dtbl.nc SMCMAX1 (and SMCREF1/SMCWLT1) TOGETHER WITH smcmax — without this the
       lever fits an artifact and a calibration using it is invalid, which matters more than its bounds.
@@ -1525,3 +1523,4 @@
       Also note the probe''s ''far end from the default'' rule picked the physically invalid corner AND
       the weaker direction — probe BOTH feasible ends and report the larger.'
   severity: critical
+  seen_at: "2026-09-09, Wangjiaba"

@@ -375,7 +375,9 @@ known_issues:
 
     4. Check WM — if WM > 1000mm, soil never saturates
 
-    5. Check KE — if KE > 2, all precip goes'
+    5. Check KE — if KE > 2, all precip goes to ET
+
+    '
 - id: T013
   symptom: Output directory is empty after apparently successful run
   diagnosis: ROUTING is not specified in task; only water balance runs without discharge computation
@@ -420,7 +422,9 @@ known_issues:
 
     3. Increase the number of chains (default is often too few for >6 parameters)
 
-    4. Check that OBS file has data overlapping with simulation pe'
+    4. Check that OBS file has data overlapping with simulation period
+
+    '
 - id: T017
   symptom: Soil moisture always at 100% or always at 0%
   diagnosis: WM parameter is too small (soil fills instantly) or IWU is set to 0/100 with no warm-up
@@ -450,11 +454,17 @@ known_issues:
   diagnosis: "The DDM/FAM grids fed to EF5 have a fragmented routing topology — unfilled sinks\nand/or\
     \ wrong drainage-direction encoding break the upstream flow path to the gauge.\nCommon causes:\n \
     \ - DDM was derived without sink-filling (e.g. wflow pcraster ldd_create defaults)\n  - DDM uses TauDEM\
-    \ 1-8 codes but ESR"
+    \ 1-8 codes but ESRIDDM=true is set in control.txt\n  - SELFFAM convention mismatch between FAM tool\
+    \ and EF5 (EF5 expects min FAM=1)\n  - DEM clipped too tightly so headwater cells are missing\nDiagnostic:\
+    \ grep DDM=0 cell count. If > 1% of basin cells, sinks are unfilled.\n"
   remedy: "Regenerate DDM/FAM with the KI's Stage-1 tool:\n\n  python tools/prepare_basic_grids.py \\\n\
     \    --dem raw_dem.tif --out-dir basin/grids/ \\\n    --method breach --out-format asc \\\n    --expected-outlet\
     \ <gauge_lon> <gauge_lat>\n\nThe tool runs WhiteboxTools BreachDepressionsLeastCost → D8Pointer (ESRI)\
-    \ →\nD8F"
+    \ →\nD8FlowAccumulation (cells, +1 for SELFFAM=true), and verifies:\n  - DDM unique values are subset\
+    \ of {0, 1, 2, 4, 8, 16, 32, 64, 128}\n  - DDM sinks < 1% of basin\n  - FAM at expected outlet is\
+    \ non-trivial (not 1)\n\nChecked effect in one basin:\n  old prepared DDM: 171 sinks (7.8%), FAM_max=129,\
+    \ walked 4/24 → sim_Q=0\n  regenerated DDM:  60 sinks (2.8%),  FAM_max=970, walked 180/181 → routing\
+    \ connected\n"
 - id: T020
   symptom: '`ef5 -z dem.tif -d ddm.tif -a fam.tif -p` runs (prints banner) and exits cleanly,
 
@@ -489,8 +499,29 @@ known_issues:
 
     LR routing leaves it at 0.0. KinematicRoute.cpp does correctly populate
 
-    discharge->at(i)'
+    discharge->at(i) at channel cells.
+
+
+    The water balance and routing are still happening correctly internally —
+
+    water is flowing between cells via incomingWater[LR_LAYER_OVERLAND/INTERFLOW]
+
+    buffers, but the simulator never converts those to m³/s for the output CSV.
+
+    The discharge formula (FF+SF)*area/3.6 exists in Simulator.cpp but only in
+
+    the calibration path (CALI_DREAM), not the regular SIMU path.
+
+    '
   remedy: "Switch to ROUTING=KW (Kinematic Wave) in the [Task] block, and replace\nthe [LRParamSet] with\
     \ a [KWParamSet] block:\n\n  [kwparamset NAME]\n  GAUGE=<gauge>\n  UNDER=1.67     # interflow speed\
     \ multiplier (range 0.1-10)\n  LEAKI=0.043    # interflow leak rate (0-1)\n  TH=6.66        # channel\
-    \ threshold (FAM "
+    \ threshold (FAM cells)\n  ISU=0.0        # initial interflow storage\n  ALPHA=2.99     # channel\
+    \ Q = alpha * A^beta multiplier\n  BETA=0.93      # channel exponent (range 0.5-1.5)\n  ALPHA0=4.60\
+    \    # overland alpha\n\nThen in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME\n\nChecked effect in\
+    \ two basins:\n  basin 1: LR sim_Q=0, KW sim_Q max=652 m³/s\n  basin 2: LR sim_Q=0, KW sim_Q max=2364\
+    \ m³/s\n  (both KW runs with a large negative volume bias)\n\nKW captures monsoon timing well (r >\
+    \ 0.5 with default params); volume bias\nrequires UNDER/LEAKI/ALPHA calibration. A Python surrogate\
+    \ used while this KI was built (not shipped with it)\nre-implements LR in Python\nand DOES produce\
+    \ non-zero Q because the surrogate computes Q correctly —\nthis is a binary-side bug, not an algorithm\
+    \ bug.\n"

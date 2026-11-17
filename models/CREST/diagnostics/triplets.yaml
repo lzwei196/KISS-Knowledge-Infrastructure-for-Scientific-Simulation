@@ -221,9 +221,10 @@
     \ <gauge_lon> <gauge_lat>\n\nThe tool runs WhiteboxTools BreachDepressionsLeastCost → D8Pointer (ESRI)\
     \ →\nD8FlowAccumulation (cells, +1 for SELFFAM=true), and verifies:\n  - DDM unique values are subset\
     \ of {0, 1, 2, 4, 8, 16, 32, 64, 128}\n  - DDM sinks < 1% of basin\n  - FAM at expected outlet is\
-    \ non-trivial (not 1)\n\nVerified empirical effect on Nuxia 94109 (Yarlung Tsangpo, 2026-04-28):\n\
+    \ non-trivial (not 1)\n\nChecked effect in one basin:\n\
     \  old prepared DDM: 171 sinks (7.8%), FAM_max=129, walked 4/24 → sim_Q=0\n  regenerated DDM:  60\
     \ sinks (2.8%),  FAM_max=970, walked 180/181 → routing connected\n"
+  seen_at: "2026-04-28, Nuxia 94109 (Yarlung Tsangpo)"
 - id: T020
   symptom: '`ef5 -z dem.tif -d ddm.tif -a fam.tif -p` runs (prints banner) and exits cleanly,
 
@@ -277,10 +278,11 @@
     \ multiplier (range 0.1-10)\n  LEAKI=0.043    # interflow leak rate (0-1)\n  TH=6.66        # channel\
     \ threshold (FAM cells)\n  ISU=0.0        # initial interflow storage\n  ALPHA=2.99     # channel\
     \ Q = alpha * A^beta multiplier\n  BETA=0.93      # channel exponent (range 0.5-1.5)\n  ALPHA0=4.60\
-    \    # overland alpha\n\nThen in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME\n\nVerified empirical\
-    \ effect (2026-04-29):\n  Bengbu sub-basin 1990: LR sim_Q=0, KW sim_Q max=652 m³/s, r=0.57, PBIAS=-66%\n\
-    \  Nuxia 1991-2000:        LR sim_Q=0, KW sim_Q max=2364 m³/s, r=0.80, PBIAS=-84%\n\nKW captures monsoon\
+    \    # overland alpha\n\nThen in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME\n\nChecked effect\
+    \ in two basins:\n  basin 1: LR sim_Q=0, KW sim_Q max=652 m³/s\n\
+    \  basin 2: LR sim_Q=0, KW sim_Q max=2364 m³/s\n  (both KW runs with a large negative volume bias)\n\nKW captures monsoon\
     \ timing well (r > 0.5 with default params); volume bias\nrequires UNDER/LEAKI/ALPHA calibration.\
-    \ The Python surrogate at\n`auto_dissect/_work/CREST/run_validation.py` re-implements LR in Python\n\
+    \ A Python surrogate used while this KI was built (not shipped with it)\nre-implements LR in Python\n\
     and DOES produce non-zero Q because the surrogate computes Q correctly —\nthis is a binary-side bug,\
     \ not an algorithm bug.\n"
+  seen_at: "2026-04-29, Bengbu sub-basin (1990) and Nuxia (1991-2000)"

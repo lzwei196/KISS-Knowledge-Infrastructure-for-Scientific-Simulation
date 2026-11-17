@@ -482,6 +482,5 @@
     - 'In pio_setframe: set current_frame = frame'
     - 'In pio_write_darray: use start=[current_frame] instead of start=[1]'
     prevention: Verify output NetCDF has non-fill values for all timesteps after first run
-  cross_references:
-  - Bengbu validation 2026-03-22
-  verified: '2026-03-22'
+  cross_references: []
+  seen_at: "2026-03-22, Bengbu"

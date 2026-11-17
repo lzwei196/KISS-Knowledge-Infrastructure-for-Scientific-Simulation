@@ -613,10 +613,11 @@
     like ''FINISH PE: 0 mo_qs_forcing:Init_forcing_qs: invalid n_deposition_scheme: bogus'' and ''End QUINCY model''
     is never printed.'
   diagnosis: mo_exception finish() writes the message to quincy_standalone.err and STOPs without a non-zero exit
-    status, so the shell exit code says nothing about success (verified 2026-10-07 with n_deposition_scheme='bogus').
+    status, so the shell exit code says nothing about success (checked with n_deposition_scheme='bogus').
   remedy: 'Run through tools/run_quincy_engine.py: success = exit 0 AND ''End QUINCY model'' in stdout AND empty
     .err AND no ''Please check!'' log line AND full output files; it exits 3 otherwise.'
   detection: test -s quincy_standalone.err && cat quincy_standalone.err; grep -c 'End QUINCY model' stdout.log
+  seen_at: "2026-10-07"
 - id: dt_quincy_027
   name: Short climate.dat silently rewound
   scope: real engine qs.bin
@@ -683,11 +684,12 @@
   symptom: 'Namelist edits seem to have no effect: the engine log reports the default forcing year 1500 or default
     latitude although qs.namelist contains the new values further down.'
   diagnosis: Fortran position_nml reads only the FIRST '&group' block. A text editor or regex that appends a second
-    '&base_ctl' (seen 2026-10-07 when the key regex ate the newline after '&grid_ctl') leaves the first block with
+    '&base_ctl' (for example when a key regex eats the newline after '&grid_ctl') leaves the first block with
     defaults.
   remedy: Edit with tools/_quincy_common.set_nml through run_quincy_engine.py; check_namelist() refuses a namelist
     where any group appears twice or any set value does not read back (exit 2).
   detection: 'grep -c ''^&base_ctl'' qs.namelist   # must be 1'
+  seen_at: "2026-10-07"
 - id: dt_quincy_032
   name: Soil texture read by three namelists, in fractions
   scope: real engine qs.bin
@@ -724,12 +726,13 @@
   stage: s3_model_execution
   failure_domain: initial_conditions
   symptom: GPP and LAI too low, still trending upward in the first simulated years; NEE biased.
-  diagnosis: The engine starts from bare ground. At FI-Hyy (2026-10-07 probes, default soil) GPP over 1996-2014
-    was 699 gC m-2 yr-1 after a 38-yr spin-up versus 934 after 500 yr (tower ~1100); daily GPP NSE 0.66 vs 0.89.
+  diagnosis: The engine starts from bare ground. At FI-Hyy (default soil) GPP over 1996-2014
+    was 699 gC m-2 yr-1 after a 38-yr spin-up versus 934 after 500 yr (tower ~1100), and daily GPP NSE was clearly lower.
     Soil C was still rising ~4 % per 100 yr at year 500.
   remedy: Use --spinup_years 500 (default) and check quincy_summary.json spinup_drift.EcoC_trend_pct_per_100yr;
     consider base_ctl flag_slow_sb_pool_spinup_accelerator for soil-C studies.
   detection: python -c "import json;print(json.load(open('parsed/quincy_summary.json'))['spinup_drift'])"
+  seen_at: "2026-10-07, FI-Hyy"
 - id: dt_quincy_035
   name: Missing qs.namelist or lctlib
   scope: real engine qs.bin
@@ -813,10 +816,11 @@
   symptom: Killing 'stale' engine runs with pkill -f / pgrep -f qs.bin also kills the calling shell or the agent
     session.
   diagnosis: The agent's own command line (prompt text) contains 'qs.bin' and run paths, so pattern matching on
-    full command lines hits it (seen 2026-10-07, exit 144).
+    full command lines hits it (exit 144).
   remedy: 'Select engine PIDs by their working directory: for p in $(pgrep -x qs.bin); do readlink /proc/$p/cwd;
     done, and kill only those inside your run dir.'
   detection: pgrep -af qs.bin
+  seen_at: "2026-10-07"
 - id: dt_quincy_042
   name: Monthly output is 30-day blocks
   scope: real engine qs.bin
@@ -848,11 +852,12 @@
   severity: degraded
   stage: s5_validation
   failure_domain: validation
-  symptom: 'Simulated NEE is near zero over the year while the tower shows a clear sink (FI-Hyy 1996-2014 real-engine
-    run: model -9.5 vs tower -246 g C m-2 yr-1, daily NEE r 0.82); NEE PBIAS near -100 % although GPP and Reco fit.'
+  symptom: 'Simulated NEE is near zero over the year while the tower shows a clear sink (e.g. FI-Hyy 1996-2014:
+    model -9.5 vs tower -246 g C m-2 yr-1, good daily NEE timing); NEE PBIAS near -100 % although GPP and Reco fit.'
   diagnosis: Spin-up builds an equilibrium stand; QUINCY standalone has no age/management history for a 1962-planted,
     thinned Scots pine stand, so vegetation and soil C are near steady state.
   remedy: Judge NEE on timing (r, seasonal cycle) and report the mean bias as a structural limit, not a parameter
     fault; a stand-age study needs a spin-up followed by a stand-replacing harvest (lnd_q_syl_nml flag_stand_harvest,
     stand_replacing_year).
   detection: score/score.json variables.NEE.annual_sum_gC
+  seen_at: "2026-10-07, FI-Hyy"

@@ -293,7 +293,9 @@ known_issues:
   diagnosis: '[SURROGATE] Temperature forcing from CMFD or MSWX was left in Kelvin instead of being converted
     to degrees Celsius. QUINCY expects deg C. Arrhenius temperature responses for Vcmax, Jmax, and Rh
     use (T - Tref) terms. With T ~ 290 K treated as 290 deg C, the exponential activation terms explode,
-    produ'
+    producing astronomically high enzyme rates.
+
+    '
   remedy: '[SURROGATE] Subtract 273.15 from temperature before writing the forcing CSV. The convert_forcing_to_quincy.py
     tool handles this automatically when --source is set to CMFD or MSWX. Verify that monthly mean temperature
     values are in the range -40 to +45 deg C.
@@ -308,7 +310,9 @@ known_issues:
   diagnosis: '[SURROGATE] Precipitation forcing from CMFD was left in kg/m2/s (raw CMFD unit) instead
     of being converted to mm/day. QUINCY''s bell-shaped moisture response for Rh uses precipitation in
     mm/day with an optimal value of ~2.5 mm/day. Raw CMFD values (~1e-5 kg/m2/s) are 86400x too small,
-    placing the moi'
+    placing the moisture scalar near zero and suppressing all heterotrophic decomposition.
+
+    '
   remedy: '[SURROGATE] Multiply CMFD precipitation by 86400 to convert kg/m2/s to mm/day. For MSWX (mm/3hr),
     sum 8 sub-daily timesteps to get daily totals. Verify that monthly mean precipitation is ~0.5-10 mm/day
     for temperate sites.
@@ -324,7 +328,10 @@ known_issues:
   diagnosis: '[SURROGATE] VPD was supplied in kPa instead of hPa. QUINCY uses hPa internally for VPD in
     the Ball-Berry stomatal conductance calculation. A VPD of 1.5 kPa (normal summer value) is read as
     1.5 hPa (extremely low VPD should increase gs, but the Ci/Ca ratio calculation is distorted). Alternatively,
-    VP'
+    VPD may have been supplied in Pa (1500) instead of hPa (15), making VPD appear 100x too high and shutting
+    stomata.
+
+    '
   remedy: '[SURROGATE] Ensure VPD is in hPa (1 hPa = 100 Pa = 0.1 kPa). FLUXNET2015 VPD_F is already in
     hPa and needs no conversion. If sourcing VPD from other datasets, convert accordingly. Typical range:
     2-30 hPa.
@@ -339,7 +346,9 @@ known_issues:
   diagnosis: '[SURROGATE] Leaf nitrogen content (n_leaf_ref) was supplied in kgN/m2 or mgN/m2 instead
     of gN/m2. QUINCY computes Vcmax25_eff = vcmax_n_slope * leaf_N, where vcmax_n_slope is 25 umol/s/gN.
     If leaf_N is in kgN/m2 (0.0018 instead of 1.8), effective Vcmax drops to ~0.045 umol/m2/s, essentially
-    shutting'
+    shutting down photosynthesis.
+
+    '
   remedy: '[SURROGATE] Ensure n_leaf_ref is in gN/m2_leaf. Typical values for ENF are 1.5-2.5 gN/m2. If
     source data is in kgN/m2, multiply by 1000. If in mgN/m2, divide by 1000.
 
@@ -370,11 +379,15 @@ known_issues:
   diagnosis: '[SURROGATE] FLUXNET2015 missing value sentinel (-9999) was not replaced with NaN before
     computation. When -9999 values enter the forcing arrays, they corrupt temperature means (driving T
     to ~-2000 deg C), radiation sums, and VPD values. The Arrhenius functions and Farquhar model produce
-    NaN from the'
+    NaN from these extreme inputs.
+
+    '
   remedy: '[SURROGATE] Replace all -9999 values with NaN immediately after reading the FLUXNET2015 CSV.
     The convert_forcing_to_quincy.py tool does this in its loading step. Verify with: df.replace(-9999,
     np.nan). Check that no column has >50% NaN; if CO2 data is >50% missing, apply the linear trend fallback
-    (3'
+    (360 ppm in 1996 + 2.1 ppm/yr).
+
+    '
   severity: critical
 - id: dt_quincy_007
   symptom: '[SURROGATE run_quincy.py only] Simulated GPP has no seasonal cycle; it is nearly constant
@@ -385,7 +398,9 @@ known_issues:
   diagnosis: '[SURROGATE] The LAI phenology parameters lai_min and lai_max are set to the same value (or
     nearly so). QUINCY uses a Gaussian temperature response to interpolate LAI between lai_min and lai_max.
     If they are equal, LAI is constant and the seasonal GPP modulation from canopy dynamics is lost. This
-    can'
+    can happen when using deciduous PFT defaults where lai_min should be ~0.5 but was set to lai_max (5.5).
+
+    '
   remedy: '[SURROGATE] Set lai_min < lai_max with ecologically appropriate values. For boreal ENF: lai_min=3.5,
     lai_max=5.5. For temperate DBF: lai_min=0.5, lai_max=6.0. Verify that the output LAI timeseries shows
     a seasonal amplitude of at least 1.0 m2/m2.
@@ -399,10 +414,16 @@ known_issues:
     '
   diagnosis: '[SURROGATE] Vcmax25 is set too high for the PFT. The default 45 umol/m2/s is for boreal
     ENF (Scots pine). Using this value for a tropical or cropland PFT where Vcmax25 should be 30-80 umol/m2/s
-    (or the opposite: using a C4 crop value of 80 for a boreal ENF) causes a proportional GPP bias. Additional'
+    (or the opposite: using a C4 crop value of 80 for a boreal ENF) causes a proportional GPP bias. Additionally,
+    if N-limitation is disabled (n_leaf_ref set very high), the full Vcmax25 is always used without downregulation.
+
+    '
   remedy: '[SURROGATE] Set Vcmax25 appropriate to the PFT: boreal ENF ~40-50, temperate DBF ~50-65, tropical
     ~30-40, C3 crops ~60-80 umol/m2/s. Ensure N-limitation is active by setting n_leaf_ref to a realistic
-    value (1.5-2.5 gN/m2 for ENF) so that Vcmax25_eff = vcmax_n_slope * leaf_N constrains the effective '
+    value (1.5-2.5 gN/m2 for ENF) so that Vcmax25_eff = vcmax_n_slope * leaf_N constrains the effective
+    rate.
+
+    '
   severity: major
 - id: dt_quincy_009
   symptom: '[SURROGATE run_quincy.py only] Ecosystem respiration (Reco) is much too high relative to GPP,
@@ -412,7 +433,11 @@ known_issues:
     '
   diagnosis: '[SURROGATE] The Q10 parameter (rh_q10) for heterotrophic respiration is set too high (e.g.,
     3.0-4.0 instead of the default 2.0), or the base heterotrophic respiration rate (rh_base) is too large.
-    With Q10=3.0, a 10 deg C temperature increase triples Rh instead of doubling it, compounding exponential'
+    With Q10=3.0, a 10 deg C temperature increase triples Rh instead of doubling it, compounding exponentially
+    in warm months. Alternatively, the reference temperature rh_t_ref is set too low, inflating the temperature
+    correction factor at ambient temperatures.
+
+    '
   remedy: '[SURROGATE] Use default Q10=2.0 and rh_base=1.8 umol/m2/s unless site-specific calibration
     indicates otherwise. Verify that rh_t_ref=15 deg C (standard reference). Check that annual Reco/GPP
     ratio is 0.7-0.9 for a mature forest.
@@ -428,7 +453,9 @@ known_issues:
   diagnosis: '[SURROGATE] The jmax_vcmax_ratio parameter was set to a very high value (e.g., >3.0) or
     the alpha_j (quantum yield) was set too high (>0.5 mol/mol). This makes Wj always larger than Wc,
     so the Farquhar model always selects the Rubisco-limited rate. The electron transport branch of the
-    model becomes '
+    model becomes irrelevant, and GPP loses its sensitivity to radiation under overcast conditions.
+
+    '
   remedy: '[SURROGATE] Use jmax_vcmax_ratio in the range 1.5-2.2 (default 1.9 for ENF). Set alpha_j to
     0.2-0.35 mol/mol (default 0.3). Verify that under low radiation (<200 W/m2), Wj < Wc so that GPP shows
     light limitation.
@@ -443,10 +470,14 @@ known_issues:
   diagnosis: '[SURROGATE] The Arrhenius temperature function for Vcmax or Jmax produces overflow when
     temperature is extremely high (>60 deg C) or extremely low (<-60 deg C) due to bad forcing data. The
     exponent ea_vcmax * (T - 25) / (298.15 * R * T_K) becomes very large, and exp() returns Inf, which
-    propagates a'
+    propagates as NaN through the Farquhar equations.
+
+    '
   remedy: '[SURROGATE] Clamp temperature forcing to a physically realistic range (-50 to +55 deg C) before
     running the model. Check for outlier values in the forcing CSV. Investigate the specific month where
-    NaN first appears -- it likely contains a corrupted temperature value or an un-replaced -9999 sentinel.'
+    NaN first appears -- it likely contains a corrupted temperature value or an un-replaced -9999 sentinel.
+
+    '
   severity: critical
 - id: dt_quincy_012
   symptom: '[SURROGATE run_quincy.py only] Carbon balance does not close: annual (GPP - Reco) does not
@@ -456,7 +487,9 @@ known_issues:
   diagnosis: '[SURROGATE] NEE sign convention is incorrect. QUINCY uses micrometeorological convention:
     NEE = Reco - GPP (positive = net source to atmosphere). If NEE is computed as GPP - Reco, the sign
     is flipped. When comparing against FLUXNET observations (which also use positive = source), the mismatch
-    causes'
+    causes apparent non-closure because the user subtracts instead of adds.
+
+    '
   remedy: '[SURROGATE] Ensure NEE = Reco - GPP throughout the pipeline. A healthy forest should have slightly
     negative NEE (net sink). Verify: NEE_annual should be -100 to -500 gC/m2/yr for a productive forest.
     If NEE is positive and large, the sign convention is likely wrong.
@@ -471,7 +504,9 @@ known_issues:
   diagnosis: '[SURROGATE] The Penman-Monteith approximation for LE uses stomatal conductance from the
     Ball-Berry model. If g1_bb (Ball-Berry slope) is set too high (e.g., 12 instead of 6), stomatal conductance
     is doubled, transpiration is excessive, and LE dominates the energy budget. Since H is computed as
-    resid'
+    residual (Rnet - LE - G), it goes negative.
+
+    '
   remedy: '[SURROGATE] Set g1_bb to PFT-appropriate values: ENF ~4-8, DBF ~6-10, crops ~8-12, grasslands
     ~6-9. Default for boreal ENF is 6.0. Verify that monthly LE stays below Rnet (incoming shortwave minus
     outgoing longwave). Typical peak LE is 80-150 W/m2 for forests.
@@ -486,7 +521,10 @@ known_issues:
   diagnosis: '[SURROGATE] The day fraction (daylength/24h) scaling was not applied to GPP. QUINCY computes
     instantaneous daytime GPP rate (umol/m2/s during sunlit hours), but FLUXNET GPP_NT_VUT_REF is a 24-hour
     mean. Without dividing by (24/daylength), the model GPP represents only daytime hours but is compared
-    a'
+    against the 24h mean, inflating the apparent rate by a factor of 24/daylength (~1.5-2.5x depending
+    on latitude and season).
+
+    '
   remedy: '[SURROGATE] Ensure GPP output is multiplied by (daylength_hours / 24) to convert from daytime-only
     rate to 24h mean. The run_quincy.py tool applies this correction automatically. Daylength can be computed
     from latitude and day of year using standard solar geometry.
@@ -502,7 +540,9 @@ known_issues:
   diagnosis: '[SURROGATE] Soil organic matter pools (CENTURY-like) were initialized at zero or at default
     values far from equilibrium. The heterotrophic respiration takes 1-3 years to equilibrate with litter
     inputs. During spinup, Rh is either too low (if SOM pools start empty, producing unrealistic sink)
-    or too '
+    or too high (if initialized too high, producing unrealistic source).
+
+    '
   remedy: '[SURROGATE] Discard the first 2 years of output from any analysis. If running a short simulation
     (<5 years), extend the forcing data to include at least 2 spinup years. Alternatively, initialize
     SOM pools from literature values for the biome (e.g., rh_base calibrated to match observed annual
@@ -517,7 +557,10 @@ known_issues:
     '
   diagnosis: '[SURROGATE] The cn_leaf parameter was set using N:C ratio instead of C:N ratio (i.e., the
     reciprocal). A value of 0.025 gN/gC was entered instead of 40 gC/gN. QUINCY expects C:N as gC/gN.
-    Using the reciprocal produces a C:N of 0.025 which implies nearly pure nitrogen tissue, breaking stoichiometric '
+    Using the reciprocal produces a C:N of 0.025 which implies nearly pure nitrogen tissue, breaking stoichiometric
+    consistency in litter decomposition.
+
+    '
   remedy: '[SURROGATE] Ensure cn_leaf, cn_root, and cn_wood are in gC/gN units. Typical ranges: cn_leaf
     30-60, cn_root 40-80, cn_wood 200-500. If your source data provides N:C, take the reciprocal (1/value).
 
@@ -531,7 +574,10 @@ known_issues:
   diagnosis: '[SURROGATE] The PFT parameter JSON file is missing required keys or uses non-standard key
     names. QUINCY requires specific parameter names: vcmax25, jmax_vcmax_ratio, alpha_j, theta_j, ea_vcmax,
     ea_jmax, n_leaf_ref, vcmax_n_slope, g1_bb, r_maint_leaf, r_maint_stem, r_maint_root, r_growth_frac,
-    rh_bas'
+    rh_base, rh_q10, rh_t_ref, lai_max, lai_min, cn_leaf. Using alternative names (e.g., ''Vcmax'' instead
+    of ''vcmax25'', or ''Q10'' instead of ''rh_q10'') causes key lookup failure.
+
+    '
   remedy: '[SURROGATE] Use the exact parameter names from the QUINCY parameter reference table. Run convert_parameters_to_quincy.py
     with the --validate flag to check all required keys before model execution. If starting from literature
     values, map them to QUINCY names explicitly.
@@ -547,7 +593,9 @@ known_issues:
   diagnosis: '[SURROGATE] Activation energies (ea_vcmax, ea_jmax, ea_rd) were specified in kJ/mol instead
     of J/mol. QUINCY expects J/mol (e.g., ea_vcmax = 65330 J/mol). If the value is entered as 65.33 kJ/mol,
     the Arrhenius exponent is 1000x too small, flattening the temperature response curve so that enzyme
-    rate'
+    rates barely change with temperature.
+
+    '
   remedy: '[SURROGATE] Ensure all activation energies are in J/mol: ea_vcmax = 65330, ea_jmax = 43540,
     ea_rd = 46390. If source literature provides kJ/mol, multiply by 1000. Verify that Vcmax approximately
     doubles for a 10 deg C increase near 25 deg C.
@@ -562,7 +610,9 @@ known_issues:
   diagnosis: '[SURROGATE] The Python environment does not have the required dependencies installed. The
     QUINCY analytic reimplementation requires numpy (array math, exp, log), pandas (CSV I/O, timeseries),
     and optionally scipy (for optimization/calibration). This commonly occurs in fresh environments or
-    when runn'
+    when running inside a container without the kdt-quincy package installed.
+
+    '
   remedy: '[SURROGATE] Install dependencies: pip install numpy pandas scipy. Or install the full package:
     pip install kdt-quincy. Run preflight_check.py in the knowledge_infrastructure directory to verify
     all dependencies before model execution.
@@ -578,7 +628,9 @@ known_issues:
   diagnosis: '[SURROGATE] CO2 was provided as a mole fraction (e.g., 0.000415 mol/mol) instead of ppm
     (415). QUINCY expects CO2 in ppm. The Farquhar model uses CO2 in the Ci calculation (Ci = g1/(g1+1)
     * Ca), and with Ca ~ 0.0004 ppm, the intercellular CO2 is essentially zero, making Wc (Rubisco-limited
-    rate) neg'
+    rate) negligible.
+
+    '
   remedy: '[SURROGATE] Ensure CO2 is in ppm (parts per million). FLUXNET2015 CO2_F_MDS is already in ppm.
     If CO2 data is a mole fraction, multiply by 1e6. If >50% of CO2 data is missing, apply the linear
     trend fallback: CO2 = 360 + 2.1 * (year - 1996).
@@ -593,7 +645,9 @@ known_issues:
   diagnosis: '[SURROGATE] Site latitude was entered in the wrong hemisphere sign (positive instead of
     negative for Southern Hemisphere, or vice versa). QUINCY uses latitude for daylength computation via
     solar declination angle. A Southern Hemisphere site (e.g., -35 deg) entered as +35 deg will have summer
-    and win'
+    and winter swapped -- peak GPP in January instead of July (or vice versa).
+
+    '
   remedy: '[SURROGATE] Verify site latitude sign: Northern Hemisphere is positive, Southern Hemisphere
     is negative. Cross-check that the GPP seasonal peak aligns with local summer (Jul-Aug for NH, Dec-Jan
     for SH).
@@ -608,7 +662,9 @@ known_issues:
   diagnosis: '[SURROGATE] The lai_t_opt (optimal temperature for LAI) parameter is set far above the site''s
     actual temperature range (e.g., 30 deg C for a boreal site where summer max is 15 deg C). The Gaussian
     LAI temperature response never reaches significant amplitude because (T - T_opt)^2 / T_range^2 is
-    alway'
+    always large, and the exponential decays to near-zero. LAI stays at lai_min.
+
+    '
   remedy: '[SURROGATE] Set lai_t_opt close to the site''s mean growing-season temperature. For boreal
     ENF: 15 deg C (default). For temperate DBF: 20 deg C. For tropical: 25-28 deg C. Set lai_t_range to
     ~10-15 deg C to allow a broad enough response window.
@@ -639,7 +695,11 @@ known_issues:
     '
   diagnosis: '[SURROGATE] The rh_precip_scale parameter has the wrong sign or rh_precip_opt is set to
     zero. QUINCY uses a bell-shaped moisture function: moisture_factor = exp(-rh_precip_scale * (P - rh_precip_opt)^2).
-    If rh_precip_opt = 0, the function peaks at zero precipitation (maximum decomposition in drought'
+    If rh_precip_opt = 0, the function peaks at zero precipitation (maximum decomposition in drought).
+    If rh_precip_scale is negative, the exponential grows with distance from optimum instead of decaying,
+    producing nonsensical values.
+
+    '
   remedy: '[SURROGATE] Set rh_precip_opt to a realistic value (default 2.5 mm/day) and ensure rh_precip_scale
     is positive (default 0.02). The moisture response should peak near 2-3 mm/day and decline symmetrically
     for both drought and waterlogging.
@@ -654,7 +714,10 @@ known_issues:
     '
   diagnosis: '[SURROGATE] The model output was parsed with an incorrect delimiter assumption. If the raw
     output uses tab-separated values but the parser expects comma-separated (or vice versa), pandas read_csv
-    misaligns columns. The header row may parse correctly (as a single field) while data rows split differen'
+    misaligns columns. The header row may parse correctly (as a single field) while data rows split differently,
+    causing the offset.
+
+    '
   remedy: '[SURROGATE] Check the actual delimiter in the model output file (tab vs comma vs whitespace).
     Pass the correct sep= argument to parse_output_quincy.py. Verify alignment by checking that GPP values
     are positive, NEE can be negative, and LE is in the range 0-200 W/m2.
@@ -666,7 +729,7 @@ known_issues:
     holds a line like ''FINISH PE: 0 mo_qs_forcing:Init_forcing_qs: invalid n_deposition_scheme: bogus''
     and ''End QUINCY model'' is never printed.'
   diagnosis: mo_exception finish() writes the message to quincy_standalone.err and STOPs without a non-zero
-    exit status, so the shell exit code says nothing about success (verified 2026-10-07 with n_deposition_scheme='bogus').
+    exit status, so the shell exit code says nothing about success (checked with n_deposition_scheme='bogus').
   remedy: 'Run through tools/run_quincy_engine.py: success = exit 0 AND ''End QUINCY model'' in stdout
     AND empty .err AND no ''Please check!'' log line AND full output files; it exits 3 otherwise.'
   severity: silent
@@ -710,8 +773,8 @@ known_issues:
   symptom: 'Namelist edits seem to have no effect: the engine log reports the default forcing year 1500
     or default latitude although qs.namelist contains the new values further down.'
   diagnosis: Fortran position_nml reads only the FIRST '&group' block. A text editor or regex that appends
-    a second '&base_ctl' (seen 2026-10-07 when the key regex ate the newline after '&grid_ctl') leaves
-    the first block with defaults.
+    a second '&base_ctl' (for example when a key regex eats the newline after '&grid_ctl') leaves the
+    first block with defaults.
   remedy: Edit with tools/_quincy_common.set_nml through run_quincy_engine.py; check_namelist() refuses
     a namelist where any group appears twice or any set value does not read back (exit 2).
   severity: silent
@@ -735,9 +798,9 @@ known_issues:
   severity: silent
 - id: dt_quincy_034
   symptom: GPP and LAI too low, still trending upward in the first simulated years; NEE biased.
-  diagnosis: The engine starts from bare ground. At FI-Hyy (2026-10-07 probes, default soil) GPP over
-    1996-2014 was 699 gC m-2 yr-1 after a 38-yr spin-up versus 934 after 500 yr (tower ~1100); daily GPP
-    NSE 0.66 vs 0.89. Soil C was still rising ~4 % per 100 yr at year 500.
+  diagnosis: The engine starts from bare ground. At FI-Hyy (default soil) GPP over 1996-2014 was 699 gC
+    m-2 yr-1 after a 38-yr spin-up versus 934 after 500 yr (tower ~1100), and daily GPP NSE was clearly
+    lower. Soil C was still rising ~4 % per 100 yr at year 500.
   remedy: Use --spinup_years 500 (default) and check quincy_summary.json spinup_drift.EcoC_trend_pct_per_100yr;
     consider base_ctl flag_slow_sb_pool_spinup_accelerator for soil-C studies.
   severity: degraded
@@ -791,7 +854,7 @@ known_issues:
   symptom: Killing 'stale' engine runs with pkill -f / pgrep -f qs.bin also kills the calling shell or
     the agent session.
   diagnosis: The agent's own command line (prompt text) contains 'qs.bin' and run paths, so pattern matching
-    on full command lines hits it (seen 2026-10-07, exit 144).
+    on full command lines hits it (exit 144).
   remedy: 'Select engine PIDs by their working directory: for p in $(pgrep -x qs.bin); do readlink /proc/$p/cwd;
     done, and kill only those inside your run dir.'
   severity: fatal
@@ -800,7 +863,7 @@ known_issues:
   diagnosis: 'calc_output_time_interval_pool: weekly = 7, monthly = 30, yearly = 365 model days; the driver
     writes when the day of the 365-day year is a multiple of the interval (quincy_qs_model_driver.f90
     MODULO(time_day, ...)), so monthly output is 12 rows per year at days 30, 60, ..., 360 and weekly
-    52 rows pe'
+    52 rows per year, not calendar months.'
   remedy: Write daily output (default) and aggregate by real dates; the parser refuses non-daily output.
   severity: silent
 - id: dt_quincy_043
@@ -813,9 +876,9 @@ known_issues:
     it treats the 'Please check!' line as a failure (exit 3).
   severity: silent
 - id: dt_quincy_044
-  symptom: 'Simulated NEE is near zero over the year while the tower shows a clear sink (FI-Hyy 1996-2014
-    real-engine run: model -9.5 vs tower -246 g C m-2 yr-1, daily NEE r 0.82); NEE PBIAS near -100 % although
-    GPP and Reco fit.'
+  symptom: 'Simulated NEE is near zero over the year while the tower shows a clear sink (e.g. FI-Hyy 1996-2014:
+    model -9.5 vs tower -246 g C m-2 yr-1, good daily NEE timing); NEE PBIAS near -100 % although GPP
+    and Reco fit.'
   diagnosis: Spin-up builds an equilibrium stand; QUINCY standalone has no age/management history for
     a 1962-planted, thinned Scots pine stand, so vegetation and soil C are near steady state.
   remedy: Judge NEE on timing (r, seasonal cycle) and report the mean bias as a structural limit, not

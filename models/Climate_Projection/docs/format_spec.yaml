@@ -340,8 +340,8 @@ known_issues:
   symptom: No dedicated tool for converting projected forcing NC to VIC ASCII format; agent tried process_forcing.py
     which requires manual config editing and hit xr.open_mfdataset time coordinate errors
   diagnosis: Monthly NC from apply_deltas had no documented NC-to-ASCII tool; S3a (apply deltas) was documented
-    but S3b (NC to ASCII) was not; the Bengbu workaround used ad-hoc scripts with hardcoded paths that
-    could not be reused for Nuxia.; ['apply_deltas_forcing.py', 'process_forcing.py']
+    but S3b (NC to ASCII) was not; a by-hand workaround used ad-hoc scripts with hardcoded paths that
+    could not be reused for another basin.; ['apply_deltas_forcing.py', 'process_forcing.py']
   remedy: Use convert_projected_forcing.py (CLI, all settings as arguments) for NC to VIC ASCII; convert_projected_forcing;
     []; Registered in the KI manifest; see s3 skill doc Step 3
   severity: fatal

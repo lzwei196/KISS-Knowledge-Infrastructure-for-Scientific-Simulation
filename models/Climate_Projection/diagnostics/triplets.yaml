@@ -220,8 +220,8 @@
     detection_method: missing_output
   diagnosis:
     root_cause: Monthly NC from apply_deltas had no documented NC-to-ASCII tool
-    explanation: S3a (apply deltas) was documented but S3b (NC to ASCII) was not; the Bengbu workaround used ad-hoc scripts
-      with hardcoded paths that could not be reused for Nuxia.
+    explanation: S3a (apply deltas) was documented but S3b (NC to ASCII) was not; a by-hand workaround used ad-hoc scripts
+      with hardcoded paths that could not be reused for another basin.
     affected_components:
     - apply_deltas_forcing.py
     - process_forcing.py
@@ -232,3 +232,4 @@
     prevention: Registered in the KI manifest; see s3 skill doc Step 3
   severity: fatal
   cross_references: []
+  seen_at: "date not recorded, Bengbu and Nuxia"

@@ -466,25 +466,25 @@
     *national* China wheat series (dt_24's regional_aggregate_time_series),
     and need a concrete representative-aggregation recipe + which moisture
     convention to use. Also: the validated multi-site PBIAS table in SKILL.md
-    (+5.8% Hebei … +10.3% Shandong) appears to compare model kg DM ha-1
+    appears to compare model kg DM ha-1
     DIRECTLY against fresh-weight provincial refs, while the SKILL "Unit notes"
     document a DM->FW /0.88 conversion — applying that conversion shifts every
     PBIAS up by ~+14%, so the two parts of the SKILL are internally inconsistent.
   diagnosis: >
-    Empirically resolved on 2026-06-24. Area-weighting the 5 validated NCP
+    Area-weighting the 5 validated NCP
     winter-wheat province point runs (Hebei/Shandong/Henan/Jiangsu/Anhui,
     1992-2000) by wheat sown area (approx Mha: Henan 5.0, Shandong 3.8,
     Hebei 2.5, Jiangsu 2.2, Anhui 2.2) into ONE national-representative series,
     then comparing against FAOSTAT "China, mainland" Wheat Yield kg/ha
     (mean ~3670 kg ha-1 over 1992-2000), gives:
-      - DM-direct  (no /0.88, matches the validated multi-site table): PBIAS +7.0%
+      - DM-direct  (no /0.88, matches the validated multi-site table): small positive PBIAS
                    -> STRONG magnitude PASS.
-      - FW (/0.88, matches the SKILL Unit-notes convention):          PBIAS +21.6%.
+      - FW (/0.88, matches the SKILL Unit-notes convention):          PBIAS about 14 points higher.
     This is a dramatic improvement over the single-Shandong-/0.88-vs-national
-    +43% (dt_24 / prior real-case run): representative aggregation, not a
+    overshoot of dt_24: representative aggregation, not a
     parameter/cultivar change, is what fixes the magnitude. The detrended trend
-    stays weak in BOTH conventions (obs slope +66.5 vs sim slope +18-21
-    kg ha-1 yr-1, slope ratio ~0.27, r_detr ~0.22) — confirming dt_24's point:
+    stays weak in BOTH conventions (sim slope about a quarter of the obs slope,
+    low r_detr) — confirming dt_24's point:
     a fixed-management weather-driven point cannot reproduce the national
     multi-decade technology uptrend. raw NSE/KGE/r (temporal_pattern_match)
     remain negative/near-zero and stay gate-invalid for this obs_shape.
@@ -496,11 +496,12 @@
        table is DM-direct; to use the documented /0.88 you must re-baseline
        the whole table (+~14% to each PBIAS). Do not mix (e.g. /0.88 on the sim
        while citing the DM-direct table's "good" PBIAS) — that double-counts
-       and was a contributor to the prior single-province +43% overshoot.
+       and was a contributor to the single-province overshoot of dt_24.
     3. trend_match: report detrended (linear-residual) r and the sim/obs slope
        ratio; do NOT expect a point model to match the national tech trend —
        a weak/failed trend_match here is structural, not a tunable defect.
   severity: structural
+  seen_at: "2026-06-24, North China Plain winter wheat (5 provinces)"
 
 - id: dt_26
   stage: output_comparison
@@ -561,11 +562,12 @@
     out.csv) keeps its plain per-block contract - no "section" key. The label
     line is REQUIRED to be quoted (monica-run-main.cpp:300 writes '"'+spec+'"');
     an unquoted one-cell line such as the `Precip` header of a "run" block or a
-    legacy single-column header is never a label (retry2 revision).
+    legacy single-column header is never a label.
     Use `--columns Yield sowing harvest` on an event file to get one row
     per harvest; skip rows whose harvest date ends "-12-31" (trailing partial
     season). SKILL.md's "3+ header rows" description omits the label line.
   severity: degraded
+  seen_at: "date not recorded, run retry2"
 
 - id: dt_28
   stage: soil_parameterisation
@@ -648,9 +650,10 @@
   remedy: >
     Set "EmergenceMoistureControlOn": false in sim.json for irrigated NCP wheat (farmers pre-irrigate the
     seedbed), or add an explicit Irrigation workstep on the sowing date. Verify with the anthesis/maturity event
-    blocks that no season is missing both. Probe column p34.375_115.875: 2010-11 season 0 -> 2809 kg DM ha-1
+    blocks that no season is missing both. Probe on one NCP cell: 2010-11 season 0 -> 2809 kg DM ha-1
     (stock cultivar) and 4574 with the dt_29 photoperiod transfer.
   severity: silent
+  seen_at: "date not recorded, NCP cell 34.375N 115.875E"
 
 - id: dt_31
   stage: output_comparison
@@ -658,7 +661,7 @@
   symptom: >
     Gridded or statistical yield obs (GDHY v1.2/1.3, FAOSTAT, provincial yearbooks) scored against MONICA Yield
     (kg DM ha-1 / 1000) read ~12-14 % low everywhere although phenology, water and N are verified healthy (NCP
-    20-cell block 2026-08-22: per-site median PBIAS -16 % with anthesis 05-10, maturity 06-10, TraDef ~ 1,
+    example: anthesis 05-10, maturity 06-10, TraDef ~ 1,
     NDef ~ 1, HI 0.27).
   diagnosis: >
     Moisture-basis mismatch, not a model defect: MONICA's Yield is dry matter; statistics-derived obs (and the
@@ -670,10 +673,10 @@
     Apply the documented conversion before scoring statistics-derived obs: sim_t_ha = kg DM ha-1 / 1000 / 0.88,
     state the convention in the result and keep the DM-direct number as an auxiliary (run_and_score.py:
     pbias_dm_direct / PBIAS_dm_direct / yield_convention). Do not mix with the DM-direct validated 5-site SKILL
-    table (dt_25). NCP block 2026-08-22: -16.0 % (DM-direct) -> -4.6 % (FW) per-site median; block mean 4.97 vs
-    5.31 t/ha. Compare DM-direct only against obs explicitly reported as dry matter (field trials, GGCMI/AgMIP
+    table (dt_25). Compare DM-direct only against obs explicitly reported as dry matter (field trials, GGCMI/AgMIP
     protocol data).
   severity: degraded
+  seen_at: "2026-08-22, North China Plain 20-cell block"
 
 - id: dt_32
   stage: output_comparison
@@ -682,8 +685,8 @@
     A regional-aggregate yield comparison (GDHY / FAOSTAT / yearbook obs, obs_shape regional_aggregate_time_series) is
     rejected by the orchestrator's dag_driven_gate with "REJECT_WRONG_METRIC: metrics ['nse', 'kge', 'r'] use families
     that are not in valid_families=['trend_match', 'magnitude_accuracy'] for (variable='Yield',
-    obs_shape='regional_aggregate_time_series')" although the magnitude is fine (NCP block 2026-08-22: per-site median
-    PBIAS -4.6 % FW, phenology gate PASS), and/or the r < 0.5 retry trigger keeps firing on the case because r ~ 0.
+    obs_shape='regional_aggregate_time_series')" although the magnitude is fine (small PBIAS,
+    phenology gate PASS), and/or the r < 0.5 retry trigger keeps firing on the case because r ~ 0.
   diagnosis: >
     A reporting-contract gap, not a model or unit defect: the result's headline `metrics` block led with nse/r/kge and the
     runner's test_runs row carried no dag-valid metric (median_* keys only), so the retest/report agent re-authored the
@@ -698,9 +701,10 @@
     aux_temporal_pattern_not_gate_valid (run_and_score.py stage 5 + write_result). Hand the runner off with
     kdt_detached_run.py and return run_detached so the orchestrator harvests result.json itself; copy the row VERBATIM,
     never re-author it. Definitions: trend_error = slope(sim - obs) x (n - 1) / mean(obs); decadal_pbias = max |PBIAS| of
-    the half-period means. A fixed-management run does not carry the technology trend (NCP: slope_ratio 0.15, trend_error
-    -0.36) - report it, do not tune for it (dt_25). Harness note: the L2 binding ships GDHY as catalogue shape
+    the half-period means. A fixed-management run does not carry the technology trend; report it,
+    do not tune for it (dt_25). Harness note: the L2 binding ships GDHY as catalogue shape
     spatial_time_series while the dag declares regional_aggregate_time_series, so the case contract's determining metric
     falls back to the shape-nature default r ("SHAPE MISMATCH - fix the dag or the catalogue shape"); the dag should
     declare the gridded-statistics shape explicitly (Tier-1 proposal).
   severity: structural
+  seen_at: "2026-08-22, North China Plain 20-cell block"

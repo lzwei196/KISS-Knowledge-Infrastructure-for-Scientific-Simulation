@@ -3,7 +3,7 @@
 # ============================================================================
 # Diagnostic triplets (26 when this header was written; current count: the SKILL.md KI map) covering 5 failure domains.
 # Generated during PCR-GLOBWB 2 knowledge dissection for HydroCraft platform.
-# dt_021..dt_026 added from Rhine-Kaub production run 2026-04-29.
+# dt_021..dt_026 added from a production run (where and when: each entry's seen_at).
 # ============================================================================
 
 # --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
@@ -496,7 +496,7 @@
   severity: cosmetic
   cross_references: []
 
-# --- Production Run Lessons (dt_021..dt_026) — Rhine-Kaub 2026-04-29 ---
+# --- Production Run Lessons (dt_021..dt_026; where and when: each entry's seen_at) ---
 
 - id: dt_021
   stage: s5_execution
@@ -523,6 +523,7 @@
     prevention: "Always use 'env PATH=...' prefix; never rely on ambient shell PATH for subprocess calls"
   severity: crash
   cross_references: []
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_022
   stage: s1_configuration
@@ -549,6 +550,7 @@
     prevention: "Use the template .ini in workflow/workflow.md which includes all required keys"
   severity: crash
   cross_references: [dt_031]
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_023
   stage: s6_transient_run
@@ -579,6 +581,7 @@
     prevention: "Set inputDir to local directory; use download_static_inputs.sh for bulk download"
   severity: crash
   cross_references: [dt_014, dt_025]
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_024
   stage: s1_configuration
@@ -609,6 +612,7 @@
     prevention: "Never use level*1000 numbering — always level*100"
   severity: crash
   cross_references: []
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_025
   stage: s2_forcing_preparation
@@ -638,6 +642,7 @@
     prevention: "Always pre-extract spatial subset before Python processing of MSWX files"
   severity: performance
   cross_references: [dt_023, dt_026]
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_026
   stage: s2_forcing_preparation
@@ -666,6 +671,7 @@
     prevention: "Always use bounds 0.05° wider than needed to account for float32 rounding"
   severity: crash
   cross_references: [dt_025]
+  seen_at: "2026-04-29, Rhine-Kaub production run"
 
 - id: dt_030
   stage: s1b_input_acquisition
@@ -787,7 +793,7 @@
   failure_domain: parameterization
   symptom:
     description: >
-      Simulated discharge tracks the observed hydrograph well (r ~ 0.85-0.90) but sits
+      Simulated discharge tracks the observed hydrograph well (high r) but sits
       uniformly too high: PBIAS strongly positive in nearly every month AND every scored
       year, NSE negative. A pure volume offset on a well-correlated hydrograph.
     error_pattern: ""
@@ -800,8 +806,8 @@
       PCR-GLOBWB caps actualET by referencePotET (model/meteo.py:133,144,453), so the
       water the basin fails to evaporate leaves as runoff and routes to the outlet.
       Measured at Songhua/Harbin: P 500.0, totalEvaporation 369.9, totalRunoff 119.2
-      mm/yr against an observed 70.0 mm/yr (868.99 m3/s over 391,310 km2); NSE -0.537,
-      PBIAS +75.9%, r 0.864. The run completes without warning and the hydrograph shape
+      mm/yr against an observed 70.0 mm/yr (868.99 m3/s over 391,310 km2), so NSE is negative and
+      PBIAS large and positive while r stays high. The run completes without warning and the hydrograph shape
       looks right, so the defect is silent.
     affected_components: [meteo.py, convert_forcing_to_pcrglobwb.py, run_and_score.py]
   remedy:
@@ -818,6 +824,7 @@
       parameters. Inspect the forcing's variable list before setting referenceETPotMethod.
   severity: silent_wrong_result
   cross_references: [dt_003, dt_009, dt_022, dt_028]
+  seen_at: "date not recorded, Songhua (Harbin)"
 
 - id: dt_032
   name: wrong_river_snap
@@ -836,7 +843,7 @@
     explanation: >
       A neighbouring tributary can carry a near-identical upstream area and win the
       area contest while being a completely different river. Measured at Wangjiaba
-      (Huai, 2026-07-19): reported (32.4275, 115.595), target 30,630 km2. With
+      (Huai): reported (32.4275, 115.595), target 30,630 km2. With
       --snap-search 2 the area-only rule chose (33.25, 115.75) = 30,884 km2 (+0.83%),
       which is on the Shaying/Ying TRIBUTARY -- the Huai mainstem gauges upstream of
       Wangjiaba (Xixian 息县, Huaibin 淮滨) are NOT inside its catchment, and it drains
@@ -861,3 +868,4 @@
       perfect match usually means the trace found a different river, not a better one.
   severity: silent_wrong_result
   cross_references: [dt_011, dt_027]
+  seen_at: "2026-07-19, Wangjiaba (Huai)"

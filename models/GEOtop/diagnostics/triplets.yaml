@@ -511,12 +511,12 @@
   stage: s8_validation
   failure_domain: parameter_format
   symptom:
-    description: "A surface/soil temperature validation reports a wildly negative PBIAS (e.g. -97%) and a poor or negative KGE while NSE and r are good (0.6 / 0.97). Metrics disagree violently about the same series."
+    description: "A surface/soil temperature validation reports a wildly negative PBIAS (near -100%) and a poor or negative KGE while NSE and r are good. Metrics disagree violently about the same series."
     error_pattern: ""
     detection_method: value_comparison
   diagnosis:
     root_cause: "Ratio-based metrics (PBIAS, KGE) computed on a temperature series in CELSIUS whose mean sits near zero"
-    explanation: "PBIAS = 100*sum(sim-obs)/sum(obs) and KGE's bias term beta = mean(sim)/mean(obs) both divide by the mean of the observations. Celsius has an ARBITRARY zero, so a winter day/night LST series straddling freezing has a mean near 0 and the denominator collapses: at this NCP pixel a +1.0 K mean bias produced PBIAS = -96.7% and KGE = -0.12 in Celsius versus PBIAS = +0.62% and KGE = +0.45 in Kelvin -- same series, same model. NSE and r are translation-invariant and are unaffected, which is the tell-tale signature. This is a measurement artifact, not model error: switching cultivar/forcing/parameters cannot fix it."
+    explanation: "PBIAS = 100*sum(sim-obs)/sum(obs) and KGE's bias term beta = mean(sim)/mean(obs) both divide by the mean of the observations. Celsius has an ARBITRARY zero, so a winter day/night LST series straddling freezing has a mean near 0 and the denominator collapses: for example a +1.0 K mean bias gave a PBIAS near -100% and a negative KGE in Celsius, but a PBIAS under 1% and a positive KGE in Kelvin -- same series, same model. NSE and r are translation-invariant and are unaffected, which is the tell-tale signature. This is a measurement artifact, not model error: switching cultivar/forcing/parameters cannot fix it."
     affected_components: [output]
   remedy:
     action: "Score temperature on the ABSOLUTE scale (Kelvin) whenever a magnitude_accuracy metric (PBIAS/KGE) is required"
@@ -528,6 +528,7 @@
     prevention: "run_and_score.py scores the paired LST series in Kelvin; the meaningless Celsius PBIAS is not reported"
   severity: silent
   cross_references: []
+  seen_at: "date not recorded, North China Plain (one MODIS LST pixel)"
 
 - id: dt_025
   stage: s8_validation
@@ -561,7 +562,7 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: "A record was not stamped at the END of the interval it covers"
-    explanation: "GEOtop uses a record stamped t for the interval (t-dt, t] (time_interp_constant, meteodata.cc:137-245). Sources stamp differently (checked 2026-10-19 at 36N 116E, Nov 2017, models/GEOtop/verify_forcing_bugs_20261019/): CMFD prec = mean over (t-3, t] (right); CMFD srad/lrad = centred on t; CMFD temp/pres/shum/wind = instant at t; MSWX P = [t, t+3) (strong: corr 0.964 with CMFD prec at t+3); MSWX Tair = [t, t+3) (WEAK: RMSE 1.20 K vs 1.39 as an instant, mixed by hour); MSWX SWd = centred on t (checked 2026-10-20 against the sun at 6 points over all of 2017, stamp_check/swd_envelope.json: corr 0.91-0.98 centred vs 0.89-0.94 [t, t+3); the clear-sky envelope leans least when centred; the best fit is about 0.5 h after t, so 'pair' is ~0.5 h off); MSWX LWd, wind, humidity and pressure not checked (kept as [t, t+3)); NASA POWER hourly = [HH, HH+1) (only shortwave checked; T2M, wind and humidity are ASSUMED to follow it); every daily loader = day D stamped D 00:00. CMFD srad is NOT settled: the sun test (TOA) says centred (corr 0.914 vs 0.83 start, 0.73 end), but a review check against NASA POWER hourly fits interval end better; the two references disagree. CMFD lrad was never checked against data (it follows the manual). Left as is, MSWX is up to 3 h early, NASA POWER 1 h, CMFD state values 1.5 h, and daily records a whole day. The rule assumes GEOtop's default LinearInterpolation = 0 (each record held over (t-dt, t], parameters.cc:2166, meteo.cc:54)."
+    explanation: "GEOtop uses a record stamped t for the interval (t-dt, t] (time_interp_constant, meteodata.cc:137-245). Sources stamp differently (checked at 36N 116E, Nov 2017): CMFD prec = mean over (t-3, t] (right); CMFD srad/lrad = centred on t; CMFD temp/pres/shum/wind = instant at t; MSWX P = [t, t+3) (strong: corr 0.964 with CMFD prec at t+3); MSWX Tair = [t, t+3) (WEAK: RMSE 1.20 K vs 1.39 as an instant, mixed by hour); MSWX SWd = centred on t (checked against the sun at 6 points over all of 2017: corr 0.91-0.98 centred vs 0.89-0.94 [t, t+3); the clear-sky envelope leans least when centred; the best fit is about 0.5 h after t, so 'pair' is ~0.5 h off); MSWX LWd, wind, humidity and pressure not checked (kept as [t, t+3)); NASA POWER hourly = [HH, HH+1) (only shortwave checked; T2M, wind and humidity are ASSUMED to follow it); every daily loader = day D stamped D 00:00. CMFD srad is NOT settled: the sun test (TOA) says centred (corr 0.914 vs 0.83 start, 0.73 end), but a review check against NASA POWER hourly fits interval end better; the two references disagree. CMFD lrad was never checked against data (it follows the manual). Left as is, MSWX is up to 3 h early, NASA POWER 1 h, CMFD state values 1.5 h, and daily records a whole day. The rule assumes GEOtop's default LinearInterpolation = 0 (each record held over (t-dt, t], parameters.cc:2166, meteo.cc:54)."
     affected_components: [meteodata, radiation, energy.balance, water.balance]
   remedy:
     action: "Re-stamp each source to interval end before gridding"
@@ -573,6 +574,7 @@
     prevention: "convert_forcing.py read_via_load_forcing re-stamps every source since 2026-10-19; tests/test_forcing_timing.py runs the binary"
   severity: silent
   cross_references: [dt_021, dt_022, dt_027]
+  seen_at: "2026-10-19, 36N 116E (Nov 2017, verify_forcing_bugs_20261019); 2026-10-20, 6 points over 2017"
 
 - id: dt_027
   stage: s8_validation
@@ -583,7 +585,7 @@
     detection_method: provenance
   diagnosis:
     root_cause: "convert_forcing.py before 2026-10-19 wrote JDfrom0 with +366 (dt_021), wrote the Iprec depth under HeaderIPrec (dt_004) and did not re-stamp sources to interval end (dt_026)"
-    explanation: "Affected (DB test_runs): 3909 (NCP, CMFD 3-hourly, NSE 0.601) and its 2026-10-19 re-run: 1 day early and rain 3x. 3578 (MOD11A2, hourly) and verify_1 (Jilin, NASA POWER hourly): 1 day early, rain amount right, hourly stamps start-labelled. 721/1907 (Bengbu) and 789/1908 (Wangjiaba), written by auto_dissect validate_bengbu.py/validate_wangjiaba.py: daily records about 1.4 days early, rain amount right. 855/1906 (Matsch_B2 self-test): shipped meteo, itself one day off. Any --dt 86400 KI run between 2026-07-21 and 2026-10-19: 24x rain and 2 days early (none in test_runs). Evidence: models/GEOtop/verify_forcing_bugs_20261019/VERIFY.md."
+    explanation: "Which results are hit depends on the record step and on the script that wrote the meteo file. 3-hourly CMFD results: 1 day early and rain 3x. Hourly results (e.g. MOD11A2 runs, NASA POWER hourly): 1 day early, rain amount right, hourly stamps start-labelled. Daily results written by the old auto_dissect validate scripts: daily records about 1.4 days early, rain amount right. The shipped Matsch_B2 self-test: shipped meteo, itself one day off. Any --dt 86400 KI run between 2026-07-21 and 2026-10-19: 24x rain and 2 days early. Which stored runs are hit is a fact of the run database (test_runs), not of this KI."
     affected_components: [meteodata, water.balance]
   remedy:
     action: "Re-make the meteo file with the fixed convert_forcing.py and re-run before quoting such a result"
@@ -594,3 +596,4 @@
     prevention: "run_and_score.py check_meteo stops on a JDfrom0 that differs from the clock"
   severity: silent
   cross_references: [dt_004, dt_021, dt_026]
+  seen_at: "2026-10-19, NCP, Jilin, Bengbu, Wangjiaba, Matsch_B2 (test_runs 3909, 3578, verify_1, 721/1907, 789/1908, 855/1906)"

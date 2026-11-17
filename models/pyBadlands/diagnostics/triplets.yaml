@@ -439,7 +439,7 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: "In low-relief landscapes (<200 m), hillslope diffusion (caerial) dominates over SPL fluvial incision"
-    explanation: "The SPL term E = Kd·A^m·S^n requires slope S. On flat coastal plains, S is near zero, making SPL erosion negligible regardless of Kd. Hillslope diffusion (caerial) becomes the primary sediment transport mechanism. Validated on Pearl River (USA): Kd spanning 1000x had zero effect, but caerial=0.5 matched observations."
+    explanation: "The SPL term E = Kd·A^m·S^n requires slope S. On flat coastal plains, S is near zero, making SPL erosion negligible regardless of Kd. Hillslope diffusion (caerial) becomes the primary sediment transport mechanism. Checked on Pearl River (USA): Kd spanning 1000x had zero effect, but caerial=0.5 matched observations."
     affected_components: [erosion, creep, sp_law]
   remedy:
     action: "For low-relief domains, calibrate caerial (not Kd). Use unconsolidated class: caerial=0.1-0.5 m2/yr."
@@ -462,7 +462,7 @@
     detection_method: value_comparison
   diagnosis:
     root_cause: "Kd set too high for well-lithified rock; used generic sandstone class instead of site-appropriate value"
-    explanation: "Well-lithified Karoo-type sandstones require Kd ~8e-7, between granite (1e-7) and generic limestone (1e-6). The generic sandstone value (5e-6) is for friable/weakly cemented sandstone and gives 15x too much erosion on indurated formations. Validated on Modder River (South Africa): Kd=8e-7 gave 12.76 mm/kyr vs observed 5-20 mm/kyr."
+    explanation: "Well-lithified Karoo-type sandstones require Kd ~8e-7, between granite (1e-7) and generic limestone (1e-6). The generic sandstone value (5e-6) is for friable/weakly cemented sandstone and gives 15x too much erosion on indurated formations. Checked on Modder River (South Africa): Kd=8e-7 gave 12.76 mm/kyr vs observed 5-20 mm/kyr."
     affected_components: [sp_law, erosion]
   remedy:
     action: "Reduce Kd to 5e-7 to 1e-6 for well-lithified sedimentary rocks"

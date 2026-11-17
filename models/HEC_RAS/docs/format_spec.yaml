@@ -439,12 +439,17 @@ known_issues:
   symptom: Need to run a steady profile on a NEW river/reach (no shipped .gNN.hdf + .rNN). Prior runs
     declared this 'structurally impossible without Wine Mono / ras_commander'.
   diagnosis: 'FALSE NEGATIVE. The steady Fortran solver reads cross-section station/elevation DIRECTLY
-    from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven 2026-06-04: bumping
-    every bed elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the
-    computed wate'
-  remedy: Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline -> ki_tools_common.terrain_ops.cut_cross_sections
-    -> trapezoidal XS injected into the template .rNN, keeping 19 XS / 4 pts so the 'Section - Arrays
-    Sizes' header stays valid). Then run_hecras.py under plain wine.
+    from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven: bumping every bed
+    elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the computed
+    water surface by exactly +5 ft (66.00..72.93 -> 71.00..77.93). New geometry therefore does NOT require
+    Ras.exe/Wine Mono — only an edited .rNN.'
+  remedy: 'Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline ->
+    ki_tools_common.terrain_ops.cut_cross_sections -> trapezoidal XS injected into the template .rNN,
+    keeping 19 XS / 4 pts so the ''Section - Arrays Sizes'' header stays valid). Then run_hecras.py under
+    plain wine. Demonstrated end-to-end on a real-basin DEM (19 XS, rc=0). NOTE: steady PRODUCES stage,
+    CONSUMES discharge — a discharge_m3s target is the forcing input, not an output; for Q-vs-Q routing
+    fidelity use unsteady (still needs the plan-HDF skeleton; investigate whether the unsteady solver
+    is likewise .uNN/.rNN-authoritative).'
 - id: missing_plan_hdf_skeleton
   symptom: 'RasSteady aborts: ''HDF_ERROR trying to open HDF output file: <prj>.pNN.tmp.hdf ... No such
     file or directory'''
@@ -469,11 +474,15 @@ known_issues:
   symptom: Ras.exe (the .NET GUI/launcher) hangs or times out (rc=124) headless.
   diagnosis: 'Ras.exe is .NET and needs Wine Mono (~/.wine/drive_c/windows/mono), which is not installed;
     dl.winehq.org is unreachable in the sandbox.; Earlier this triplet ALSO claimed `ras-commander RasCmdr.compute_plan
-    fails before launch` was caused by missing Mono. That conflation was wrong: RasCmdr drives t'
+    fails before launch` was caused by missing Mono. That conflation was wrong: RasCmdr drives the Fortran
+    solvers (HEC-RAS.exe, RasUnsteady.exe), which are NOT .NET and do NOT need Mono. If RasCmdr fails,
+    look for LD_PRELOAD/GDAL/TLS issues, working-directory misconfig, or missing example data — NOT Mono.
+    Counterfactual: `wine /path/HEC-RAS.exe <project>.p01` running the Fortran solver bare confirms Mono
+    is not on RasCmdr''s critical path.'
   remedy: Do NOT invoke Ras.exe (the .NET GUI) headless. Use RasCmdr.compute_plan (drives Fortran solvers
     via WINE, no Mono required) or run_hecras.py for direct solver invocation. Both steady and unsteady
     are drivable headless via ras-commander 0.93.0's HDF-direct path. Wine Mono is only required for RAS
-    Map
+    Mapper GIS exports or interactive GUI.
 - id: missing_run_file
   symptom: 'run_hecras.py: ''No steady run file <prj>.rNN''.'
   diagnosis: Brand-new project with no flattened run file. The .rNN is produced by Ras.exe/the GUI/ras-commander,

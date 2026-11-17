@@ -24,7 +24,7 @@
       runs declared this 'structurally impossible without Wine Mono / ras_commander'.
   diagnosis:
     root_cause: 'FALSE NEGATIVE. The steady Fortran solver reads cross-section station/elevation DIRECTLY
-      from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven 2026-06-04: bumping
+      from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven: bumping
       every bed elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the
       computed water surface by exactly +5 ft (66.00..72.93 -> 71.00..77.93). New geometry therefore does
       NOT require Ras.exe/Wine Mono — only an edited .rNN.'
@@ -32,10 +32,11 @@
     action: 'Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline ->
       ki_tools_common.terrain_ops.cut_cross_sections -> trapezoidal XS injected into the template .rNN,
       keeping 19 XS / 4 pts so the ''Section - Arrays Sizes'' header stays valid). Then run_hecras.py
-      under plain wine. Demonstrated end-to-end on Bengbu DEM (china_dem_90m, 19 XS, Q=3810/6812 m3/s
-      -> WS 69.33..81.22 ft, rc=0). NOTE: steady PRODUCES stage, CONSUMES discharge — a discharge_m3s
+      under plain wine. Demonstrated end-to-end on a real-basin DEM (19 XS, rc=0). NOTE: steady PRODUCES
+      stage, CONSUMES discharge — a discharge_m3s
       target is the forcing input, not an output; for Q-vs-Q routing fidelity use unsteady (still needs
       the plan-HDF skeleton; investigate whether the unsteady solver is likewise .uNN/.rNN-authoritative).'
+  seen_at: "2026-06-04, MIXED example; date not recorded, Bengbu DEM (china_dem_90m)"
 - id: missing_plan_hdf_skeleton
   failure_domain: EXECUTION
   symptom:

@@ -219,29 +219,32 @@
     Cell elevation = mean of the DEM pixels whose centre is inside the cell (written to the
     grid as `elev` for audit). An active cell with no DEM value stops the tool with
     "DEM GAP" — there is no fill; pass a DEM that covers the whole basin.
-    Tangnaihai 2026-10-03: China DEM and MERIT DEM agree within 3.6 m per 0.25-deg cell.
+    In one basin China DEM and MERIT DEM agreed within 3.6 m per 0.25-deg cell.
+  seen_at: "2026-10-03, Tangnaihai"
 
 - id: T024
   symptom: "A MOSART run script reads its direc/xmask/frac triplet from outputs/<basin>/routing_param/<STA>_*.txt (or another VIC/Lohmann routing set-up folder)"
-  diagnosis: "The VIC/Lohmann routing set-up is VIC's input, not a data source. Taking MOSART's domain from it ties MOSART to a VIC set-up (and it was how the 52%-truncated Wangjiaba domain got in). The KI has its own delineator from MERIT Hydro."
+  diagnosis: "The VIC/Lohmann routing set-up is VIC's input, not a data source. Taking MOSART's domain from it ties MOSART to a VIC set-up (and a truncated set-up domain, e.g. one that holds only about half of the basin, comes in this way). The KI has its own delineator from MERIT Hydro."
   remedy: |
     Build the triplet with tools/delineate_d8_from_merit.py --merit-dir
     KISSPATH_DATA/merit_hydro --gauge-lat/--gauge-lon <gauge>
     --published-area-km2 <published> --resolution <same as the runoff grid, e.g. 0.25>
     --bbox w,s,e,n (must hold the WHOLE basin; the default box is centred on the gauge and
     is too small for long rivers). Then build_mosart_grid.py --dem ... --expected-area-km2.
-    Tangnaihai 2026-10-03: MERIT triplet = the same 251 cells as the old Lohmann set,
-    122,739 km2 (+0.63% vs 121,972), gauge cell (35.375,100.125) instead of (35.625,100.125)
-    — the gauge sits on the 35.5N cell edge and MERIT snaps it just south of it.
+    In one basin the MERIT triplet had the same cells as the old Lohmann set and an area
+    within 1% of the published one, but the gauge sat on a cell edge and MERIT snapped it
+    to the neighbouring cell.
+  seen_at: "2026-10-03, Tangnaihai; date not recorded, Wangjiaba"
 
 - id: T025
   symptom: "SKILL.md / docs say MOSART is 'stage 2 of a VIC->MOSART pipeline' whose grid comes from the 'VIC/Lohmann D8' and whose elevation comes from the VIC soil file"
-  diagnosis: "Stale text from the first (2026-07-11) Tangnaihai run. Only the RUNOFF is VIC's (a coupling on results, convert_runoff_forcing.py); the domain must come from MOSART's own tools."
+  diagnosis: "Stale text from the first VIC->MOSART run. Only the RUNOFF is VIC's (a coupling on results, convert_runoff_forcing.py); the domain must come from MOSART's own tools."
   remedy: |
     Follow SKILL.md 'Static Inputs' as of 2026-10-03: delineate_d8_from_merit.py ->
     build_mosart_grid.py --dem -> convert_grid_parameters.py --validate-only. Runoff: any
     LSM result (VIC, CLM, mHM, Livneh) through convert_runoff_forcing.py.
     frac_to_basin_shp.py goes the OTHER way (MOSART domain -> VIC basin shapefile) and stays.
+  seen_at: "2026-07-11, Tangnaihai"
 
 - id: T026
   symptom: "build_grid prints 'WARNING: no inactive neighbour to host a sink; score basin discharge at the cell UPSTREAM' and the scored discharge is all 0 (or: 'NO SINK: outlet ... has no inactive neighbour')"
@@ -249,7 +252,8 @@
   remedy: |
     build_mosart_grid.py now uses the active HEADWATER neighbour (no cell drains into it)
     with the least basin area as the sink; its area leaves the gauge total and the
-    --expected-area-km2 gate re-checks (Tangnaihai: 7.1 km2 dropped, still +0.62%).
+    --expected-area-km2 gate re-checks the total.
     If no such neighbour exists either, the tool stops with "NO SINK": pad the triplet
     with a 1-cell 0 (NODATA) border and rebuild (worked example: the old John Day verifier,
     kept for the record in models/MOSART/_removed_vic_input_tools_20261002/run_and_score_johnday.py).
+  seen_at: "date not recorded, Tangnaihai"

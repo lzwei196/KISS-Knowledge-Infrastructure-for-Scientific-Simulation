@@ -620,7 +620,7 @@
   cross_references: [dt_010]
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Storm Surge / Ocean Domain — added 2026-04-30 from Hurricane Laura 2020 run
+# Storm Surge / Ocean Domain (where and when: each entry's seen_at)
 # ──────────────────────────────────────────────────────────────────────────────
 
 - id: dt_021
@@ -665,6 +665,7 @@
       - "Set hU field: uniform (0 0 0)"
       - "Apply IB forcing via time-varying h0 or modified momentum source"
       - "For full wind+pressure surge use a dedicated ocean model (ROMS, Delft3D)"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_022
   stage: s4_solver_setup
@@ -696,6 +697,7 @@
       - "Also reduce nSubCycles from 5 to 1-2 to reduce alpha overshoot"
       - "Remove alphaApplyPrevCorr yes; and MULES { nIter N; } sub-dict"
       - "After fix, confirm Max(alpha.water) stays ≤ 1.0 in first 10 timesteps"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_023
   stage: s2_boundary_conditions
@@ -729,6 +731,7 @@
       - "    atmosphere { type pressureInletOutletVelocity; value uniform (0 0 0); }"
       - "Keep only the p_rgh time table at the atmosphere boundary"
       - "To add wind forcing correctly, implement as fvModels momentum source in the top cell layer"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_024
   stage: s4_solver_setup
@@ -755,6 +758,7 @@
       - "cd $WM_PROJECT_DIR/src/parallel/parallel && wmake libso"
       - "Verify: ls $FOAM_LIBBIN/libparallel.so"
       - "Then retry: cd $WM_PROJECT_DIR/applications/utilities/parallelProcessing/decomposePar && wmake"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_025
   stage: s2_boundary_conditions
@@ -788,6 +792,7 @@
       - "For strict mass conservation, use fixedValue 0 (prevents any alpha from exiting)"
       - "Note: runTimeModifiable only applies to system/ files, NOT 0/ field BCs"
       - "To change BCs on running parallel case: kill, update processor*/0/, restart from latest checkpoint"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_026
   stage: s4_solver_setup
@@ -815,6 +820,7 @@
       - "    div(phi,alpha) Gauss interfaceCompression vanLeer 1;"
       - "To disable compression (more stable, diffuse interface): Gauss vanLeer;"
       - "Available schemes: MPLICU, MULES, interfaceCompression, vanLeer"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_027
   stage: s1_mesh_generation
@@ -845,6 +851,7 @@
       - "In setFieldsDict: box (0 0 0) (Lx Ly 40) for water zone"
       - "NOT: box ... (Lx Ly 47.5) which puts surface inside cell 5"
       - "Verify: first log line should show Max(alpha.water)=1.000000 exactly"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_028
   stage: s4_solver_setup
@@ -878,6 +885,7 @@
       - "    p_rgh_air = p_atm_BC (matches atmosphere BC at t=0)"
       - "Write as nonuniform List<scalar> — see write_prgh_init.py pattern in case dir"
       - "Verify: first timestep should show Co_max < 0.1 within 10 steps if init is correct"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_029
   stage: s2_boundary_conditions
@@ -913,6 +921,7 @@
       - "Open/absorbing BCs require waveTransmissive or Orlanski radiation conditions"
       - "waveTransmissive needs phi, K, psi, gamma — complex to set up for VoF"
       - "For ocean-scale domains, use a dedicated storm surge model instead"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_030
   stage: s5_execution
@@ -947,6 +956,7 @@
       - "Also set maxDeltaT to a physically safe value (e.g. 300s for ocean domain)"
       - "Since runTimeModifiable true, this change takes effect without restart"
       - "Trade-off: interface resolution reduced but stability greatly improved"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"
 
 - id: dt_031
   stage: s6_postprocessing
@@ -983,8 +993,7 @@
       - "    eta_IB(x,y,t) = -(p_atm(x,y,t) - p_ref) / (rho_water * g)"
       - "Extract p_atm at each gauge location from the forcing NetCDF (ROMS Pair or WRF)"
       - "Convert: 1 mbar = 100 Pa; eta_IB = -(Pair_mbar - 1013.25) * 100 / (1025 * 9.81)"
-      - "Script: outputs/openfoam_laura_2020/extract_ib_surge.py (reference implementation)"
-      - "Validation at Grand Isle: IB gives NSE=0.51, R=0.84 vs NOAA obs (Laura 2020)"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run, Grand Isle gauge (run folder openfoam_laura_2020)"
 
 - id: dt_032
   stage: s3_physical_properties
@@ -1023,3 +1032,4 @@
       - "Create constant/physicalProperties.air:"
       - "    viscosityModel constant; nu 1.48e-05; rho 1.2;"
       - "Delete constant/transportProperties if present (legacy, unused in dev)"
+  seen_at: "2026-04-30, Hurricane Laura 2020 run"

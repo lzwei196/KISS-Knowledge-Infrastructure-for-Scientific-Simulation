@@ -1,0 +1,19 @@
+--- a/gate.py	2026-11-03 23:32:50.953260373 +0800
++++ b/gate.py	2026-11-17 14:43:50.961117732 +0800
+@@ -54,6 +54,7 @@
+     "read_ki_file", "list_ki_files", "run_preflight", "search_diagnostics",
+     "list_skills", "read_skill",
+     "list_project_files", "read_project_file", "write_project_file", "run_ki_tool",
++    "edit_project_file", "search_files",   # 2026-11-17 file tools (kiss_cli/filetools.py)
+     "create_project_plot", "fetch_data",
+     "ki_digest", "inspect_data_file", "run_server_script", "run_calibration_trial",
+     "run_project_script",
+@@ -63,7 +64,7 @@
+ #: starts a process.
+ READ_ONLY_TOOLS = frozenset({
+     "read_ki_file", "list_ki_files", "search_diagnostics", "list_skills", "read_skill",
+-    "list_project_files", "read_project_file", "inspect_data_file",
++    "list_project_files", "read_project_file", "inspect_data_file", "search_files",
+ })
+ 
+ 

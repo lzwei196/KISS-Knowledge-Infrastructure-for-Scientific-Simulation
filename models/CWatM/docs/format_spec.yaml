@@ -293,10 +293,13 @@ outputs:
 known_issues:
 - id: dt_001
   symptom: Extreme flooding or unrealistically high discharge. River discharge 100-1000× too high.
-  diagnosis: precipitation_coversion factor wrong — input precip units don't match conversion factor;
+  diagnosis: 'precipitation_coversion factor wrong — input precip units don''t match conversion factor;
     CWatM multiplies precipitation input by precipitation_coversion to get m/day. Default is 86.4 which
     converts kg/m²/s to m/day (= 86400 s/day ÷ 1000 mm/m). If input is already in mm/day and conversion
-    is 86.4, pr
+    is 86.4, precipitation is 86.4× too high. If input is in m/day and conversion is 86.4, precipitation
+    is 86.4× too high.
+
+    ; [''readmeteo'', ''settings.ini'']'
   remedy: 'Match precipitation_coversion to actual input units; convert_forcing_to_cwatm; [''Check actual
     units in forcing NetCDF: ncdump -h precipitation.nc'', ''kg/m²/s: use 86.4 (default)'', ''m/day: use
     1.0'', ''mm/day: use 0.001'', ''mm/hr: use 0.024'']; validate_converted_data() checks precipitation
@@ -304,29 +307,37 @@ known_issues:
   severity: silent
 - id: dt_002
   symptom: Zero or near-zero discharge. No runoff generated despite precipitation.
-  diagnosis: Precipitation too low — conversion factor divides instead of multiplying, or wrong scale;
+  diagnosis: 'Precipitation too low — conversion factor divides instead of multiplying, or wrong scale;
     If precipitation_coversion = 1.0 but input is in kg/m²/s, the internal precipitation is ~0.00001 m/day
     instead of ~0.001 m/day. All water evaporates or infiltrates, generating no runoff. No error message
-    is rai
+    is raised.
+
+    ; [''readmeteo'', ''settings.ini'']'
   remedy: 'Check precipitation internal values: should be ~0.001-0.01 m/day for most climates; convert_forcing_to_cwatm;
     [''Add temporary output: OUT_MAP_Daily = precipitation'', ''Check output: daily precipitation should
-    be 0-0.1 m/day (0-100 mm/day)'']; Output precipitation map for first month and check magnitud'
+    be 0-0.1 m/day (0-100 mm/day)'']; Output precipitation map for first month and check magnitude'
   severity: silent
 - id: dt_003
   symptom: Snow never melts, or all precipitation is snow/rain regardless of season. Wrong snowpack dynamics.
-  diagnosis: TemperatureInKelvin flag doesn't match input data units; If TemperatureInKelvin = True but
-    input is in Celsius (e.g., 20°C), CWatM treats 20 as 20 K = -253°C. All precipitation becomes snow,
-    nothing melts. Conversely, if flag = False but input is Kelvin (293 K), CWatM adds 273.15, making
-    temperature
+  diagnosis: 'TemperatureInKelvin flag doesn''t match input data units; If TemperatureInKelvin = True
+    but input is in Celsius (e.g., 20°C), CWatM treats 20 as 20 K = -253°C. All precipitation becomes
+    snow, nothing melts. Conversely, if flag = False but input is Kelvin (293 K), CWatM adds 273.15, making
+    temperature 566°C — everything melts instantly, extreme ET.
+
+    ; [''readmeteo'', ''snow_frost'', ''evaporationPot'']'
   remedy: 'Check temperature values in forcing NetCDF and set flag correctly; convert_forcing_to_cwatm;
     [''ncdump -v tavg precipitation.nc | head -20'', ''If values > 200: data is Kelvin, set TemperatureInKelvin
-    = True'', ''If values < 100: data is Celsius, set TemperatureInKelvin = False'']; validate_converted_data'
+    = True'', ''If values < 100: data is Celsius, set TemperatureInKelvin = False'']; validate_converted_data()
+    checks temperature range'
   severity: silent
 - id: dt_004
   symptom: All water drains instantly or soil stays waterlogged. Unrealistic soil moisture dynamics.
-  diagnosis: KSat units wrong — CWatM expects cm/day, input may be mm/hr or m/s; CWatM reads KSat in cm/day.
-    SoilGrids provides mm/hr (factor 2.4 to cm/day). Some datasets provide m/s (factor 8,640,000 to cm/day).
-    Using mm/hr values directly (without ×2.4) makes KSat ~2.4× too low. Using m/s values without conve
+  diagnosis: 'KSat units wrong — CWatM expects cm/day, input may be mm/hr or m/s; CWatM reads KSat in
+    cm/day. SoilGrids provides mm/hr (factor 2.4 to cm/day). Some datasets provide m/s (factor 8,640,000
+    to cm/day). Using mm/hr values directly (without ×2.4) makes KSat ~2.4× too low. Using m/s values
+    without conversion makes KSat millions of times wrong.
+
+    ; [''soil'', ''convert_soil_to_cwatm'']'
   remedy: 'Convert KSat to cm/day before use; convert_soil_to_cwatm; [''HWSD: already cm/day (no conversion)'',
     ''SoilGrids: cm/day = mm/hr × 2.4'', ''m/s: cm/day = m/s × 8640000'', ''Typical range: Sand 100-700,
     Loam 5-50, Clay 0.5-5 cm/day'']; validate_outputs() checks KSat range'
@@ -337,7 +348,7 @@ known_issues:
     databases provide 1/m or 1/kPa. Using 1/m directly makes alpha 100× too large, dramatically changing
     the soil water retention curve. The soil will appear much sandier than it is.
 
-    ; [''soil'', ''convert_soil_to_c'
+    ; [''soil'', ''convert_soil_to_cwatm'']'
   remedy: 'Ensure alpha is in 1/cm; convert_soil_to_cwatm; [''If source is 1/m: divide by 100'', ''Typical
     range: 0.001-0.5 1/cm'', ''Sand: ~0.145, Loam: ~0.036, Clay: ~0.008'']; validate_outputs() checks
     alpha range'
@@ -348,7 +359,7 @@ known_issues:
     pressure in Pa and radiation in W/m². If pressure is provided in hPa (1013 instead of 101300), the
     psychrometric constant is 100× wrong. If radiation is in MJ/m²/day instead of W/m², it''s ~11.6× wrong.
 
-    ; [''e'
+    ; [''evaporationPot'', ''readmeteo'']'
   remedy: 'Check units of all Penman-Monteith inputs; [''Pressure: should be 50000-110000 Pa (not 500-1100
     hPa)'', ''Shortwave: should be 0-500 W/m² (not 0-40 MJ/m²/day)'', ''Wind: should be 0-20 m/s (not
     0-70 km/hr)'']; validate_converted_data() checks all variable ranges'
@@ -359,7 +370,7 @@ known_issues:
     is case-sensitive for keys. A typo in a key name (e.g., ''PrecipitationMap'' instead of ''PrecipitationMaps'')
     causes a missing key error. The error message includes a ''closest match'' suggestion using difflib.
 
-    ; [''con'
+    ; [''configuration.py'']'
   remedy: Check the error message for suggested closest match; ['Compare your settings file against the
     template', 'Check for typos in section names and key names', 'Ensure all required sections exist'];
     Use the template settings file as a starting point
@@ -370,7 +381,7 @@ known_issues:
     DD/MM/YYYY format. Using ISO format (YYYY-MM-DD) or US format (MM/DD/YYYY) causes either a parse error
     or a silently wrong date. For example, 2010-01-31 is interpreted as DD=2010, which fails.
 
-    ; [''timestep.py'', '
+    ; [''timestep.py'', ''configuration.py'']'
   remedy: Use DD/MM/YYYY format for all dates; ['StepStart = 01/01/1990  (not 1990-01-01)', 'SpinUp =
     01/01/1995', 'StepEnd = 31/12/2010']; Always use DD/MM/YYYY format
   severity: fatal
@@ -379,7 +390,9 @@ known_issues:
   diagnosis: 'CWatM code has a typo in the key name: ''precipitation_coversion'' (missing ''n''); The
     settings key is ''precipitation_coversion'' (sic), not ''precipitation_conversion''. If you use the
     correct English spelling, CWatM won''t find the key and will use the default value (86.4), which may
-    be wrong for your in'
+    be wrong for your input data. No error is raised.
+
+    ; [''readmeteo'', ''configuration.py'']'
   remedy: 'Use the misspelled key: precipitation_coversion (without the ''n''); ["Search settings file
     for ''conversion'' and replace with ''coversion''"]; Copy the key name exactly from the template'
   severity: silent
@@ -389,7 +402,7 @@ known_issues:
     LDD coding (1=SW, 2=S, 3=SE, ..., 9=NE, 5=pit). ArcGIS D8 uses power-of-2 encoding (1=E, 2=SE, 4=S,
     ..., 128=NE). Using ArcGIS LDD without conversion creates a completely wrong drainage network.
 
-    ; [''routing_k'
+    ; [''routing_kinematic'', ''routing_sub'']'
   remedy: 'Convert ArcGIS D8 to PCRaster LDD convention; [''ArcGIS mapping: 1→6, 2→3, 4→2, 8→1, 16→4,
     32→7, 64→8, 128→9'', ''Or use HydroSHEDS flow direction with proper conversion'', ''Verify: pit cells
     (value=5) should be at basin outlet only'']; Validate LDD with upstream area calculation'
@@ -422,7 +435,7 @@ known_issues:
     dependencies, wrong architecture), CWatM silently falls back to pure Python, which is dramatically
     slower.
 
-    ;'
+    ; [''routing_kinematic'', ''t5.cpp'']'
   remedy: 'Check C++ library loading; [''python -c "import ctypes; ctypes.cdll.LoadLibrary(\''t5_linux.so\'')"'',
     ''If error: recompile from t5.cpp with g++ -shared -fPIC -O2 -o t5_linux.so t5.cpp'', ''Check: ldd
     t5_linux.so for missing dependencies'']; Test library loading before model run'
@@ -448,13 +461,16 @@ known_issues:
   remedy: 'Pre-fill or interpolate missing values in all input data; [''Check for NaN: python -c "import
     netCDF4; ds=netCDF4.Dataset(\''file.nc\''); print(np.isnan(ds.variables[\''var\''][:]).sum())"'',
     ''Fill gaps with temporal interpolation or climatological means'', ''For soil: fill with nearest-neighbor
-    or regional'
+    or regional defaults'']; Always check for NaN before running CWatM'
   severity: silent
 - id: dt_016
   symptom: Discharge unrealistically high for first few years, then stabilizes.
-  diagnosis: Insufficient spinup period. Initial conditions not equilibrated.; CWatM starts with default
+  diagnosis: 'Insufficient spinup period. Initial conditions not equilibrated.; CWatM starts with default
     initial conditions (all storage = 0 or default values). The model needs 3-5 years to equilibrate groundwater
-    and soil moisture storage. During spinup, discharge may be too high (if starting dry) or too low (i
+    and soil moisture storage. During spinup, discharge may be too high (if starting dry) or too low (if
+    starting wet).
+
+    ; [''initcondition'', ''groundwater'']'
   remedy: Increase spinup period to 3-5 years; ['Set SpinUp date at least 3 years after StepStart', 'Or
     use saved initial conditions from a previous long run', 'Exclude spinup period from all metric calculations'];
     Always use ≥ 3 year spinup, ≥ 5 for arid regions
@@ -465,62 +481,79 @@ known_issues:
     evapotranspiration. If too low, too little water evaporates and too much becomes runoff (positive
     PBIAS). If too high, too much evaporates and too little reaches the river (negative PBIAS).
 
-    ; [''evaporationPot'', '''
+    ; [''evaporationPot'', ''calibration'']'
   remedy: 'Adjust crop_correct parameter; [''PBIAS > 0 (too much discharge): increase crop_correct'',
     ''PBIAS < 0 (too little discharge): decrease crop_correct'', ''Typical range: 0.8 to 1.5'', ''Also
     check soildepth_factor if crop_correct alone is insufficient'']; Calibrate crop_correct first in any
-    calibration seque'
+    calibration sequence'
   severity: degraded
 - id: dt_018
   symptom: Hydrograph peaks are too sharp or too flat. Recession limb is wrong.
-  diagnosis: Runoff partitioning or groundwater recession parameters need calibration; arnoBeta_add controls
+  diagnosis: 'Runoff partitioning or groundwater recession parameters need calibration; arnoBeta_add controls
     the fraction of precipitation becoming direct runoff (higher = more surface runoff = sharper peaks).
     recessionCoeff_factor controls how fast groundwater releases water (higher = slower release = flatter
-    r
+    recession).
+
+    ; [''soil'', ''groundwater'', ''calibration'']'
   remedy: 'Adjust arnoBeta_add and recessionCoeff_factor; [''Peaks too sharp: decrease arnoBeta_add, increase
     recessionCoeff_factor'', ''Peaks too flat: increase arnoBeta_add, decrease recessionCoeff_factor'',
     ''arnoBeta_add range: 0.01 to 1.0'', ''recessionCoeff_factor range: 1.0 to 10.0'']; Calibrate after
-    crop_corr'
+    crop_correct and soildepth_factor are set'
   severity: degraded
 - id: cwatm_dt_011
   symptom: CWatM aborts as soon as runoff concentration initialises, when tanslope is a scalar in settings.ini.
-  diagnosis: runoff_concentration.py computes tpeak from tanslope; a scalar tanslope makes tpeak a Python
+  diagnosis: 'runoff_concentration.py computes tpeak from tanslope; a scalar tanslope makes tpeak a Python
     float, but the C++ routing helper requires an ndarray over the compressed active cells.; `tpeak =
     0.5 + 0.6 * 50000 / (1440*60*sqrt(tanslope))` inherits the type of tanslope. With a tanslope MAP it
-    is an nda
+    is an ndarray and everything works; with a tanslope SCALAR it stays a float and the ctypes call rejects
+    it. A run that works around it with a patched copy of the repo OUTSIDE the KI leaves the canonical
+    source broken.
+
+    ; [''runoff_concentration'', ''routing'']'
   remedy: 'Broadcast tpeak onto the active-cell array; [''In cwatm/hydrological_modules/runoff_concentration.py,
     after the tpeak assignment add: tpeak = globals.inZero + tpeak'', ''Already applied to source/repo
     in this KI (2026-07-09).'']; Never patch a copy of the model outside the KI; fix source/repo so the
-    nex'
+    next agent inherits the fix.'
   severity: fatal
 - id: cwatm_dt_012
   symptom: Shape mismatch between meteo and static maps, or the forcing is one day shorter than tmin/tmax.
   diagnosis: 'Two independent defects: (1) convert_forcing_to_cwatm used to emit the forcing at its NATIVE
     resolution (0.1 deg for CMFD) while the static maps are 0.25/0.5 deg; (2) the time filter compared
     full datetimes, and CMFD daily timestamps are not at midnight, so the final day of --end_date was
-    silently d'
-  remedy: 'Regenerate forcing with --target_res, then verify the grids; [''python tools/convert_forcing_to_cwatm.py
-    ... --target_res <same as static --res>'', ''Assert lat/lon of every forcing, soil and ancillary NetCDF
-    equals static/MaskMap.nc'', ''Assert all forcing variables have the SAME number of timesteps'']; '
+    silently dropped.; CWatM requires every input NetCDF to share the clone-map grid exactly. Use --target_res
+    equal to the static-map --res; the tool block-means and orders latitudes north-first. The time filter
+    now compares .date().
+
+    ; [''readmeteo'', ''cwatm_initial'']'
+  remedy: Regenerate forcing with --target_res, then verify the grids; ['python tools/convert_forcing_to_cwatm.py
+    ... --target_res <same as static --res>', 'Assert lat/lon of every forcing, soil and ancillary NetCDF
+    equals static/MaskMap.nc', 'Assert all forcing variables have the SAME number of timesteps']; Build
+    static maps first; they define the grid. Never resample the static maps to the forcing.
   severity: fatal
 - id: cwatm_dt_013
   symptom: run_cwatm_wrapper reports status=timeout after exactly 3600 s, or 'can't open file .../source/repo/source/repo/run_cwatm.py'.
   diagnosis: 'The wrapper hard-coded a 1-hour subprocess timeout, and it joined a RELATIVE --cwatm_dir
     onto run_cwatm.py while also passing cwd=cwatm_dir, doubling the path.; A 0.5-degree multi-decade
     basin run takes hours (Jiujiang: ~2.4 s per simulated day over 570 active cells). Both defects are
-    fixed: timeout'
+    fixed: timeout is now an optional --timeout (default: no limit) and paths are absolutised.
+
+    ; [''run_cwatm_wrapper'']'
   remedy: 'Use the patched wrapper; pass --flags=-q (the ''='' form) and an absolute or relative --cwatm_dir;
     ["argparse treats ''--flags -q'' as an option, not a value: always write --flags=-q", ''Long runs:
     launch via kdt_detached_run.py, not inline'']; Estimate runtime from a 1-2 month smoke run before
-    committing'
+    committing to the full period.'
   severity: fatal
 - id: cwatm_dt_014
   symptom: Capillary rise behaves oddly, or the first 10-day period of each year has zero interception
     capacity.
-  diagnosis: build_cwatm_ancillary fabricated relativeElevation (dzRel) from a hand-written factor list
+  diagnosis: 'build_cwatm_ancillary fabricated relativeElevation (dzRel) from a hand-written factor list
     times ElevationStD, and its monthly->10-day interpolator never assigned index 0.; capillarRise.py
     reads dzRel[0..11] directly as the sub-grid elevation distribution above the cell minimum at cumulative
-    area fr
+    area fractions 1,5,10,20..100 %. These are measurable: build_cwatm_static.py now writes the TRUE percentiles
+    from MERIT-Hydro elv, and build_cwatm_ancillary copies them. The 10-day interpolator now wraps December
+    around so index 0 is real.
+
+    ; [''capillarRise'', ''interception'', ''evaporation'']'
   remedy: Re-run build_cwatm_static.py, then build_cwatm_ancillary.py; ['Check relativeElevation.nc has
     12 dzRel variables and dzRel0100 >> dzRel0001', 'Check interceptCap*_10days.nc has a non-zero value
     at time index 0']; Prefer a measured field over a fabricated profile whenever the DEM is already on
@@ -528,10 +561,12 @@ known_issues:
   severity: degraded
 - id: cwatm_dt_015
   symptom: Forcing conversion takes ~11 minutes per variable for a 2-month window.
-  diagnosis: The reader globbed every CMFD file for a variable (74 yearly files, or 888 monthly files
+  diagnosis: 'The reader globbed every CMFD file for a variable (74 yearly files, or 888 monthly files
     for the 3-hourly archive) and opened each one just to read its `time` axis.; The year is in the file
     NAME. Prefilter on a (19|20)\d{2} regex -- anchored so the product-version stem V0200 is not misread
-    as a year
+    as a year -- before opening anything. 2-month CMFD conversion drops from 11 min to 20 s.
+
+    ; [''convert_forcing_to_cwatm'']'
   remedy: 'Use the patched reader (filename year prefilter + contiguous spatial slices); [''Read the spatial
     subset in the netCDF4 call, not after: ds[var][tidx, lat_slice, lon_slice]'']; Same class of bug as
     HBV''s _load_cmfd year-glob: never glob *YYYY* against a stem containing digits.'
@@ -550,17 +585,23 @@ known_issues:
     flow falls short. Raising crop_correct or arnoBeta_add barely moves NSE.'
   diagnosis: 'recessionCoeff_factor is a DIVISOR of recessionCoeff (groundwater.py:72-73: recessionCoeff
     = 1/recessionCoeff * factor; recessionCoeff = 1/recessionCoeff), so effective recessionCoeff = recessionCoeff
-    / recessionCoeff_factor. With recessionCoeff = 0.02 and factor = 1.0 the groundwater residence time'
+    / recessionCoeff_factor. With recessionCoeff = 0.02 and factor = 1.0 the groundwater residence time
+    is 50 days, the store swallows most of the runoff and phase-lags the hydrograph.; NSE = 2*a*r - a^2
+    - b^2, so max NSE over all bias/variance corrections is r^2. A phase-lagged store caps r, which caps
+    NSE: with a high BFI and baseflow peaking months after precipitation, the NSE ceiling r^2 can sit
+    far below the NSE target. Compute r^2 BEFORE targeting an NSE.; [''groundwater'', ''calibration'']'
   remedy: 'Pin recessionCoeff = 1.0 and calibrate recessionCoeff_factor as the residence time in days;
     [''In [GROUNDWATER] set: recessionCoeff  = 1.0'', ''Calibrate recessionCoeff_factor over [2, 40] --
     it now equals tau_gw in days.'', ''Verify: OUT_Map_MonthAvg = runoff, baseflow; area-weighted BFI
-    should land nea'
+    should land near 0.3-0.45.'']; SKILL.md''s documented 1.0-10.0 range only makes baseflow slower. Never
+    search it without first checking the sign of the parameter in groundwater.py.'
   severity: degraded
 - id: cwatm_dt_018
   symptom: parse_cwatm_output.py cannot find the gauge discharge series even though the run succeeded.
   diagnosis: 'CWatM writes gauge time series configured by OUT_TSS_Daily as <var>_daily.CSV, not NetCDF.
     The parser only globbed *.nc, so the one file holding the point series it exists to extract was invisible.
-    A <var>_daily.nc appears only when OUT_MAP_Daily is also set.; TSS layout: 4 header rows (Timeseries..'
+    A <var>_daily.nc appears only when OUT_MAP_Daily is also set.; TSS layout: 4 header rows (Timeseries..,
+    xloc.., yloc.., Date,G1..), then DD/MM/YYYY,value.; [''tools/parse_cwatm_output.py'']'
   remedy: 'Fixed in place: parse_cwatm_output.py now prefers the TSS CSV; [''find_tss_csv() locates <variable>_<agg>.csv;
     extract_tss_csv() reads it with --gauge_index.'']; Do not infer ''the run produced no gauge output''
     from the absence of a NetCDF.'
@@ -570,7 +611,7 @@ known_issues:
     ImportError.
   diagnosis: run_model() launched the subprocess with cwd=cwatm_dir but passed cwatm_dir and settings_path
     through unchanged, so any RELATIVE path was resolved a second time against cwatm_dir. Separately it
-    inherited the parent env, so callers had to remember the LD_PRELOAD from cwatm_dt_016 by hand.; ['tools/ru
+    inherited the parent env, so callers had to remember the LD_PRELOAD from cwatm_dt_016 by hand.; ['tools/run_cwatm_wrapper.py']
   remedy: Fixed in place; ['run_model() now abspath()s cwatm_dir and settings_path.', 'run_model() injects
     LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6 into the child env.']; Any subprocess launched with
     an explicit cwd must receive absolute paths.
@@ -580,8 +621,14 @@ known_issues:
     no effect.
   diagnosis: 'includeIrrigation only controls the LAND SURFACE: with it True, irrPaddy/irrNonPaddy stay
     as distinct land-cover types with their own crop coefficients and paddy topwater (landcoverType.py:785,
-    855). The ABSTRACTION of irrigation water from rivers and groundwater lives in waterdemand_module.dynamic('
+    855). The ABSTRACTION of irrigation water from rivers and groundwater lives in waterdemand_module.dynamic(),
+    which is gated on includeWaterDemand. Likewise lakeAFactor / normalStorageLimit / lakeEvaFactor are
+    inert while includeWaterBodies = False -- 3 of the 11 documented calibration parameters do nothing.;
+    [''water_demand'', ''lakes_reservoirs'']'
   remedy: State the coupling explicitly in the settings header, or supply the demand stack; ['Water demand
     needs domestic/industrial/livestock demand NetCDFs; none are on this server as of 2026-07-10.', 'Water
-    bodies need lakesResID/lakesResType/lakesResDis/lakesResArea NetCDFs derived from HydroLAKES.', 'Hyd
+    bodies need lakesResID/lakesResType/lakesResDis/lakesResArea NetCDFs derived from HydroLAKES.', 'HydroLAKES_polys_v10.shp
+    IS on disk at KISSPATH_DATA/lakes/ but NO KI tool builds the 4 NetCDFs.']; Before
+    calibrating, list which of the 11 parameters are actually live under the current option switches.
+    Do not report an inert parameter as calibrated.
   severity: degraded

@@ -468,9 +468,9 @@
     explanation: >
       `tpeak = 0.5 + 0.6 * 50000 / (1440*60*sqrt(tanslope))` inherits the type of
       tanslope. With a tanslope MAP it is an ndarray and everything works; with a
-      tanslope SCALAR it stays a float and the ctypes call rejects it. The 2026-05
-      real case hit this and worked around it by running a patched copy of the repo
-      OUTSIDE the KI, leaving the canonical source broken.
+      tanslope SCALAR it stays a float and the ctypes call rejects it. A run that
+      works around it with a patched copy of the repo OUTSIDE the KI leaves the
+      canonical source broken.
     affected_components: [runoff_concentration, routing]
   remedy:
     action: "Broadcast tpeak onto the active-cell array"
@@ -480,6 +480,7 @@
     prevention: "Never patch a copy of the model outside the KI; fix source/repo so the next agent inherits the fix."
   severity: fatal
   cross_references: []
+  seen_at: "2026-05, real-case run"
 
 - id: cwatm_dt_012
   stage: s1_forcing_preparation
@@ -615,9 +616,9 @@
       the store swallows most of the runoff and phase-lags the hydrograph.
     explanation: >-
       NSE = 2*a*r - a^2 - b^2, so max NSE over all bias/variance corrections is r^2.
-      A phase-lagged store caps r, which caps NSE. Measured at Jiujiang (Yangtze, 1.5M km2,
-      2010-2023): BFI 0.75, baseflow peaks in October vs precipitation in June, r = 0.729
-      => NSE ceiling 0.531, actual NSE 0.184. Compute r^2 BEFORE targeting an NSE.
+      A phase-lagged store caps r, which caps NSE: with a high BFI and baseflow peaking
+      months after precipitation, the NSE ceiling r^2 can sit far below the NSE target.
+      Compute r^2 BEFORE targeting an NSE.
     affected_components: [groundwater, calibration]
   remedy:
     action: "Pin recessionCoeff = 1.0 and calibrate recessionCoeff_factor as the residence time in days"
@@ -630,6 +631,7 @@
       without first checking the sign of the parameter in groundwater.py.
   severity: degraded
   cross_references: [cwatm_dt_018]
+  seen_at: "date not recorded, Jiujiang (Yangtze)"
 
 - id: cwatm_dt_018
   stage: s4_output_analysis

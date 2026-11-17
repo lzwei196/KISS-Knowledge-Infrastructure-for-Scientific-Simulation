@@ -653,12 +653,13 @@ known_issues:
     '
   remedy: "Move SMOOTH to the PERMEABILITY_FUNCTION block ONLY:\nCHARACTERISTIC_CURVES cc_soil\n  SATURATION_FUNCTION\
     \ VAN_GENUCHTEN\n    ALPHA ...\n    M ...\n    LIQUID_RESIDUAL_SATURATION ...\n  /               \
-    \            ← no SMOOTH here\n  PERMEABILITY_FUNCTION MUALEM_VG_LIQ\n    M ...\n    LIQUID_RESIDUAL_SATURAT"
+    \            ← no SMOOTH here\n  PERMEABILITY_FUNCTION MUALEM_VG_LIQ\n    M ...\n    LIQUID_RESIDUAL_SATURATION\
+    \ ...\n    SMOOTH                    ← ONLY here\n  /\nEND\n"
 - id: dt_020
   symptom: "1D vadose column run crashes mid-simulation with:\n  \"Newton solver reason: SNES_DIVERGED_MAX_IT\"\
     \n  \"Stopping: Time step cut criteria exceeded. icut = N, max_time_step_cuts = 16\"\n  \"WARNING:\
     \ Potential oscillatory convergence\" (repeated 40-50x)\n  \"2x: 1.00E+09 2u: 4.53E+01\" — update\
-    \ norm stuck at same"
+    \ norm stuck at same value.\nColumn ran fine for weeks/months then suddenly crashed during a dry spell.\n"
   diagnosis: 'Top cell in 1D vadose column reached near-residual saturation
 
     (S → S_r ≈ 0.078 for Loam) during a consecutive-dry-day period.
@@ -667,10 +668,30 @@ known_issues:
 
     S → S_r + ε, making the Newton Jacobian near-singular. The
 
-    oscillatory pattern (2r stays constant, 2x at maximum)'
+    oscillatory pattern (2r stays constant, 2x at maximum) means the
+
+    solver is repeatedly overshooting the pressure update across the
+
+    singularity. SMOOTH on MUALEM_VG_LIQ smooths Kr but does NOT
+
+    smooth the saturation function singularity — it only delays crash.
+
+    '
   remedy: "Fix hierarchy (check in order, stop at first success):\n1. Add SMOOTH to PERMEABILITY_FUNCTION\
     \ MUALEM_VG_LIQ (delays crash,\n   may be sufficient for mild dry spells ≤ 10 consecutive days).\n\
-    2. Check max consecutive P≈0 days at site:\n     python3 -c \"import csv,numpy as np; rows=list(csv.DictReader(ope"
+    2. Check max consecutive P≈0 days at site:\n     python3 -c \"import csv,numpy as np; rows=list(csv.DictReader(open('FULLSET_DD.csv')));\n\
+    \     p=[float(r['P_F']) for r in rows if r['TIMESTAMP'][:4] in ('2003','2004','2005')];\n     cur=max_dry=0;\
+    \ [exec('global cur,max_dry; cur=(cur+1 if p<0.1 else 0); max_dry=max(max_dry,cur)') for p in p];\
+    \ print(max_dry)\"\n3. Deepen root zone to distribute ET over more cells:\n     subtropical forest\
+    \ (P >> ET most months): ROOT_ZONE_DEPTH = 1.5–2.0 m\n     alpine meadow (CN-HaM type): ROOT_ZONE_DEPTH\
+    \ = 1.0 m\n     NEVER use ROOT_ZONE_DEPTH < 1.0 m at sites with >10 consecutive dry days\n4. Scale\
+    \ ET during dry periods: set et_ms = min(et_ms, P_ms) for days\n   when P < ET (stress-limiting approximation\
+    \ — physically justified).\n5. If crash persists: run as parallel monthly scenarios during dry months.\n\
+    ; # Check dry spell duration before choosing root zone depth\nimport csv, numpy as np\nfrom datetime\
+    \ import datetime\nrows = list(csv.DictReader(open('FULLSET_DD.csv')))\np_vals = [float(r['P_F'])\
+    \ for r in rows if start <= r['TIMESTAMP'] <= end]\nmax_dry = 0; cur = 0\nfor p in p_vals:\n    cur\
+    \ = (cur + 1) if p < 0.1 else 0\n    max_dry = max(max_dry, cur)\n# Root zone choice:\nrz = 2.0 if\
+    \ max_dry > 20 else (1.5 if max_dry > 10 else 1.0)\n"
 - id: dt_021
   symptom: 'Vadose zone column gaining water instead of losing it during ET periods;
 
@@ -682,11 +703,17 @@ known_issues:
   diagnosis: "Two common errors in the SCALED_VOLUMETRIC_RATE VOLUME ET SOURCE_SINK:\n(a) Sign error:\
     \ ET extraction requires NEGATIVE rate values.\n    Positive rate = injection, not extraction.\n(b)\
     \ Units mismatch: DATA_UNITS m^3/sec requires rate in m³/s for the\n    entire 1m×1m cross-section\
-    \ column. PFLOTRAN divi"
+    \ column. PFLOTRAN divides by the REGION\n    volume (root_zone_depth × 1m × 1m = root_zone_depth\
+    \ m³) internally\n    to get per-volume source density. If et_ms is in m/s (not m³/s for\n    1m²\
+    \ column), the result is correct — but watch for multi-m² domains.\n"
   remedy: "Correct ET SOURCE_SINK setup for 1D column (1m × 1m cross-section):\n  et_ms = max(0.0, le_wm2\
     \ * 86400.0 / 2.45e6) / (1000.0 * 86400.0)\n  # et_ms is positive; negate when writing to deck:\n\
     \  et_list_block = f\"{day}. {-et_ms:.6e}\"   ← NEGATIVE for extraction\n\nIn deck:\n  FLOW_CONDITION\
-    \ et_extraction\n   "
+    \ et_extraction\n    TYPE\n      RATE scaled_volumetric_rate VOLUME\n    /\n    RATE LIST\n      TIME_UNITS\
+    \ d\n      DATA_UNITS m^3/sec\n  {day}.  {-et_ms:.6e}     ← NEGATIVE values\n    /\n  END\n; # Correct:\
+    \ negative rate = extraction\net_ms = max(0.0, le_wm2 * 86400.0 / 2.45e6) / (1000.0 * 86400.0)\net_list_block\
+    \ = \"\\n\".join(f\"    {r['day_offset']}.  {-r['et_ms']:.6e}\"\n                           for r\
+    \ in records)  # note the minus sign\n"
 - id: dt_022
   symptom: 'TypeError when calling float() on the extracted Liquid_Saturation value;
 
@@ -705,11 +732,18 @@ known_issues:
 
     the last (1,1,1) sub-array, not a scalar. The cell order is bottom-to-top
 
-    (cell 0 = bottom, cel'
+    (cell 0 = bottom, cell N-1 = top), so the top cell is index [-1] AFTER
+
+    flattening to 1D.
+
+    '
   remedy: "Always flatten before indexing:\n  sat = np.array(grp[\"Liquid_Saturation\"], dtype=float).flatten()\n\
     \  top_sat = float(sat[-1])   # top cell (highest z)\n  bot_sat = float(sat[0])    # bottom cell (lowest\
     \ z)\n\nThe z-ordering: cell index 0 = z_min (column bottom),\n                 cell index N-1 = z_max\
-    \ ("
+    \ (column top, where sensor is)\n; with h5py.File(h5_file, \"r\") as f:\n    for key in sorted(f.keys()):\n\
+    \        if not key.startswith(\"Time:\"): continue\n        day = float(key.replace(\"Time:\",\"\"\
+    ).replace(\"d\",\"\").strip())\n        sat = np.array(f[key][\"Liquid_Saturation\"], dtype=float).flatten()\n\
+    \        top_swc = float(sat[-1]) * phi   # top cell SWC\n"
 - id: dt_023
   symptom: 'Van Genuchten alpha appears correctly patched on first run, but on
 
@@ -728,11 +762,22 @@ known_issues:
 
     to correct this. If the patched materials.json is re-read and the
 
-    patch is applied again, alpha bec'
+    patch is applied again, alpha becomes 100× too large again (then 100×
+
+    too small on next run, etc.). This creates run-to-run inconsistency
+
+    that is very hard to detect.
+
+    '
   remedy: "Apply the ×100 patch EXACTLY ONCE and record it in materials.json:\n  with open(mat_json) as\
     \ f:\n      data = json.load(f)\n  if not data.get(\"alpha_unit_patch_v1\"):   # idempotency guard\n\
     \      for mat in data[\"materials\"]:\n          mat[\"vg_alpha_Pa\"] *= 100.0\n      data[\"alpha_unit_patch_v1\"\
-    ] = True "
+    ] = True     # set flag\n      with open(mat_json, \"w\") as f:\n          json.dump(data, f, indent=2)\n\
+    On subsequent loads, the flag prevents re-application.\n; # Idempotent alpha patch (run after every\
+    \ call to convert_soil_to_pflotran.py)\nwith open(mat_json) as f:\n    data = json.load(f)\nif not\
+    \ data.get(\"alpha_unit_patch_v1\"):\n    for mat in data[\"materials\"]:\n        mat[\"vg_alpha_Pa\"\
+    ] *= 100.0\n    data[\"alpha_unit_patch_v1\"] = True\n    with open(mat_json, \"w\") as f:\n     \
+    \   json.dump(data, f, indent=2)\n"
 - id: dt_024
   symptom: 'Simulated SWC at alpine meadow or high-altitude grassland sites is
 
@@ -751,10 +796,20 @@ known_issues:
 
     giving porosity phi=0.55–0.65. Using phi=0.43 underestimates water
 
-    storage capacity and produces sys'
+    storage capacity and produces systematic dry bias regardless of how
+
+    ET or root-zone depth is tuned.
+
+    '
   remedy: "1. Estimate corrected porosity from FLUXNET SWC observations:\n     phi_est = np.percentile(swc_obs_pct,\
     \ 95) / 0.95\n2. Or use lookup by elevation + biome:\n     < 2500 m: use HWSD phi (often OK)\n   \
-    \  2500–3500 m, meadow: phi = 0.55–0.60\n     > 3500 m, meadow/bog: phi = 0.60–0.70\n3. Override materials."
+    \  2500–3500 m, meadow: phi = 0.55–0.60\n     > 3500 m, meadow/bog: phi = 0.60–0.70\n3. Override materials.json\
+    \ after HWSD lookup:\n     top[\"porosity\"] = 0.60  # do NOT re-save to materials.json\n     # Use\
+    \ only in deck generation, keep materials.json as HWSD\n; import numpy as np\n# Estimate phi from\
+    \ p95 of observed SWC (assumes S_max ≈ 0.95 at p95)\nphi_est = np.percentile(swc_obs_pct_array, 95)\
+    \ / 0.95 / 100.0\nprint(f\"HWSD phi={phi_hwsd:.3f}, obs-estimated phi={phi_est:.3f}\")\nif phi_est\
+    \ > phi_hwsd * 1.1:  # >10% underestimate → override\n    print(f\"WARNING: Using phi={phi_est:.3f}\
+    \ override for organic soil\")\n"
 - id: dt_025
   symptom: 'Python script hangs indefinitely at import or h5py.File() call when
 
@@ -777,17 +832,21 @@ known_issues:
   remedy: "Always import netCDF4 before h5py at the top of the module:\n  import netCDF4   # FIRST — initializes\
     \ HDF5 in compatible state\n  import h5py      # SECOND — joins existing HDF5 state\nOr keep them\
     \ in separate subprocesses if both are needed independently.\n; # Top of any script using both:\n\
-    import netCD"
+    import netCDF4   # must come before h5py\nimport h5py\nimport numpy as np\n"
 - id: dt_026
   symptom: '1D vadose column simulated SWC is 30–60% above observed (PBIAS > +30%)
 
     at subtropical monsoon forest sites regardless of root-zone depth choice.
 
-    Increasing root-zone depth from 0.5m to 2.0m only reduces bias from
+    Changing root-zone depth from 0.5m to 2.0m barely changes the bias —
 
-    +55% to +58% — no combination of root-zone depth eliminates the bias.
+    no combination of root-zone depth eliminates the bias.
 
-    Site characterist'
+    Site characteristics: P mean 2–4 mm/d, ET 1–2 mm/d, wet-season P ≈ 5–10 mm/d,
+
+    regular heavy convective rain events.
+
+    '
   diagnosis: 'PFLOTRAN 1D Richards column applies ALL precipitation as a Neumann
 
     top-boundary infiltration flux. Real subtropical forest soils generate
@@ -796,11 +855,27 @@ known_issues:
 
     (Hortonian overland flow when P-intensity > K_sat, or saturation
 
-    excess when topsoil saturates)'
+    excess when topsoil saturates). Without a runoff routing module, the
+
+    model over-accumulates water in the column, inflating simulated SWC.
+
+    The wet bias is structural, not a parameter issue.
+
+    '
   remedy: "Options (in order of preference):\n1. SITE SELECTION: avoid subtropical monsoon forest sites\
     \ (P>2 mm/d,\n   heavy convective regime) for 1D Richards validation.\n   PREFER: alpine meadow (CN-HaM\
     \ type), semi-arid, or temperate\n   sites where P >> ET rarely exceeds K_sat.\n2. RUNOFF FRACTION:\
-    \ scale precip"
+    \ scale precipitation input by (1 - runoff_fraction):\n     infiltration_m_s = P_mm / (1000*86400)\
+    \ * (1 - f_ro)\n     where f_ro ≈ 0.20–0.35 for subtropical forest (Hewlett & Hibbert)\n   This is\
+    \ a lumped approximation, not physics.\n3. DOCUMENT AND EXCLUDE: accept the site as unsuitable for\
+    \ 1D\n   Richards validation and note the structural limitation explicitly.\n4. FOR RELATIVE SIGNALS\
+    \ ONLY: if only seasonal trends matter (not\n   absolute values), divide out the mean bias and report\
+    \ correlation\n   and RMSE only.\n; # Quick site suitability check before running\nimport numpy as\
+    \ np\np_mean = np.mean(p_vals)\np_max_monthly = max(np.mean([p for p,d in zip(p_vals,dates) if d.month==m])\n\
+    \                    for m in range(1,13))\net_mean = np.mean(et_vals)\nif p_max_monthly > 3.0 * et_mean\
+    \ and p_mean > 2.0:\n    print(\"WARNING: Subtropical monsoon regime detected.\")\n    print(\"1D\
+    \ Richards will show +30-60% SWC wet bias (structural limit).\")\n    print(\"Prefer alpine meadow\
+    \ or semi-arid sites for this workflow.\")\n"
 - id: dt_027
   symptom: '1D vadose column validated against a WINTER / cold-season soil-moisture
 
@@ -810,7 +885,9 @@ known_issues:
 
     moisture slowly DECLINES (or is flat). Forcing T_mean is well below 0 C
 
-    across the sc'
+    across the scoring window.
+
+    '
   diagnosis: 'PFLOTRAN RICHARDS mode is ISOTHERMAL and has NO soil-freezing or snowpack
 
     physics (it cannot hold frozen pore water or accumulate a snowpack). When
@@ -819,8 +896,23 @@ known_issues:
 
     precip that should fall as snow (no infiltration into frozen ground) is
 
-    appli'
+    applied as liquid recharge, producing a spurious cold-season SWC rise that
+
+    anti-correlates with the real (frozen, slowly-draining) obs.
+
+    '
   remedy: "1. SNOW GATING (degree-day): partition precip by T_mean before building\n   the top-BC LIST.\
     \ Sub-zero precip accumulates as snowpack; melt + rain\n   infiltrate only when T_mean >= 0:\n   \
     \  if t < 0:  snowpack += p_mm;  infil_mm = 0.0\n     else:      melt = min(snowpack, 2.0*t); snowpack\
-    \ -= melt\n      "
+    \ -= melt\n                infil_mm = p_mm + melt\n2. INITIAL CONDITION: wire the hydrostatic DATUM\
+    \ so the top cell STARTS\n   at observed wetness, removing the cold-start transient. For top SWC\n\
+    \   target s*phi, solve the vG curve for capillary head and place the\n   datum head below the top\
+    \ cell:\n     Pc = ((Se**(-1/m))-1)**(1/n)/alpha ; head=Pc/9804 ; datum=z_top-head\n   (CN-HaM: top\
+    \ SWC 0.27, phi 0.60 -> datum 0.645 m.)\n3. METRIC FAMILY: a deep-winter obs window is near-constant.\
+    \ NSE/raw temporal_pattern_match is\n   STRUCTURALLY INVALID on a near-zero-variance obs — even a\
+    \ very close fit still scores NSE<0. Report magnitude_accuracy\n   (PBIAS) as the meaningful metric;\
+    \ cite r for direction; flag NSE as\n   denominator-collapsed, do NOT chase it by overfitting a <0.4%\
+    \ signal.\n; # Degree-day snow gating in the forcing loop\nsnowpack = 0.0\nfor date, p_mm, t in zip(dates,\
+    \ precip, tmean):\n    if t < 0.0:\n        snowpack += p_mm; infil_mm = 0.0\n    else:\n        melt\
+    \ = min(snowpack, 2.0*max(0.0, t)); snowpack -= melt\n        infil_mm = p_mm + melt\n    net_inf_ms\
+    \ = infil_mm / (1000.0*86400.0)\n"

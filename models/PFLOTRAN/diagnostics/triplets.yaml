@@ -19,8 +19,8 @@
 #   5. 1D Vadose Column / FLUXNET Validation  (dt_019 – dt_026)
 #
 # Total on 2026-04-30: 26 triplets (current count: the SKILL.md KI map)
-# Last updated: 2026-04-30 — added dt_019–dt_026 from CN-Din/CN-Qia/CN-HaM
-#   FLUXNET SWC validation campaign (3 sites, 6 runs)
+# Last updated: 2026-04-30 — added dt_019–dt_026 from a FLUXNET SWC
+#   validation campaign (sites: each entry's seen_at)
   # ================================================================
   # FAILURE DOMAIN 1: Unit Conversion
   # ================================================================
@@ -35,7 +35,7 @@
   # ================================================================
   # ================================================================
   # FAILURE DOMAIN 5: 1D Vadose Column / FLUXNET Validation
-  # Discovered during CN-Din / CN-Qia / CN-HaM FLUXNET SWC campaign
+  # Found in a FLUXNET SWC campaign (sites: each entry's seen_at)
   # ================================================================
         # Check dry spell duration before choosing root zone depth
         # Root zone choice:
@@ -637,6 +637,7 @@
     block name in the deck.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_020
   failure_domain: runtime
   stage: s6_execution
@@ -693,6 +694,7 @@
     If > 20 days, use 2.0 m full-column distribution.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_021
   failure_domain: input_format
   stage: s3_forcing_boundary
@@ -733,6 +735,7 @@
     After first run, check that simulated SWC decreases during dry periods.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_022
   failure_domain: silent_error
   stage: s7_output_analysis
@@ -787,6 +790,7 @@
     Never assume scalar output from h5py even for 1D columns.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_023
   failure_domain: silent_error
   stage: s2_material_properties
@@ -838,6 +842,7 @@
     Treat this as a one-time migration flag, not a per-run computation.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_024
   failure_domain: silent_error
   stage: s2_material_properties
@@ -872,10 +877,6 @@
 
     ET or root-zone depth is tuned.
 
-    Validated case: CN-HaM (Haibei, Qinghai, 3216 m), HWSD phi=0.43
-
-    gave PBIAS=-29%; correcting to phi=0.60 gave NSE=0.47, PBIAS=+0.1%.
-
     '
   affected_components:
   - MATERIAL_PROPERTY.POROSITY
@@ -899,6 +900,7 @@
     (c) Document the override in the run log
 
     '
+  seen_at: "2026-04-30, CN-HaM (Haibei, Qinghai)"
 - id: dt_025
   failure_domain: runtime
   stage: s7_output_analysis
@@ -950,6 +952,7 @@
     clean subprocess and netCDF4 extraction in another.
 
     '
+  seen_at: "2026-04-30, FLUXNET SWC campaign (CN-Din, CN-Qia, CN-HaM)"
 - id: dt_026
   failure_domain: silent_error
   stage: s7_output_analysis
@@ -957,9 +960,9 @@
 
     at subtropical monsoon forest sites regardless of root-zone depth choice.
 
-    Increasing root-zone depth from 0.5m to 2.0m only reduces bias from
+    Changing root-zone depth from 0.5m to 2.0m barely changes the bias —
 
-    +55% to +58% — no combination of root-zone depth eliminates the bias.
+    no combination of root-zone depth eliminates the bias.
 
     Site characteristics: P mean 2–4 mm/d, ET 1–2 mm/d, wet-season P ≈ 5–10 mm/d,
 
@@ -985,10 +988,6 @@
     model over-accumulates water in the column, inflating simulated SWC.
 
     The wet bias is structural, not a parameter issue.
-
-    Validated case: CN-Qia (Qianyanzhou, Jiangxi, 26.7°N) — all root-zone
-
-    depths 0.5–2.0m gave PBIAS +54–59%. CN-Din (Dinghushan) gave PBIAS +22%.
 
     '
   affected_components:
@@ -1016,9 +1015,8 @@
 
     Prefer sites where this ratio < 2.0 (e.g., alpine, temperate, semi-arid).
 
-    Validated suitable sites: CN-HaM (alpine meadow, NSE=0.47).
-
     '
+  seen_at: "2026-04-30, CN-Qia (Qianyanzhou, Jiangxi); 2026-04-30, CN-Din (Dinghushan); 2026-04-30, CN-HaM"
 - id: dt_027
   failure_domain: silent_error
   stage: s3_forcing_boundary
@@ -1030,13 +1028,7 @@
 
     moisture slowly DECLINES (or is flat). Forcing T_mean is well below 0 C
 
-    across the scoring window. Symptom seen on SMAP L4 sm_rootzone at CN-HaM
-
-    (37.6N,101.3E, 3216 m): the only obs available was 2019-01-01..01-19,
-
-    a deep-winter window (T -11..-16.6 C). Applying the 4.3 mm of January
-
-    precip as LIQUID infiltration gave r=-0.83, NSE=-856, PBIAS=-11%.
+    across the scoring window.
 
     '
   symptom_alt: r < 0 at cold/winter 1D-column window with T_mean < 0 C; sim SWC rises while obs falls
@@ -1068,15 +1060,13 @@
     manual: "1. SNOW GATING (degree-day): partition precip by T_mean before building\n   the top-BC LIST.\
       \ Sub-zero precip accumulates as snowpack; melt + rain\n   infiltrate only when T_mean >= 0:\n \
       \    if t < 0:  snowpack += p_mm;  infil_mm = 0.0\n     else:      melt = min(snowpack, 2.0*t);\
-      \ snowpack -= melt\n                infil_mm = p_mm + melt\n   At CN-HaM this zeroed all January\
-      \ infiltration and flipped r from\n   -0.83 to +0.84, PBIAS -11% -> +0.8%, NSE -856 -> -4.1.\n2.\
+      \ snowpack -= melt\n                infil_mm = p_mm + melt\n2.\
       \ INITIAL CONDITION: wire the hydrostatic DATUM so the top cell STARTS\n   at observed wetness,\
       \ removing the cold-start transient. For top SWC\n   target s*phi, solve the vG curve for capillary\
       \ head and place the\n   datum head below the top cell:\n     Pc = ((Se**(-1/m))-1)**(1/n)/alpha\
       \ ; head=Pc/9804 ; datum=z_top-head\n   (CN-HaM: top SWC 0.27, phi 0.60 -> datum 0.645 m.)\n3. METRIC\
-      \ FAMILY: a deep-winter obs window is near-constant (CN-HaM SMAP\n   obs std = 0.107% VWC over 19\
-      \ days). NSE/raw temporal_pattern_match is\n   STRUCTURALLY INVALID on a near-zero-variance obs\
-      \ — a 0.24% RMSE /\n   0.8% PBIAS / r=0.84 fit still scores NSE<0. Report magnitude_accuracy\n \
+      \ FAMILY: a deep-winter obs window is near-constant. NSE/raw temporal_pattern_match is\n   STRUCTURALLY INVALID on a near-zero-variance obs\
+      \ — even a very close fit still scores NSE<0. Report magnitude_accuracy\n \
       \  (PBIAS) as the meaningful metric; cite r for direction; flag NSE as\n   denominator-collapsed,\
       \ do NOT chase it by overfitting a <0.4% signal.\n"
     code: "# Degree-day snow gating in the forcing loop\nsnowpack = 0.0\nfor date, p_mm, t in zip(dates,\
@@ -1091,8 +1081,7 @@
 
     if std(obs) is a tiny fraction of the mean (near-constant winter signal),
 
-    score with magnitude_accuracy (PBIAS), not NSE. Validated: SMAP CN-HaM
-
-    2019 (Jan window) r=0.84, PBIAS=+0.8% after snow gating + IC datum.
+    score with magnitude_accuracy (PBIAS), not NSE.
 
     '
+  seen_at: "date not recorded, CN-HaM (SMAP L4 sm_rootzone, Jan 2019 window)"

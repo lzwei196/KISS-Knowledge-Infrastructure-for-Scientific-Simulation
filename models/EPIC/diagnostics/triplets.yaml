@@ -440,7 +440,7 @@
     annual monocrop so there is no duplicate-simulation artifact.
 
     '
-  discovered_during: zhengzhou_corn_2010_2020
+  seen_at: "date not recorded, run zhengzhou_corn_2010_2020"
   tags:
   - fertilization
   - OPV6
@@ -485,7 +485,7 @@
     \   equipment code — try equip code 382 (GATEPIPE IRRI) instead of 502.\n\n(3) configure_irrigation.py:\
     \ read the template EPICCONT manually,\n    locate the IRR field at character position 33 (0-indexed:\
     \ chars 32-33),\n    and set it directly via string slicing rather than calling the tool.\n"
-  discovered_during: zhengzhou_corn_2010_2020
+  seen_at: "date not recorded, run zhengzhou_corn_2010_2020"
   tags:
   - irrigation
   - IRGA
@@ -533,7 +533,7 @@
     EF5/HYPE/GR4J/airGR.
 
     '
-  discovered_during: verifier_glofas_huai
+  seen_at: "date not recorded, run verifier_glofas_huai"
   tags:
   - domain
   - wrong_variable
@@ -578,7 +578,7 @@
     \ years in the .DLY (TBS comes from CROPCOM.DAT col 4:\nCORN 8, SOYB 10, WWHT 0). ORDER MATTERS: build\
     \ the forcing BEFORE the\n.OPC so the .DLY exists. At Jilin this moved HUSC 1.10/1.45 -> 1.00/1.18,\n\
     inside the dag band.\n"
-  discovered_during: gdhy_jilin_maize_1995_2016
+  seen_at: "date not recorded, Changchun, Jilin (run gdhy_jilin_maize_1995_2016)"
   tags:
   - PHU
   - OPV1
@@ -627,7 +627,7 @@
     Do NOT adjust PPOP to move PBIAS.
 
     '
-  discovered_during: gdhy_jilin_maize_1995_2016
+  seen_at: "date not recorded, run gdhy_jilin_maize_1995_2016"
   tags:
   - PPOP
   - OPV5
@@ -658,7 +658,7 @@
 
     it produces no error at all, only wrong physics.
 
-    Verified 2026-07-28 at 44.25N 125.25E, 1995: daily store gave
+    Reference check at 44.25N 125.25E, 1995: daily store gave
 
     TMX=TMN=mean; 3-hourly store gave TMX -15.3..32.3, TMN -21.3..23.5 degC.
 
@@ -682,7 +682,7 @@
     JSON memo under <workspace>/.forcing_cache makes that resumable.
 
     '
-  discovered_during: gdhy_jilin_maize_1995_2016
+  seen_at: "2026-07-28, 44.25N 125.25E (run gdhy_jilin_maize_1995_2016)"
   tags:
   - forcing
   - CMFD
@@ -698,7 +698,7 @@
   symptom: "EPIC runs cleanly for the whole rotation, but HUSC on the harvest line\nof the .OUT climbs\
     \ year on year and settles ABOVE the dag's required\n0.9-1.2 band, e.g. at Changchun Jilin maize 1995-2016:\n\
     \  1995 HUSC= 1.00   1996 1.14   1997 1.27   1998 1.31 ... 2007 1.38\nYields are inflated (sim 8.5\
-    \ t/ha dry vs GDHY 6.1 t/ha, PBIAS +65%) and\nthe harvest always fires on the scheduled calendar date\
+    \ t/ha dry vs GDHY 6.1 t/ha) and\nthe harvest always fires on the scheduled calendar date\
     \ rather than at\nmaturity. The tell is the monthly HUI block in the .OUT: the January\nvalue is 0.00\
     \ in year 1 but 0.11, 0.21, 0.29 ... in later years,\nstabilising near 0.30 instead of returning to\
     \ zero every winter.\n"
@@ -733,7 +733,7 @@
     \ maturity\ndate (Sep 13-28 rather than always Sep 13), and dry yield falls from\n8.52 to ~6.9 t/ha.\
     \ Also note this makes compute_phu()'s output verifiable:\nwith the carry-over present, HUSC over-shoot\
     \ looks like a PHU error and\ninvites a wrong \"raise the PHU\" fix.\n"
-  discovered_during: gdhy_jilin_maize_1995_2016
+  seen_at: "date not recorded, Changchun, Jilin (run gdhy_jilin_maize_1995_2016)"
   tags:
   - opc
   - kill
@@ -750,7 +750,7 @@
 
     every year, forcing from the CMFD 3-hourly store, water balance closing)
 
-    nevertheless scores r = 0.21, NSE = -8.45, KGE = 0.06 against an annual
+    nevertheless scores a low r, a strongly negative NSE and a low KGE against an annual
 
     yield series, and the self-improve loop fires a diagnose on r < 0.5.
 
@@ -772,12 +772,12 @@
     \ which a fixed-management\n      EPIC run cannot contain (sim slope +0.003, slope_ratio 0.02);\n\
     \  (2) variance damping -- a 0.5deg cell mean averages hundreds of fields, so\n      detrended sd\
     \ is 0.55 t/ha (obs) vs 1.07 t/ha (sim), and NSE/KGE charge\n      that scale mismatch to the model.\n\
-    Remove the trend and the weather signal is present: detrended r = 0.38,\nfirst-difference r = 0.59.\n\
+    Remove the trend and the weather signal is present: detrended r and\nfirst-difference r are clearly positive.\n\
     A second, independent silent gap rides along: EPIC .ACY YLDG is DRY MATTER,\nthe moisture basis GDHY\
     \ reports on was never ESTABLISHED or cited anywhere in\nthis KI, and SKILL.md's unit table documented\
-    \ only the kg/ha -> t/ha step.\n(The run assumed a market basis; that assumption is undocumented and\
-    \ is\nexactly what this triplet forbids.) Applying (or omitting) the\n/(1 - 0.155) conversion moves\
-    \ the dag's DETERMINING metric from PBIAS\n+26.8% to +50.1% with no rule written down anywhere.\n"
+    \ only the kg/ha -> t/ha step.\n(Assuming a market basis without a source is an undocumented choice\
+    \ and\nexactly what this triplet forbids.) Applying (or omitting) the\n/(1 - 0.155) conversion moves\
+    \ the dag's DETERMINING metric (PBIAS)\nby over 20 percentage points with no rule written down anywhere.\n"
   remedy: "Before scoring ANY yield obs, resolve the shape from the dag:\n\n  python tools/resolve_obs_shape.py\
     \ --var YLDG --granularity grid \\\n      --geometry \"0.5deg grid cell\" --dataset-id gdhy_v1_2_v1_3\
     \ --n-steps 20\n\nAny gridded / regional / national / census-anchored product binds to\nobs_shape\
@@ -792,7 +792,7 @@
     \ both bases either\nway.\nDo NOT respond to this symptom by tuning PPOP, PHU or the cultivar --\n\
     PHU is already site-derived (EPIC_021), the kill row is already fixed\n(EPIC_024), and EPIC_022 forbids\
     \ moving PPOP to chase PBIAS.\n"
-  discovered_during: gdhy_jilin_maize_1997_2016_selfimprove_retry1
+  seen_at: "date not recorded, Changchun, Jilin (run gdhy_jilin_maize_1997_2016_selfimprove_retry1)"
   tags:
   - obs_shape
   - regional_aggregate
@@ -836,10 +836,10 @@
     \ from WORKSPACE_CANDIDATES (KI runs/umstead_quick_validate ->\nmodels/EPIC/outputs -> models/EPIC/source/repo\
     \ -> legacy scratch), choosing\nthe first that actually holds umstead_0.ANN. `--rerun` always writes\
     \ into\nthe KI-local runs/ dir so the shipped reference outputs under\nmodels/EPIC/outputs/ are never\
-    \ overwritten. Verified 2026-07-29:\n  python3 quick_validate.py --rerun\n  -> PASS  15 yr, P=1129.1\
+    \ overwritten. Reference check:\n  python3 quick_validate.py --rerun\n  -> PASS  15 yr, P=1129.1\
     \ ET=578.4 Q_sfc=59.0 mm/yr, yield 5.23 t/ha\nNEVER hard-code the binary or workspace in a new tool\
     \ -- call\n_common.resolve_binary().\n"
-  discovered_during: gdhy_maize_changchun_2026_07_29
+  seen_at: "2026-07-29, run gdhy_maize_changchun_2026_07_29"
   tags:
   - quick_validate
   - binary_path
@@ -896,7 +896,7 @@
     the scored verdict, until a source pins the value.
 
     '
-  discovered_during: gdhy_maize_changchun_2026_07_29
+  seen_at: "2026-07-29, run gdhy_maize_changchun_2026_07_29"
   tags:
   - quickstart
   - PPOP
@@ -916,10 +916,10 @@
 
     every run was free to re-decide it, and the dag''s DETERMINING metric moved
 
-    from PBIAS +26.8% to +50.1% on that unrecorded choice alone.
+    by over 20 percentage points of PBIAS on that unrecorded choice alone.
 
     '
-  diagnosis: 'The GDHY NetCDF files carry NO metadata whatsoever -- verified 2026-07-29:
+  diagnosis: 'The GDHY NetCDF files carry NO metadata whatsoever -- checked:
 
     the per-year `yield_<YYYY>.nc4` have empty global attributes and a single
 
@@ -944,7 +944,7 @@
     \ not a \"dry\nbasis\" comparison; convert one side (either gives an identical PBIAS) and\nreport\
     \ both numbers. A product with no registry row still returns\nestablished=false -- establish it, cite\
     \ it, and ADD THE ROW rather than\ndeciding again in the next run.\n"
-  discovered_during: gdhy_maize_changchun_2026_07_29
+  seen_at: "2026-07-29, run gdhy_maize_changchun_2026_07_29"
   tags:
   - moisture_basis
   - GDHY
@@ -977,10 +977,10 @@
     \n    missing = [k for k in (\"temp_max_c\",\"temp_min_c\",\"precip_mm\")\n               if _pick(data,\
     \ k, default=None) is None]\n    if missing: raise ValueError(...)\n\nA memo written before this fix\
     \ is STALE and carries only `dates` --\ndelete <workspace>/.forcing_cache (or $EPIC_FORCING_CACHE)\
-    \ once. Verified\n2026-08-10 at 45.25N 9.75E: cached 1984-1988 now reload with\nTmax=17.1C Tmin=8.2C\
+    \ once. Reference\ncheck at 45.25N 9.75E: cached 1984-1988 now reload with\nTmax=17.1C Tmin=8.2C\
     \ prcp=2.41mm/d srad=12.6MJ/m2/d.\nGENERAL RULE for any KI memo: never gate serialisation on\n`isinstance(v,\
     \ list)` -- the loaders return numpy.\n"
-  discovered_during: gdhy_maize_povalley_2026_08_10
+  seen_at: "2026-08-10, Po Valley 45.25N 9.75E (run gdhy_maize_povalley_2026_08_10)"
   tags:
   - forcing
   - nasa_power
@@ -1020,7 +1020,7 @@
     comparison is a 1984-2016 window (minus spin-up).
 
     '
-  discovered_during: gdhy_maize_povalley_2026_08_10
+  seen_at: "2026-08-10, Po Valley 45.25N 9.75E (run gdhy_maize_povalley_2026_08_10)"
   tags:
   - forcing
   - nasa_power
@@ -1058,7 +1058,7 @@
 
     (`_merit_tile(lat, lon)` -> n45e005_dem.tif style) via
 
-    `_elev_slope_from_raster`. Verified 2026-08-10: Po Valley 45.25N 9.75E
+    `_elev_slope_from_raster`. Reference check: Po Valley 45.25N 9.75E
 
     54 m, Iowa 41.25N -93.25E 256 m, S.Africa Highveld -28.25 27.25 1509 m.
 
@@ -1075,7 +1075,7 @@
     run stays reproducible.
 
     '
-  discovered_during: gdhy_maize_povalley_2026_08_10
+  seen_at: "2026-08-10, Po Valley 45.25N 9.75E (run gdhy_maize_povalley_2026_08_10)"
   tags:
   - site
   - SIT
@@ -1096,7 +1096,7 @@
     \ 0   2 ...    0    0    0\"\n"
   diagnosis: "SUPERSEDES item (3) of EPIC_019, which had the file right but the\nconclusion wrong. EPICCONT.DAT\
     \ does NOT hold the irrigation flag at all --\nsweeping every one of its row-2 integers leaves the\
-    \ .OUT echo at \"DRYLAND\nAGRICULTURE\" (verified 2026-08-10, 21 runs of the binary). EPIC's\nirrigation\
+    \ .OUT echo at \"DRYLAND\nAGRICULTURE\" (21 runs of the binary). EPIC's\nirrigation\
     \ switch is TWO fields in TWO other files:\n  * IRR = the FIRST integer of the flag line at the end\
     \ of <run>.SIT.\n    Method codes read off the .OUT echo by sweeping the field:\n      0 DRYLAND /\
     \ 1 SPRINKLER / 2 FURROW / 3 IRRIGATION WITH FERT ADDED /\n      4 AUTOMATIC (BIG GUN FROM LAGOON)\
@@ -1119,7 +1119,7 @@
     \ \"irrigation cannot help\" is a MONSOON-site\nstatement (WS = 0 there). Check the .ACY WS column\
     \ before repeating it --\nat a Mediterranean/continental site WS is large and irrigation moves the\n\
     yield a lot.\n"
-  discovered_during: gdhy_maize_povalley_2026_08_10
+  seen_at: "2026-08-10, Po Valley 45.25N 9.75E (run gdhy_maize_povalley_2026_08_10)"
   tags:
   - irrigation
   - IRR

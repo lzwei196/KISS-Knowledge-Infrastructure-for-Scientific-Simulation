@@ -502,9 +502,8 @@
       decadal_mean]. A gridded/statistical yield rises with technology and
       management, which a constant-management weather-driven simulation does
       not reproduce; the opposing trends drive raw Pearson r negative and hide
-      whatever real inter-annual skill exists. Observed at the GDHY 0.5-degree
-      cell 37.75S/58.75W (Balcarce, AR): raw r = -0.19 while r_detr = +0.14 and
-      r_firstdiff = +0.33 on the identical obs/sim pairs.
+      whatever real inter-annual skill exists. On one GDHY 0.5-degree cell the raw r was
+      negative while r_detr and r_firstdiff were positive on the identical obs/sim pairs.
     affected_components: [Validation]
   remedy:
     action: "Set obs_shape to regional_aggregate_time_series and score with ki_tools_common.metrics.trend_metrics (linear_residual detrending); keep pbias as the determining metric."
@@ -519,3 +518,4 @@
     prevention: "SKILL.md sections 8.1-8.3 and docs/s6_validation.md 'Obs-shape selection and detrending'"
   severity: silent
   cross_references: [dt_019, dt_017, dt_006]
+  seen_at: "date not recorded, GDHY cell 37.75S 58.75W (Balcarce, AR)"

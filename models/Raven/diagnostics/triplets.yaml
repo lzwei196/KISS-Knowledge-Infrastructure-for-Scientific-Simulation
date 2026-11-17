@@ -41,9 +41,9 @@
   # SPINUP / WARM START ERRORS
   # ========================================================================
   # ========================================================================
-  # ERRORS DISCOVERED DURING BENGBU STEP 3 VALIDATION (2026-03-22)
+  # ERRORS FOUND IN A STEP 3 VALIDATION (where and when: each entry's seen_at)
   # ========================================================================
-  # === Validated from Bengbu + Chaohe testing (err_003, err_004, err_007, err_008, err_009) ===
+  # === Found in later tests (err_003, err_004, err_007, err_008, err_009; where: each entry's seen_at) ===
 
 - id: dt_rav_001
   severity: silent
@@ -721,9 +721,9 @@
 
       vs vegetation). The Raven User Manual documents this per-template, but the generic tools
 
-      treat all parameters as global. The working Chaohe test used hand-crafted templates that
+      treat all parameters as global. Hand-crafted templates that
 
-      correctly placed parameters per Raven source code requirements.
+      correctly place parameters per Raven source code requirements do work.
 
       '
     affected_components:
@@ -736,6 +736,7 @@
     - 'GR4J: X1 via soil_thickness*porosity*1000, X2/X3 as SoilParameterList, X4 as LandUseParameterList'
     - 'HBV: soil params in SoilParameterList, melt/refreeze in LandUseParameterList'
     - 'HYMOD: BASEFLOW_COEFF per soil class, PDM_B as LandUseParameterList'
+  seen_at: "2026-03-22, Bengbu"
 - id: dt_rav_029
   severity: fatal
   failure_domain: dependency_mismatch
@@ -753,6 +754,7 @@
     - build_rvp_parameters.py
   remedy:
     action: Add HBV_BETA to SoilParameterList, MOHYSE_PET_COEFF to GlobalParameter, AET_COEFF to LandUseParameterList
+  seen_at: "date not recorded, Bengbu and Chaohe"
 - id: dt_rav_030
   severity: fatal
   failure_domain: parameter_format
@@ -768,6 +770,7 @@
     - generate_rvc_initial.py
   remedy:
     action: 'Create a minimal .rvc file with just a comment: ''# Empty initial conditions — cold start'''
+  seen_at: "date not recorded, Bengbu and Chaohe"
 - id: dt_rav_031
   severity: fatal
   failure_domain: parameter_format
@@ -784,6 +787,7 @@
     - build_rvp_parameters.py
   remedy:
     action: Detect comma in line and use split(',') + strip() for CSV format
+  seen_at: "date not recorded, Bengbu and Chaohe"
 - id: dt_rav_032
   severity: fatal
   failure_domain: parameter_format
@@ -800,6 +804,7 @@
     - build_rvp_parameters.py
   remedy:
     action: Changed to read parts[10] for terrain class
+  seen_at: "date not recorded, Bengbu and Chaohe"
 - id: dt_rav_033
   severity: fatal
   failure_domain: parameter_format
@@ -818,6 +823,7 @@
   remedy:
     action: Use hand-crafted per-model templates validated against Raven v4.1 binary. Generic template
       generation needs version-awareness.
+  seen_at: "date not recorded, Bengbu and Chaohe"
 - id: dt_rav_034
   severity: major
   failure_domain: output_convention
@@ -834,7 +840,7 @@
       the start of the first time step are included''), while :ObservationData input has been period-STARTING
       since v2.7. So the row stamped date d holds the flow of calendar day d-1, and row 0 is only the
       initial condition. Joining a calendar-dated gauge series on Raven''s raw date label pairs sim(day
-      d) with obs(day d-1). Verified at Tangnaihai: raw gauge 2011-12-31=277 appears in the Hydrographs
+      d) with obs(day d-1). Check at Tangnaihai: raw gauge 2011-12-31=277 appears in the Hydrographs
       row stamped 2012-01-01.'
     affected_components:
     - parse_raven_output.py
@@ -843,9 +849,10 @@
     action: 'Use parse_raven_output.load_discharge_series() (or parse_hydrographs(date_convention=''period_ending'')),
       which shifts the stamp back one timestep and drops the initial-condition row. Proof of correctness:
       after the shift, Raven''s own ''(observed)'' column equals the raw gauge file on identical calendar
-      dates (3286 days, max abs diff 0.0). At Tangnaihai/UBC the fix moved held-out NSE 0.6222 -> 0.6253
+      dates (3286 days, max abs diff 0.0). In one basin the fix moved held-out NSE only a little
       and made the external number reproduce Raven''s internal pairing. NEVER hand-roll a Hydrographs
       reader in a run script.'
+  seen_at: "date not recorded, Tangnaihai (UBC emulation)"
 - id: dt_rav_035
   severity: major
   failure_domain: water_balance
@@ -891,9 +898,9 @@
   remedy:
     action: Rank on the CALIBRATION-window score (parse_raven_output.select_best_member(members, cal_key='cal');
       run_ensemble_comparison now sets stats['rank_basis']='calibration_window_nse' when members carry
-      cal scores) and report the held-out score OF THE CAL-SELECTED MEMBER. At Tangnaihai both rules pick
-      ubc (cal NSE 0.728, next gr4j 0.619), so the held-out 0.625 is a genuine out-of-sample number; state
+      cal scores) and report the held-out score OF THE CAL-SELECTED MEMBER; state
       the selection rule in the record either way.
+  seen_at: "date not recorded, Tangnaihai"
 - id: dt_rav_037
   severity: fatal
   failure_domain: output_parsing
@@ -1036,11 +1043,12 @@
     - calibrate_raven_dds.py
   remedy:
     action: 'Each template''s own melt controls were added to CALIBRATION_PARAMS. Widening the search
-      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc at Tangnaihai
-      with 16 free parameters, 250 iterations gave cal NSE 0.730 / held-out 0.548 / PBIAS +16.5% (DDS
-      buys hydrograph shape with volume bias) while 1000 iterations gave cal NSE 0.762 / held-out 0.627
-      / PBIAS +1.1%. If a wider parameter set generalises WORSE, raise --n_iterations before removing
+      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one cold basin
+      with 16 free parameters, 250 iterations gave a lower held-out NSE and a large volume bias (DDS
+      buys hydrograph shape with volume bias) while 1000 iterations gave a clearly higher held-out NSE
+      and PBIAS near zero. If a wider parameter set generalises WORSE, raise --n_iterations before removing
       parameters.'
+  seen_at: "date not recorded, Tangnaihai"
 - id: dt_rav_044
   severity: fatal
   failure_domain: ki_integrity
@@ -1055,9 +1063,9 @@
   diagnosis:
     root_cause: 'The KNOWLEDGE (triplets, notes, result.json) and the CODE are promoted through different
       paths. A review/rollback reverted the canonical tools to a pre-fix snapshot while leaving triplets.yaml
-      and the recorded metrics in place, so the KI advertised a capability it no longer had. Encountered
-      2026-07-27: dt_rav_034 through dt_rav_039 were all documented as fixed, all were absent from the
-      tools, and the canonical tree was byte-identical to .kdt_snapshots/pre_test_Raven_20260726T164044Z.'
+      and the recorded metrics in place, so the KI advertised a capability it no longer had. Example:
+      dt_rav_034 through dt_rav_039 were all documented as fixed, all were absent from the
+      tools, and the canonical tree was byte-identical to an older .kdt_snapshots/ snapshot.'
     affected_components:
     - select_model_template.py
     - calibrate_raven_dds.py
@@ -1070,6 +1078,7 @@
       and `python -c "import sys;sys.path.insert(0,''tools/s7_output'');import parse_raven_output as p;p.load_discharge_series"`.
       Do NOT trust a triplet''s ''fixed'' state or a prior result.json metric as evidence that the tool
       can reproduce it.'
+  seen_at: "2026-07-27, Raven KI (snapshot pre_test_Raven_20260726T164044Z)"
 - id: dt_rav_046
   severity: major
   failure_domain: ki_integrity

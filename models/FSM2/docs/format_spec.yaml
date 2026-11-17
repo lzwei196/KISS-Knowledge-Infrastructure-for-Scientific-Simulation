@@ -706,7 +706,9 @@ known_issues:
   diagnosis: Air temperature in °C instead of K. Ta drives the surface energy balance, the saturation
     vapour pressure and (through T19's converter ramp) the rain/snow split, so a value of -5 read as -5
     K instead of 268.15 K is wildly wrong everywhere at once. NOTE — this entry used to say "FSM2 partitions
-    precip
+    precipitation internally"; it does NOT. For DRIV1D=1 FSM2_DRIVE.F90 reads Sf and Rf as two independent
+    columns and the only phase split in the source is the `#if ENSMBL == 1` branch, which compil.sh never
+    defines. See T19.
   remedy: 'Convert temperature to Kelvin: Ta_K = Ta_C + 273.15. Verify that Ta values in met file are
     in range 200-330.'
 - id: T02
@@ -804,17 +806,20 @@ known_issues:
   symptom: Snowpack never melts (or never forms) even though the forcing has plenty of precipitation
   diagnosis: Total precipitation was written into ONE of the Sf/Rf columns. FSM2 does NOT partition precipitation
     for DRIV1D=1 — FSM2_DRIVE.F90 reads Sf and Rf as two independent columns and the only phase split
-    in the whole source tree lives in the `#if ENSMBL == 1` branch, which compil.sh never defines. (Tripl
-  remedy: 'Partition BEFORE writing the met file. `tools/convert_forcing_to_fsm2.py --precip-col <col>`
-    applies FSM2''s own ramp, copied from that ENSMBL branch — fs = clip(1 - 0.5*(Ta-273.15), 0, 1), i.e.
+    in the whole source tree lives in the `#if ENSMBL == 1` branch, which compil.sh never defines. (Triplet
+    T01's diagnosis text used to claim FSM2 "partitions precipitation internally"; it does not.) Everything
+    in Sf gives a snowpack that only ever grows; everything in Rf gives no snow at all, with no error
+    and a clean exit code 0.
+  remedy: Partition BEFORE writing the met file. `tools/convert_forcing_to_fsm2.py --precip-col <col>`
+    applies FSM2's own ramp, copied from that ENSMBL branch — fs = clip(1 - 0.5*(Ta-273.15), 0, 1), i.e.
     all snow at or below 0 degC and all rain at or above +2 degC. Ménard et al. (2019, ESSD 11, 865-880,
-    Fig. '
+    Fig. 4) fit the same near-linear 0-2 degC ramp to the ESM-SnowMIP reference sites.
 - id: T20
   symptom: No RH column in the forcing — every reanalysis publishes specific humidity instead
   diagnosis: FSM2 DRIV1D=1 wants column 10 as RELATIVE humidity in percent, but CMFD, MSWX, ERA5 and NASA
     POWER all publish SPECIFIC humidity. Converting with a generic Magnus/Tetens formula introduces an
     error, because FSM2_DRIVE.F90 immediately inverts RH back to Qa with its OWN saturation formula (e0
-    = 611.21
+    = 611.213 Pa, es = e0*exp(17.5043*Tc/(241.3+Tc)), Qa = (RH/100)*eps*es/Ps, eps = 0.622).
   remedy: Use `tools/convert_forcing_to_fsm2.py --shum-col <col>`. It inverts that exact formula with
     those exact constants, so the q -> RH -> q round trip through FSM2 is exact rather than approximate.
     RH is clipped to 0-100 because FSM2 has no super-saturation branch.
@@ -823,7 +828,8 @@ known_issues:
   diagnosis: NASA POWER's WS2M is derived with a fixed surface-roughness assumption and collapses over
     rough/forested cells — at Sodankyla (67.36N, 26.63E) its 2010 annual mean is 0.51 m/s against 2.30
     m/s for WS10M at the same cell. Feeding 0.5 m/s into FSM2 starves the sensible/latent exchange whatever
-    zU says
+    zU says. `ki_tools_common.load_forcing.load_hourly_forcing` used to request WS2M only (the DAILY loader
+    already preferred WS10M for exactly this reason).
   remedy: The hourly loader now requests both and returns the 10 m wind in `wind_ms`, the 2 m wind in
     `wind2_ms`, and the height in `wind_height_m`. Set the namelist `zU` to `wind_height_m` (10, not the
     FSM2 default that happens to also be 10 only by luck) so the wind and its height agree.
@@ -847,19 +853,31 @@ known_issues:
   diagnosis: In snowcci_swe_nh (ESA CCI Snow L3C SWE v2.0) the negative values are FLAGS, not data — -30
     glacier, -20 mountain, -10 water, -1 no_data (see the `swe` variable's flag_values / flag_meanings
     attributes). 0 means no_snow and is a VALID observation. The product is also produced for the snow
-    season onl
+    season only (roughly Sep-May, ~215 files per year), so there is no summer at all.
   remedy: Mask values < 0 to NaN and KEEP the zeros; never treat 0 as a gap. Do not fabricate summer zeros
     to "complete" the series — pair only on the days the product actually ships, and say so. Pick a cell
     where the mountain flag does not fire, because over complex terrain the product is all -20.
 - id: T25
-  symptom: Simulated peak SWE is 20-30% too high with a large positive PBIAS, but r is high (~0.89), NSE
-    is positive and melt-out timing is within a few days — the surplus is already fully built by December
-    and held flat through deep winter
-  diagnosis: This is a FORCING precipitation bias passing through to the metric at roughly 1:1, not a
+  symptom: Simulated peak SWE is 20-30% too high with a large positive PBIAS, but r is high, NSE is positive
+    and melt-out timing is within a few days — the surplus is already fully built by December and held
+    flat through deep winter
+  diagnosis: 'This is a FORCING precipitation bias passing through to the metric at roughly 1:1, not a
     snow-parameter problem. At a cold open site FSM2 retains essentially all cold-season snowfall (<10%
     lost to sublimation + midwinter melt), so simulated peak SWE tracks cumulative Oct-Apr Sf almost exactly
-    (measu
-  remedy: Print the forcing's annual precipitation AND cold-season snowfall before scoring and compare
+    (measured at Sodankyla 2003-2019 with NASA POWER hourly: Sf 271-294 mm -> peak SWE 281 kg m-2 against
+    225 observed). Menard et al. 2019 (ESSD 11, 865-880) Sect. 3 applied a site-specific precipitation
+    multiplier at ALL TEN ESM-SnowMIP reference sites, including the low-relief boreal/Arctic ones sitting
+    at their grid-cell elevation, and FSM2 is benchmarked against that bias-corrected forcing. A KI recipe
+    that goes reanalysis -> converter -> run with no bias-correction step inherits the full reanalysis
+    wet bias. Do NOT reach for the canopy at an open site: Menard Table 2 records SOD as ''Clearing (short
+    heather)'', so vegh=0.0, VAI=0.0 is correct there.'
+  remedy: 'Print the forcing''s annual precipitation AND cold-season snowfall before scoring and compare
     against a site climatology. Then either apply the multiplier with `tools/convert_forcing_to_fsm2.py
     --precip-scale <m>` and record its source, or leave the forcing raw and report the PBIAS explicitly
-    as a FO
+    as a FORCING bias. Correct against an UNDERCATCH-CORRECTED reference, never a raw gauge normal: at
+    Sodankyla, POWER 777 mm/yr against the raw FMI normal 527 mm/yr looks like +47%, but the multiplier
+    that actually lands peak SWE on the observation is 0.80 (~622 mm/yr) — the true bias is ~+25%, and
+    scaling by 527/777 = 0.678 overshoots to about -15%. At an ESM-SnowMIP reference site use its published
+    Table 4 logistic phase factors via `--phase-logistic T0 T1` (SOD 2.52 1.16). Judge the run on docs/validation_convention.yaml''s
+    snw band (NSE >= 0 and nRMSE <= 1.0), NOT on PBIAS, and do not route this residual to parameter calibration
+    — tuning rhof/asmn/tmlt to absorb a forcing surplus is compensating-error tuning that will not transfer.'

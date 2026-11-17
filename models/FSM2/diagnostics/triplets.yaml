@@ -169,11 +169,11 @@
     zeros to "complete" the series — pair only on the days the product actually ships, and say so.
     Pick a cell where the mountain flag does not fire, because over complex terrain the product is all -20.
 
-# --- appended by KDT promote (run FSM2_retry2) at 2026-08-23T13:32:28.818633+00:00 ---
+# --- appended by KDT promote ---
 - id: T25
   symptom:
     description: Simulated peak SWE is 20-30% too high with a large positive PBIAS,
-      but r is high (~0.89), NSE is positive and melt-out timing is within a few days
+      but r is high, NSE is positive and melt-out timing is within a few days
       — the surplus is already fully built by December and held flat through deep
       winter
   diagnosis:
@@ -208,4 +208,4 @@
     rule; it is documented at SKILL.md:562 'Forcing a point column from a reanalysis
     grid cell (MANDATORY check)'
   canonical_intent: ki_local_if_pass
-  added_by_run: FSM2_retry2
+  seen_at: "2026-08-23, Sodankyla (run FSM2_retry2)"

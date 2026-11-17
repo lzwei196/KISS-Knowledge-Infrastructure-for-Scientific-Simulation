@@ -464,8 +464,6 @@
           DuMux's 1p model — Fan WTD has no mechanism for this.
       (2) Mountain-edge cells: extrapolation artifacts produce depths of 200-500+ m,
           giving WT elevations far below sea level (physically impossible).
-      Observed in Case B (Po Plain, RMSE=137m, R²=0) and Case C (NCP, RMSE=225m,
-      R²=0.02) on 2026-04-30.
     affected_components: [s6_validation, convert_forcing_to_dumux]
   remedy:
     action: "Use D2WT (Zenodo #5851676) for US unconfined aquifers; use GRACE TWSA trend for basin-scale storage budget; use published regional head maps for confined systems."
@@ -478,6 +476,7 @@
     prevention: "Before validation, check np.nanmin(wt_elev) — if < -50m, Fan WTD is unreliable for this domain"
   severity: silent
   cross_references: [dt_005]
+  seen_at: "2026-04-30, Po Plain (Case B); 2026-04-30, North China Plain (Case C)"
 
 - id: dt_020
   stage: s0_config
@@ -496,8 +495,6 @@
       (2) Multi-layer systems: wells tap different aquifer units with very different heads
           (e.g., Garonne Miocene confined + Quaternary alluvial + Cretaceous chalk).
       (3) Pumping-dominated: head drawdown from extraction wells dominates over regional flow.
-      Observed in: Garonne/FrenchPiezo (NSE=-0.10, sim 3.9-11.5m vs obs 0.4-90.2m),
-      Veneto v1 E-W (NSE=-0.21, obs 0.3-185.8m from Alpine foothills + coastal plain).
     affected_components: [domain_selection, BC_setup]
   remedy:
     action: "Choose a domain that satisfies the 5 productive-domain conditions before running."
@@ -517,12 +514,13 @@
         assert max(abs(r_ew), abs(r_ns)) > 0.3, 'No dominant gradient direction'
   severity: silent
   cross_references: [dt_019, dt_021]
+  seen_at: "date not recorded, Garonne (FrenchPiezo); date not recorded, Veneto (v1 E-W)"
 
 - id: dt_021
   stage: s0_config
   failure_domain: validation
   symptom:
-    description: "NSE improves dramatically (e.g., -0.21 → +0.26) when flow direction is changed from E-W to N-S or vice versa. The model captures less than 30% of observed head variance."
+    description: "NSE improves dramatically (e.g., from below 0 to above 0) when flow direction is changed from E-W to N-S or vice versa. The model captures less than 30% of observed head variance."
     error_pattern: "NSE << 0 with E-W flow but obs head gradient is N-S"
     detection_method: value_comparison
   diagnosis:
@@ -537,7 +535,6 @@
         FlowDirection=1: Legacy formula (hardcoded, not physically useful for km-scale).
       Choosing wrong direction sets linear gradient orthogonal to actual flow → DuMux
       predicts uniform head along the obs gradient direction → NSE << 0.
-      Observed: Veneto v1 E-W NSE=-0.21, Veneto v2 N-S NSE=+0.26.
     affected_components: [params_input, FlowDirection_parameter]
   remedy:
     action: "Compute r(lon, p_obs) and r(lat, p_obs) to determine dominant gradient direction before writing params.input."
@@ -550,6 +547,7 @@
     prevention: "Always compute both correlations and print them before writing params.input."
   severity: silent
   cross_references: [dt_020]
+  seen_at: "date not recorded, Veneto (v1 E-W, v2 N-S)"
 
 - id: dt_022
   stage: s0_config
@@ -562,7 +560,7 @@
     root_cause: "Fan WTD is unreliable as a BC source for non-High-Plains aquifers. BC errors are larger than the lateral head gradient across the domain, making the simulation physically meaningless."
     explanation: >
       For the High Plains aquifer, BCs from Fan WTD (via SRTM − WTD) gave head-BC errors
-      of ~10m on a 380m range → errors are small relative to the signal (NSE=0.74).
+      of ~10m on a 380m range → errors are small relative to the signal.
       For the Po Plain, Garonne, and NCP mountain-edge, Fan WTD errors of 100-300m dwarf
       the lateral gradient (typically 5-30m over 100-200km) → NSE << 0 trivially.
       Better BC sources (in order of reliability):
@@ -582,3 +580,4 @@
     prevention: "Always print BC head values before running and sanity-check: |h_left - h_right| / DX_km should be 0.05-2.0 m/km for typical alluvial aquifers."
   severity: critical
   cross_references: [dt_019, dt_020]
+  seen_at: "date not recorded, High Plains aquifer"

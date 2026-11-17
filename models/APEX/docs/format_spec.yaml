@@ -474,7 +474,11 @@ known_issues:
 
     statement and waits for keyboard input. With subprocess capture_output=True
 
-    there is'
+    there is no stdin — the process blocks indefinitely until timeout.
+
+    s9_generate_crop_opc.py was previously emitting codes 92/93 (now fixed).
+
+    '
   remedy: "Replace fert codes 92→53 (Elem-N, 100%N) and 93→54 (Elem-P, 100%P) in\nevery *.OPC file in\
     \ the workspace:\n  grep -rn \" 92 \\| 93 \" outputs/<ws>/*.OPC\n  sed -i 's/   92/   53/g; s/   93/\
     \   54/g' outputs/<ws>/*.OPC\ns9_generate_crop_opc.py already outputs codes 53/54 after the 2026 fix.\n"
@@ -492,7 +496,7 @@ known_issues:
   remedy: "Always invoke APEX0806 via Python subprocess with capture_output=True:\n  subprocess.run([\"\
     wine\", \"./APEX0806.exe\"], cwd=ws,\n                 capture_output=True, text=True, timeout=300)\n\
     This captures stdout/stderr so Wine can satisfy the console write.\ns6_run_apex.py already uses this\
-    \ pattern. Never"
+    \ pattern. Never use nohup+shell directly.\n"
 - id: spinup_low_yields
   symptom: crop yield implausibly low (< 2 t/ha for corn/wheat) with WS > 50
   diagnosis: 'The ex1_RiselTX template workspace has Texas soil at Texas-climate
@@ -503,7 +507,11 @@ known_issues:
 
     field capacity (Texas value) which is far below what the new climate
 
-    would equilibrate to. The'
+    would equilibrate to. The model sees artificial drought for 6-10 years
+
+    until the water balance adjusts, producing extreme water stress (WS>50).
+
+    '
   remedy: 'Add a spin-up period: set total NBYR = spinup_years + actual_years,
 
     IYR = actual_start - spinup_years. s5_update_control.py accepts
@@ -512,13 +520,17 @@ known_issues:
 
     the spin-up years until the soil equilibrates, then produces realistic
 
-    yields in the actual analys'
+    yields in the actual analysis window. Filter ACY results to YR# > spinup_years
+
+    using s7_parse_output.py (it marks spin-up rows with spinup=True).
+
+    '
 - id: apex0806_opcode_mismatch
   symptom: zero yield (YLDG=0) or wrong harvest with APEX0806 but OPC came from APEX1501 run
   diagnosis: "APEX0806 and APEX1501 use different operation codes for the same actions:\n  APEX0806: \
     \ plant=136  fertilize=261  harvest_grain=292\n  APEX1501:  plant=132  fertilize=580  harvest_grain=316\n\
     Using APEX1501 codes in APEX0806 may silently misinterpret the operation\n(e.g., op 132 in APEX0806\
-    \ = undefined/d"
+    \ = undefined/different equipment, not \"plant\").\n"
   remedy: 'Check OPC files with: grep -n "132\|316\|580" outputs/<ws>/*.OPC
 
     Replace with APEX0806 codes: 132→136, 316→292, 580→261.
@@ -536,7 +548,9 @@ known_issues:
 
     field: "6  2" → BN blank removal → "62" → NBYR=62, not 6. All subsequent
 
-    fields also sh'
+    fields also shift by the extra character width.
+
+    '
   remedy: 'Always write APEXCONT.DAT line 1 in I4 fixed-width: every field occupies
 
     exactly 4 characters. s5_update_control.py does this correctly via
@@ -545,7 +559,9 @@ known_issues:
 
     To diagnose: check `head -1 APEXCONT.DAT | cut -c1-4` — it must be the
 
-    NBYR value (right-justif'
+    NBYR value (right-justified, no trailing spaces bleeding into next field).
+
+    '
 - id: apex0806_opc_5i5_phú_shift
   symptom: BIOM and YLDG are ~0 in all years despite crop planting in OPC; TS and WS both 0
   diagnosis: 's9_generate_crop_opc.py _op_line() used 5×I5 fields (adding an OPV0 field)
@@ -556,11 +572,13 @@ known_issues:
 
     reads PHU=0 from the zero-filled OPV0. PHU=0 → crop "matures" on the
 
-    day of plantin'
+    day of planting with no biomass.
+
+    '
   remedy: "Regenerate OPC with fixed s9_generate_crop_opc.py (post-2026-05-14 fix).\nManually verify format:\
     \ `head -5 OPSC01.mgt | awk '{print NF}'` — each\ndata line must have 14 fields (3×I3 + 4×I5 + 7×F8.2).\
     \ If NF=15, you\nhave the bug.\nReference line (Bengbu Y10.OPC, working):\n  \"  1  5 15  160    0\
-    \    2    0"
+    \    2    0    0.00    0.00    0.00    0.00   25.00    0.00    0.00\"\n  that is 3+4+7 = 14 fields.\n"
 - id: apex0806_opc_tillage_151_pause
   symptom: APEX process hangs indefinitely (ps shows wine process, CPU=100%, no output files)
   diagnosis: 'Tillage operation code 151 is not present in TILLCOM.DAT for APEX0806.
@@ -592,7 +610,10 @@ known_issues:
   diagnosis: "Without op 451 (kill crop) after harvest (op 292), grain is removed but the\ncrop canopy\
     \ stays \"alive\" with remaining vegetative biomass. When frost doesn't\nexplicitly kill this residual\
     \ in APEX's phenology model, the carry-over state\ncompounds across years:\n  Year 1: harvest fires,\
-    \ YLDG ok, vegetati"
+    \ YLDG ok, vegetative biomass remains \"alive\"\n  Year 2: April tillage kills old crop; new crop\
+    \ planted → harvest fires, ok\n  Year 3: April tillage + planting into partially \"alive\" field →\
+    \ HUI frozen,\n          BIOM=residue only, YLDG=0\nThe cascade stabilizes with a stuck HUI value\
+    \ equal to the HUI where the\nyear-2 crop was interrupted.\n"
   remedy: "Add op 451 (kill crop) the day after harvest in every year of the OPC:\n  e.g. if harvest is\
     \ Sep 6 (op 292), add Sep 7 op 451 with all zeros.\ns9_generate_crop_opc.py (post-2026-05-14 fix)\
     \ automatically inserts op 451\nthe day after harvest for every year.\n"
@@ -612,7 +633,13 @@ known_issues:
 
     (WDLSTCOM.DAT/WPM1.DAT/WIND.DAT referenced in APEXFILE.DAT). The legacy s2
 
-    a'
+    assumed a Marena/v1501 layout: it wrote WEATHER01.dly/WPM01.WP1/WIND01.WND
+
+    and rewrote the EMPTY, UNREFERENCED WDLYLIST/WPM1LIST/WINDLIST files — so
+
+    APEX never read the new forcing.
+
+    '
   remedy: 's2 (post-2026-06-23 fix) adds _resolve_weather_targets(ws): it parses
 
     APEXRUN.DAT (IWP1,IWND) + WPM1.DAT/WIND.DAT and SUB col 8 + WDLSTCOM.DAT to
@@ -621,7 +648,9 @@ known_issues:
 
     variants). Legacy WEATHER01 layout still works via fallback. No manual edit
 
-    need'
+    needed; build_forcing now returns the resolved daily path.
+
+    '
 - id: apex0806_apexcont_split_field_shift
   symptom: 'Non-deterministic runs (NSE/r differ run-to-run with identical inputs);
 
@@ -636,7 +665,11 @@ known_issues:
 
     token and shifting every flag at index >=1 by one Fortran I4 column. Dates/
 
-    IPD/NGN survived (overwritten by value) but LPYR/IET/ISCN/... got scrambled,'
+    IPD/NGN survived (overwritten by value) but LPYR/IET/ISCN/... got scrambled,
+
+    and any field set by index (iet at fields[9]) landed on the wrong column.
+
+    '
   remedy: 's5 (post-2026-06-23 fix) parses line 1 as FIXED-WIDTH I4 (20 x 4-char
 
     fields) instead of split(), matching how APEX reads and how s5 writes. After
@@ -645,7 +678,11 @@ known_issues:
 
     NGN=0 ("read ALL weather from DLY") collapses surface runoff to ~15 mm/yr
 
-    (a D'
+    (a DLY column-read mismatch under read-all mode) — keep the template''s NGN=2
+
+    (generates SRAD from WP1, reads TMX/TMN/PRCP from DLY) for hydrology runs.
+
+    '
 - id: apex0806_apexcont_freeformat_crash
   symptom: 's5_update_control raises "ValueError: invalid literal for int() with base
 
@@ -655,7 +692,9 @@ known_issues:
 
     2-space separators (e.g. "6  2010  1  6  2  0 ...", the shipped
 
-    ex1_RiselTX '
+    ex1_RiselTX / apex_bengbu_corn_ki_test template).
+
+    '
   diagnosis: 's5''s fixed-width I4 parser slices line 1 in 4-char chunks. On a free-format
 
     line a chunk like "6  2" keeps an internal space -> int() crashes; other
@@ -664,7 +703,9 @@ known_issues:
 
     ALREADY been normalised to I4 (true only after a prior s5 pass), so the
 
-    first'
+    first s5 call on a fresh template failed.
+
+    '
   remedy: 's5 (post-2026-07-04 fix) detects free format (>=6 leading space-separated
 
     integer tokens, field0 <=4 chars) and parses line 1 with split(); otherwise
@@ -673,7 +714,9 @@ known_issues:
 
     re-emits canonical I4. Works on both pristine free-format templates and
 
-    alrea'
+    already-normalised workspaces.
+
+    '
 - id: apex0806_opc_generated_not_wired
   symptom: 'Generated crop schedule seems ignored: yields ~0.3 t/ha with BIOM ~1 t/ha
 
@@ -692,7 +735,9 @@ known_issues:
 
     to near-zero yield (crop matures/senesces almost immediately -> tiny
 
-    biomass, hence LOW stress rathe'
+    biomass, hence LOW stress rather than high).
+
+    '
   remedy: 'Call s9_generate_crop_opc.wire_management_list(workspace,
 
     opc_name="OPSC01.MGT") after write_opc (quickstart.py post-2026-07-04 fix
@@ -701,7 +746,15 @@ known_issues:
 
     must reference OPSC01.MGT (CRLF line endings). To represent a 0.5deg
 
-    AREA-average (e.g. GDHY '
+    AREA-average (e.g. GDHY grid yield) rather than a high-input field trial,
+
+    disable the auto-irrigation control header ("3 500 ..." -> "3 0 0 ...") of
+
+    the corn OPC: full auto-irrigation gives ~7 t/ha (+100% vs GDHY), the
+
+    supplemental/rainfed variant lands near the area-average.
+
+    '
 - id: apex0806_sit_column_shift_co2_starvation
   symptom: 'Maize (or any annual) yields 0.3-0.7 t/ha with BIOM 1-2 t/ha at a new
 
@@ -720,7 +773,13 @@ known_issues:
 
     YLAT=32, XLOG=0.25, ELEV=0.25, APM=0.0, CO2X=0.25 ppm. At 0.25 ppm CO2 the
 
-    radiation-use-efficien'
+    radiation-use-efficiency term collapses, so the crop simply cannot build
+
+    biomass — and because it is not water/N/P/temperature limited, NO stress
+
+    flag is raised. Completely silent wrong answer.
+
+    '
   remedy: 'Line 4 of *.SIT is TEN 8-character F8.2 columns with NO leading pad
 
     (template: "   31.47  -96.88  166.06    0.25  330.00 ..."). Fixed in
@@ -729,7 +788,11 @@ known_issues:
 
     re-parses the row by column and range-checks CO2X to [100,1200] ppm.
 
-    Quick check: `cut -c1-8,9'
+    Quick check: `cut -c1-8,9-16,33-40 SIT0002.SIT | sed -n 4p` must give
+
+    lat, lon, CO2 ~330-420.
+
+    '
 - id: apex0806_template_outputs_parsed_as_results
   symptom: 's7_parse_output returns a full, plausible yield/water time series for a
 

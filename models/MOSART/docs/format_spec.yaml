@@ -534,7 +534,7 @@ known_issues:
 - id: T025
   symptom: SKILL.md / docs say MOSART is 'stage 2 of a VIC->MOSART pipeline' whose grid comes from the
     'VIC/Lohmann D8' and whose elevation comes from the VIC soil file
-  diagnosis: Stale text from the first VIC->MOSART run. Only the RUNOFF is VIC's (a coupling on results,
+  diagnosis: Stale text from an older VIC->MOSART set-up. Only the RUNOFF is VIC's (a coupling on results,
     convert_runoff_forcing.py); the domain must come from MOSART's own tools.
   remedy: 'Follow SKILL.md ''Static Inputs'' as of 2026-10-03: delineate_d8_from_merit.py ->
 

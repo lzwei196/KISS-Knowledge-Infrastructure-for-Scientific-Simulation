@@ -479,9 +479,8 @@ known_issues:
     multiplying by 10800 (seconds per 3hr step), the values are so small they round to zero in the daily
     sum.
 
-    ; This was the main error in the first validation run. The model ran without any error, but produced
-    zero discharge because all precipitation was zero after rounding. Only discovered by checking Pobs.txt
-    values.
+    ; Easy to miss: the model can run without any error yet give zero discharge, because all precipitation
+    rounds to zero. Check the Pobs.txt values.
 
     ; [''Pobs.txt'', ''convert_forcing_to_hype.py'']'
   remedy: Multiply CMFD precipitation by 10800 to convert kg/m²/s → mm/3hr, then SUM 8 steps for daily.;
@@ -633,7 +632,7 @@ known_issues:
   diagnosis: 'Lumped (1-subbasin) setup with default parameters. HYPE''s internal routing with MAINDOWN
     in lumped mode has no routing delay — all runoff appears instantly at outlet, causing peak overprediction.
 
-    ; With a single subbasin for a 121,330 km² basin, there is no attenuation from subbasin-to-subbasin
+    ; With a single subbasin for a very large basin, there is no attenuation from subbasin-to-subbasin
     routing. Semi-distributed setup (5-10 subbasins) would improve timing and reduce peak overprediction.
     The NSE can still look good for an uncalibrated lumped run.
 

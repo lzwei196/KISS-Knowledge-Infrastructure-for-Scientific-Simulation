@@ -325,9 +325,8 @@
       in the daily sum.
 
       '
-    explanation: 'This was the main error in the first validation run. The model ran without any error,
-      but produced zero discharge because all precipitation was zero after rounding. Only discovered by
-      checking Pobs.txt values.
+    explanation: 'Easy to miss: the model can run without any error yet give zero discharge, because all
+      precipitation rounds to zero. Check the Pobs.txt values.
 
       '
     affected_components:
@@ -673,7 +672,7 @@
       in lumped mode has no routing delay — all runoff appears instantly at outlet, causing peak overprediction.
 
       '
-    explanation: 'With a single subbasin for a 121,330 km² basin, there is no attenuation from subbasin-to-subbasin
+    explanation: 'With a single subbasin for a very large basin, there is no attenuation from subbasin-to-subbasin
       routing. Semi-distributed setup (5-10 subbasins) would improve timing and reduce peak overprediction.
       The NSE can still look good for an uncalibrated lumped run.
 

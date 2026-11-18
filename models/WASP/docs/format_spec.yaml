@@ -734,7 +734,7 @@ known_issues:
 - id: dt_wasp_037
   symptom: 'Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column
     median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With
-    them the Lake Erie DO NSE is about 0 (all data); without them it is much higher (sensitivity only).'
+    them the DO NSE is near zero; without them it is much higher (sensitivity only).'
   diagnosis: A sensor fault is likely for some of these cruises, but low DO alone does not prove it (summer
     hypolimnetic depletion is real) and no same-depth Winkler sample exists to check them. So they are
     DIAGNOSTIC (sat_offset_unconfirmed), not excluded. See dt_wasp_041.

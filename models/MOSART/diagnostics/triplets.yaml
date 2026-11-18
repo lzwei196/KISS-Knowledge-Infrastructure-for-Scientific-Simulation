@@ -244,7 +244,7 @@
     build_mosart_grid.py --dem -> convert_grid_parameters.py --validate-only. Runoff: any
     LSM result (VIC, CLM, mHM, Livneh) through convert_runoff_forcing.py.
     frac_to_basin_shp.py goes the OTHER way (MOSART domain -> VIC basin shapefile) and stays.
-  seen_at: "2026-07-11, Tangnaihai"
+  seen_at: "2026-10-03, Tangnaihai"
 
 - id: T026
   symptom: "build_grid prints 'WARNING: no inactive neighbour to host a sink; score basin discharge at the cell UPSTREAM' and the scored discharge is all 0 (or: 'NO SINK: outlet ... has no inactive neighbour')"

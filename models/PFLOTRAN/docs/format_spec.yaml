@@ -834,15 +834,15 @@ known_issues:
     \ in separate subprocesses if both are needed independently.\n; # Top of any script using both:\n\
     import netCDF4   # must come before h5py\nimport h5py\nimport numpy as np\n"
 - id: dt_026
-  symptom: '1D vadose column simulated SWC is 30–60% above observed (PBIAS > +30%)
+  symptom: '1D vadose column simulated SWC is clearly above observed (wet bias of tens of percent)
 
-    at subtropical monsoon forest sites regardless of root-zone depth choice.
+    at subtropical monsoon forest sites.
 
-    Changing root-zone depth from 0.5m to 2.0m barely changes the bias —
+    Within the tested root-zone depths (0.5 m to 2.0 m) the depth choice barely
 
-    no combination of root-zone depth eliminates the bias.
+    changed the bias.
 
-    Site characteristics: P mean 2–4 mm/d, ET 1–2 mm/d, wet-season P ≈ 5–10 mm/d,
+    Typical site characteristics: P mean 2–4 mm/d, ET 1–2 mm/d, wet-season P ≈ 5–10 mm/d,
 
     regular heavy convective rain events.
 
@@ -863,19 +863,19 @@ known_issues:
 
     '
   remedy: "Options (in order of preference):\n1. SITE SELECTION: avoid subtropical monsoon forest sites\
-    \ (P>2 mm/d,\n   heavy convective regime) for 1D Richards validation.\n   PREFER: alpine meadow (CN-HaM\
-    \ type), semi-arid, or temperate\n   sites where P >> ET rarely exceeds K_sat.\n2. RUNOFF FRACTION:\
-    \ scale precipitation input by (1 - runoff_fraction):\n     infiltration_m_s = P_mm / (1000*86400)\
-    \ * (1 - f_ro)\n     where f_ro ≈ 0.20–0.35 for subtropical forest (Hewlett & Hibbert)\n   This is\
-    \ a lumped approximation, not physics.\n3. DOCUMENT AND EXCLUDE: accept the site as unsuitable for\
-    \ 1D\n   Richards validation and note the structural limitation explicitly.\n4. FOR RELATIVE SIGNALS\
-    \ ONLY: if only seasonal trends matter (not\n   absolute values), divide out the mean bias and report\
-    \ correlation\n   and RMSE only.\n; # Quick site suitability check before running\nimport numpy as\
-    \ np\np_mean = np.mean(p_vals)\np_max_monthly = max(np.mean([p for p,d in zip(p_vals,dates) if d.month==m])\n\
-    \                    for m in range(1,13))\net_mean = np.mean(et_vals)\nif p_max_monthly > 3.0 * et_mean\
-    \ and p_mean > 2.0:\n    print(\"WARNING: Subtropical monsoon regime detected.\")\n    print(\"1D\
-    \ Richards will show +30-60% SWC wet bias (structural limit).\")\n    print(\"Prefer alpine meadow\
-    \ or semi-arid sites for this workflow.\")\n"
+    \ (P>2 mm/d,\n   heavy convective regime) for 1D Richards validation.\n   PREFER: alpine meadow, semi-arid,\
+    \ or temperate\n   sites where P >> ET rarely exceeds K_sat.\n2. RUNOFF FRACTION: scale precipitation\
+    \ input by (1 - runoff_fraction):\n     infiltration_m_s = P_mm / (1000*86400) * (1 - f_ro)\n    \
+    \ where f_ro ≈ 0.20–0.35 for subtropical forest (Hewlett & Hibbert)\n   This is a lumped approximation,\
+    \ not physics.\n3. DOCUMENT AND EXCLUDE: accept the site as unsuitable for 1D\n   Richards validation\
+    \ and note the structural limitation explicitly.\n4. FOR RELATIVE SIGNALS ONLY: if only seasonal trends\
+    \ matter (not\n   absolute values), divide out the mean bias and report correlation\n   and RMSE only.\n\
+    ; # Quick site suitability check before running\nimport numpy as np\np_mean = np.mean(p_vals)\np_max_monthly\
+    \ = max(np.mean([p for p,d in zip(p_vals,dates) if d.month==m])\n                    for m in range(1,13))\n\
+    et_mean = np.mean(et_vals)\nif p_max_monthly > 3.0 * et_mean and p_mean > 2.0:\n    print(\"WARNING:\
+    \ Subtropical monsoon regime detected.\")\n    print(\"1D Richards may show a large SWC wet bias here\
+    \ (structural limit); check for it.\")\n    print(\"Prefer alpine meadow or semi-arid sites for this\
+    \ workflow.\")\n"
 - id: dt_027
   symptom: '1D vadose column validated against a WINTER / cold-season soil-moisture
 

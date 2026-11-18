@@ -1016,7 +1016,7 @@
     Prefer sites where this ratio < 2.0 (e.g., alpine, temperate, semi-arid).
 
     '
-  seen_at: "2026-04-30, CN-Qia (Qianyanzhou, Jiangxi); 2026-04-30, CN-Din (Dinghushan); 2026-04-30, CN-HaM"
+  seen_at: "2026-04-30, CN-Qia (Qianyanzhou, Jiangxi); 2026-04-30, CN-Din (Dinghushan)"
 - id: dt_027
   failure_domain: silent_error
   stage: s3_forcing_boundary

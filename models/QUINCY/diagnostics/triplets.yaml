@@ -726,9 +726,8 @@
   stage: s3_model_execution
   failure_domain: initial_conditions
   symptom: GPP and LAI too low, still trending upward in the first simulated years; NEE biased.
-  diagnosis: The engine starts from bare ground. At FI-Hyy (default soil) GPP over 1996-2014
-    was 699 gC m-2 yr-1 after a 38-yr spin-up versus 934 after 500 yr (tower ~1100), and daily GPP NSE was clearly lower.
-    Soil C was still rising ~4 % per 100 yr at year 500.
+  diagnosis: The engine starts from bare ground. A short spin-up (decades) can leave GPP clearly lower than
+    a long one (centuries), and daily GPP NSE lower; soil C can still be rising after 500 yr.
   remedy: Use --spinup_years 500 (default) and check quincy_summary.json spinup_drift.EcoC_trend_pct_per_100yr;
     consider base_ctl flag_slow_sb_pool_spinup_accelerator for soil-C studies.
   detection: python -c "import json;print(json.load(open('parsed/quincy_summary.json'))['spinup_drift'])"

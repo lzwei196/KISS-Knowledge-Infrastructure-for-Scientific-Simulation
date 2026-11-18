@@ -539,7 +539,7 @@ known_issues:
     parse_output_lpjguess.py) is a Python light-use-efficiency SURROGATE calibrated per site; LPJ-GUESS
     has no LUE_max parameter. Its skill says nothing about the real engine.
   remedy: Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. The
-    untuned real engine scores clearly lower than the surrogate at the same site.
+    untuned real engine scores clearly lower than the surrogate at the same flux site.
   severity: silent
 - id: dt_lpjguess_034
   symptom: Monthly NEE has the right timing (high r) but far too small a sink (e.g. DE-Tha obs -1.67,

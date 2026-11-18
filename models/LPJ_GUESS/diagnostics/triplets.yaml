@@ -432,7 +432,7 @@
   failure_domain: validation
   symptom: "A KI result shows GPP NSE ~0.90 for LPJ-GUESS from run_lpjguess.py with LUE_max/T_opt/VPD parameters."
   diagnosis: "run_lpjguess.py (with convert_forcing_to_lpjguess.py, convert_parameters_to_lpjguess.py, parse_output_lpjguess.py) is a Python light-use-efficiency SURROGATE calibrated per site; LPJ-GUESS has no LUE_max parameter. Its skill says nothing about the real engine."
-  remedy: "Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. The untuned real engine scores clearly lower than the surrogate at the same site."
+  remedy: "Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. The untuned real engine scores clearly lower than the surrogate at the same flux site."
   detection: "check that the run JSON has 'binary': '<engine>/build/guess'"
   seen_at: "2026-10-07, DE-Tha (Tharandt)"
 - id: dt_lpjguess_034

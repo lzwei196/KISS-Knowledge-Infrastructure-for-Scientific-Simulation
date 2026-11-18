@@ -770,13 +770,13 @@ known_issues:
     3x the rain (24x at daily records).
   diagnosis: 'convert_forcing.py before 2026-10-19 wrote JDfrom0 with +366 (dt_021), wrote the Iprec depth
     under HeaderIPrec (dt_004) and did not re-stamp sources to interval end (dt_026); Which results are
-    hit depends on the record step and on the script that wrote the meteo file. 3-hourly CMFD results:
-    1 day early and rain 3x. Hourly results (e.g. hourly-forcing runs scored against MOD11A2, or NASA
-    POWER hourly): 1 day early, rain amount right, hourly stamps start-labelled. Daily results written
-    by the old auto_dissect validate scripts: daily records about 1.4 days early, rain amount right. The
-    shipped Matsch_B2 self-test: shipped meteo, itself one day off. Any --dt 86400 KI run between 2026-07-21
-    and 2026-10-19: 24x rain and 2 days early. Which stored runs are hit is a fact of the run database
-    (test_runs), not of this KI.; [''meteodata'', ''water.balance'']'
+    hit depends on the record step and on the script that wrote the meteo file. 3-hourly records (e.g.
+    CMFD): 1 day early and rain 3x. Hourly records (e.g. NASA POWER hourly): 1 day early, rain amount
+    right, hourly stamps start-labelled. Daily results written by the old auto_dissect validate scripts:
+    daily records about 1.4 days early, rain amount right. The shipped Matsch_B2 self-test: shipped meteo,
+    itself one day off. Any --dt 86400 KI run between 2026-07-21 and 2026-10-19: 24x rain and 2 days early.
+    Which stored runs are hit is a fact of the run database (test_runs), not of this KI.; [''meteodata'',
+    ''water.balance'']'
   remedy: 'Re-make the meteo file with the fixed convert_forcing.py and re-run before quoting such a result;
     convert_forcing.py; [''Check an old meteo file: 01/11/2017 00:00 = 736999.0 means +366 (old)'', ''Treat
     the old score as made with wrong forcing; it is not a check of the model'']; run_and_score.py check_meteo

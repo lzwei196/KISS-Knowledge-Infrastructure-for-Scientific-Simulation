@@ -840,8 +840,8 @@
       the start of the first time step are included''), while :ObservationData input has been period-STARTING
       since v2.7. So the row stamped date d holds the flow of calendar day d-1, and row 0 is only the
       initial condition. Joining a calendar-dated gauge series on Raven''s raw date label pairs sim(day
-      d) with obs(day d-1). Check at Tangnaihai: raw gauge 2011-12-31=277 appears in the Hydrographs
-      row stamped 2012-01-01.'
+      d-1) with obs(day d). Check: the raw gauge value for day d-1 appears in the Hydrographs row
+      stamped day d.'
     affected_components:
     - parse_raven_output.py
     - any run script with its own read_hydrograph helper
@@ -849,8 +849,7 @@
     action: 'Use parse_raven_output.load_discharge_series() (or parse_hydrographs(date_convention=''period_ending'')),
       which shifts the stamp back one timestep and drops the initial-condition row. Proof of correctness:
       after the shift, Raven''s own ''(observed)'' column equals the raw gauge file on identical calendar
-      dates (3286 days, max abs diff 0.0). In one basin the fix moved held-out NSE only a little
-      and made the external number reproduce Raven''s internal pairing. NEVER hand-roll a Hydrographs
+      dates. The fix makes the external number reproduce Raven''s internal pairing. NEVER hand-roll a Hydrographs
       reader in a run script.'
   seen_at: "date not recorded, Tangnaihai (UBC emulation)"
 - id: dt_rav_035
@@ -858,13 +857,13 @@
   failure_domain: water_balance
   stage: s7
   symptom:
-    description: validate_water_balance reports a huge closure FAIL (e.g. residual 76.7% of P, dS numerically
+    description: validate_water_balance reports a huge closure FAIL (e.g. a residual of most of P, dS numerically
       equal to cumulative ET) on a run whose native 'MB Error [mm]' column closes to machine zero
     error_pattern: residual_pct|FAIL
     detection_method: value_comparison
   diagnosis:
     root_cause: 'WatershedStorage.csv ''Total [mm]'' is not physical storage: it also contains the ''Cum.
-      Losses to Atmosphere'' ACCUMULATOR (6744.8 of 6828.6 mm after 12 alpine years at Tangnaihai). Taking
+      Losses to Atmosphere'' ACCUMULATOR (it builds up over time and can become most of Total). Taking
       dS = delta(Total) therefore double-counts ET and produces a bogus residual. The checker fault is
       post-processing, not a model or unit error.'
     affected_components:
@@ -873,24 +872,24 @@
   remedy:
     action: 'Use parse_raven_output.compute_water_balance(): P/ET/Q from Cum. Inputs / Cum. Losses to
       Atmosphere / Cum. Outflow, and dS from the PHYSICAL stores only (exclude every ''Cum.*'', ''Total'',
-      ''MB Error'' and the period-ending rainfall/snowfall rate columns). At Tangnaihai this turned FAIL/76.7%
-      into PASS/0.0% (P 8877.1, ET 6744.8, Q 2213.5, dS -81.2 mm) and it cross-checks against Raven''s
-      own MB Error (-1.8e-12 mm). Always report raven_mb_error_mm alongside: if THAT is large the fault
+      ''MB Error'' and the period-ending rainfall/snowfall rate columns). Then compare the closure with
+      Raven''s own MB Error column. Always report raven_mb_error_mm alongside: if THAT is large the fault
       really is in the model/config.'
+  seen_at: "date not recorded, Tangnaihai (12-year alpine run)"
 - id: dt_rav_036
   severity: major
   failure_domain: experiment_design
   stage: s8
   symptom:
-    description: Multi-emulation study reports 'best of N emulations' held-out NSE, but the winner was
-      chosen using that same held-out window (or Raven's full-obs-period Diagnostics.csv, which spans
+    description: Multi-emulation study reports 'best of N emulations' validation NSE, but the winner was
+      chosen using that same validation window (or Raven's full-obs-period Diagnostics.csv, which spans
       it)
     error_pattern: '[NONE]'
     detection_method: value_comparison
   diagnosis:
     root_cause: Model-structure choice is a tuning decision. Raven's Diagnostics.csv NASH_SUTCLIFFE is
       computed over the entire :ObservationData record, so ranking on it — or on the validation-window
-      score — leaks the held-out period into selection and makes the reported number optimistically biased
+      score — leaks the validation period into selection and makes the reported number optimistically biased
       rather than a clean out-of-sample estimate.
     affected_components:
     - run_ensemble_comparison.py
@@ -898,7 +897,7 @@
   remedy:
     action: Rank on the CALIBRATION-window score (parse_raven_output.select_best_member(members, cal_key='cal');
       run_ensemble_comparison now sets stats['rank_basis']='calibration_window_nse' when members carry
-      cal scores) and report the held-out score OF THE CAL-SELECTED MEMBER; state
+      cal scores) and report the validation score OF THE CAL-SELECTED MEMBER; state
       the selection rule in the record either way.
   seen_at: "date not recorded, Tangnaihai"
 - id: dt_rav_037
@@ -1043,12 +1042,11 @@
     - calibrate_raven_dds.py
   remedy:
     action: 'Each template''s own melt controls were added to CALIBRATION_PARAMS. Widening the search
-      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one snow-fed basin
-      with 16 free parameters, 250 iterations gave a lower validation NSE and a large volume bias (DDS
-      buys hydrograph shape with volume bias) while 1000 iterations gave a clearly higher validation NSE
-      and PBIAS near zero. If a wider parameter set generalises WORSE, raise --n_iterations before removing
+      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007). In practice, too few iterations for
+      the number of free parameters can buy hydrograph shape with volume bias: after widening, raise the
+      budget and compare validation NSE and volume bias. If a wider parameter set generalises WORSE, raise --n_iterations before removing
       parameters.'
-  seen_at: "date not recorded, Tangnaihai"
+  seen_at: "date not recorded, Tangnaihai (UBC, 16 free parameters, 250 vs 1000 DDS iterations)"
 - id: dt_rav_044
   severity: fatal
   failure_domain: ki_integrity

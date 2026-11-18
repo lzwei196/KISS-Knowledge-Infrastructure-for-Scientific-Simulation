@@ -43,7 +43,7 @@
   # ========================================================================
   # ERRORS FOUND IN A STEP 3 VALIDATION (where and when: each entry's seen_at)
   # ========================================================================
-  # === Found in later tests (err_003, err_004, err_007, err_008, err_009; where: each entry's seen_at) ===
+  # === Found in tests (err_003, err_004, err_007, err_008, err_009; where: each entry's seen_at) ===
 
 - id: dt_rav_001
   severity: silent
@@ -1043,9 +1043,9 @@
     - calibrate_raven_dds.py
   remedy:
     action: 'Each template''s own melt controls were added to CALIBRATION_PARAMS. Widening the search
-      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one cold basin
-      with 16 free parameters, 250 iterations gave a lower held-out NSE and a large volume bias (DDS
-      buys hydrograph shape with volume bias) while 1000 iterations gave a clearly higher held-out NSE
+      space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one snow-fed basin
+      with 16 free parameters, 250 iterations gave a lower validation NSE and a large volume bias (DDS
+      buys hydrograph shape with volume bias) while 1000 iterations gave a clearly higher validation NSE
       and PBIAS near zero. If a wider parameter set generalises WORSE, raise --n_iterations before removing
       parameters.'
   seen_at: "date not recorded, Tangnaihai"

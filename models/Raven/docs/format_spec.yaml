@@ -846,10 +846,11 @@ known_issues:
     Those were absent from CALIBRATION_PARAMS, so the DOMINANT process in a cold basin was left entirely
     at its default while DDS tuned soil parameters around it.; ['calibrate_raven_dds.py']
   remedy: 'Each template''s own melt controls were added to CALIBRATION_PARAMS. Widening the search space
-    REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one cold basin
-    with 16 free parameters, 250 iterations gave a lower held-out NSE and a large volume bias (DDS buys
-    hydrograph shape with volume bias) while 1000 iterations gave a clearly higher held-out NSE and PBIAS
-    near zero. If a wider parameter set generalises WORSE, raise --n_iterations before removing parameters.'
+    REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc in one snow-fed
+    basin with 16 free parameters, 250 iterations gave a lower validation NSE and a large volume bias
+    (DDS buys hydrograph shape with volume bias) while 1000 iterations gave a clearly higher validation
+    NSE and PBIAS near zero. If a wider parameter set generalises WORSE, raise --n_iterations before removing
+    parameters.'
   severity: major
 - id: dt_rav_044
   symptom: 'diagnostics/triplets.yaml documents a defect as fixed, and a prior run''s result.json reports

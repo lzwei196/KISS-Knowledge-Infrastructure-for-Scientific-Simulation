@@ -325,7 +325,7 @@
       in the daily sum.
 
       '
-    explanation: 'This is the most common first-run error here. The model ran without any error,
+    explanation: 'This was the main error in the first validation run. The model ran without any error,
       but produced zero discharge because all precipitation was zero after rounding. Only discovered by
       checking Pobs.txt values.
 
@@ -662,7 +662,7 @@
   failure_domain: silent_error
   severity: warning
   symptom:
-    description: 'HYPE runs successfully but discharge is clearly too high (large positive PBIAS) despite
+    description: 'HYPE runs successfully but discharge is noticeably too high (positive PBIAS) despite
       correct forcing units, in a very large basin set up as one lumped subbasin.
 
       '

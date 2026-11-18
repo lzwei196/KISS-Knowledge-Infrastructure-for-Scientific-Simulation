@@ -479,8 +479,8 @@ known_issues:
     multiplying by 10800 (seconds per 3hr step), the values are so small they round to zero in the daily
     sum.
 
-    ; This is the most common first-run error here. The model ran without any error, but produced zero
-    discharge because all precipitation was zero after rounding. Only discovered by checking Pobs.txt
+    ; This was the main error in the first validation run. The model ran without any error, but produced
+    zero discharge because all precipitation was zero after rounding. Only discovered by checking Pobs.txt
     values.
 
     ; [''Pobs.txt'', ''convert_forcing_to_hype.py'']'
@@ -626,7 +626,7 @@ known_issues:
     convert_forcing_to_hype.py uses .sum() explicitly for precipitation'
   severity: silent
 - id: dt_v01
-  symptom: 'HYPE runs successfully but discharge is clearly too high (large positive PBIAS) despite correct
+  symptom: 'HYPE runs successfully but discharge is noticeably too high (positive PBIAS) despite correct
     forcing units, in a very large basin set up as one lumped subbasin.
 
     '

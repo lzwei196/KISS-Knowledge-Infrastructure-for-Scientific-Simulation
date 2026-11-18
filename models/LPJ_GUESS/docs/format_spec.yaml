@@ -534,12 +534,14 @@ known_issues:
     before trusting any other result. Do not raise --tolerance to make it pass.
   severity: warning
 - id: dt_lpjguess_033
-  symptom: A KI result shows GPP NSE ~0.90 for LPJ-GUESS from run_lpjguess.py with LUE_max/T_opt/VPD parameters.
+  symptom: A KI result for LPJ-GUESS comes from run_lpjguess.py and uses LUE_max/T_opt/VPD parameters
+    (it may show a suspiciously high GPP NSE).
   diagnosis: run_lpjguess.py (with convert_forcing_to_lpjguess.py, convert_parameters_to_lpjguess.py,
     parse_output_lpjguess.py) is a Python light-use-efficiency SURROGATE calibrated per site; LPJ-GUESS
     has no LUE_max parameter. Its skill says nothing about the real engine.
-  remedy: Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. The
-    untuned real engine scores clearly lower than the surrogate at the same flux site.
+  remedy: Run the real engine with run_lpjguess_engine.py; label any surrogate output as SURROGATE. A
+    real-engine score lower than a surrogate's is not by itself a regression; compare real-engine runs
+    with each other.
   severity: silent
 - id: dt_lpjguess_034
   symptom: Monthly NEE has the right timing (high r) but far too small a sink (e.g. DE-Tha obs -1.67,

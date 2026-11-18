@@ -519,9 +519,8 @@ known_issues:
     \ threshold (FAM cells)\n  ISU=0.0        # initial interflow storage\n  ALPHA=2.99     # channel\
     \ Q = alpha * A^beta multiplier\n  BETA=0.93      # channel exponent (range 0.5-1.5)\n  ALPHA0=4.60\
     \    # overland alpha\n\nThen in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME\n\nChecked effect in\
-    \ two basins:\n  basin 1: LR sim_Q=0, KW sim_Q max=652 m³/s\n  basin 2: LR sim_Q=0, KW sim_Q max=2364\
-    \ m³/s\n  (both KW runs with a large negative volume bias)\n\nKW captures monsoon timing well (r >\
-    \ 0.5 with default params); volume bias\nrequires UNDER/LEAKI/ALPHA calibration. A Python surrogate\
-    \ used while this KI was built (not shipped with it)\nre-implements LR in Python\nand DOES produce\
-    \ non-zero Q because the surrogate computes Q correctly —\nthis is a binary-side bug, not an algorithm\
-    \ bug.\n"
+    \ two basins: LR gave sim_Q=0 in both; KW gave real discharge, but with a large negative volume bias.\n\
+    \nKW gets monsoon timing roughly right with default params; volume bias needs UNDER/LEAKI/ALPHA calibration.\
+    \ A Python surrogate used while this KI was built (not shipped with it) re-implements LR in Python\
+    \ and DOES produce non-zero Q because the surrogate computes Q correctly —\nthis is a binary-side\
+    \ bug, not an algorithm bug.\n"

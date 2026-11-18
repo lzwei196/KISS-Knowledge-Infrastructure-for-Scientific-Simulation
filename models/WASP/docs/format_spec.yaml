@@ -732,11 +732,11 @@ known_issues:
     without a parsable depth are dropped and counted).
   severity: silent
 - id: dt_wasp_037
-  symptom: 'Some GLNPO cruises show surface (<= 5 m) DO far below saturation (2012-04, 2013-04: whole-column
-    median 37-39 % of saturation in a mixed April column; 2012-08: 19 % in a stratified column). With
-    them the DO NSE is near zero; without them it is much higher (sensitivity only).'
+  symptom: Some survey cruises show surface (<= 5 m) DO far below saturation, in mixed spring columns
+    as well as in stratified summer columns. Including them can change the DO NSE a lot; report the score
+    with and without them (the second is sensitivity only).
   diagnosis: A sensor fault is likely for some of these cruises, but low DO alone does not prove it (summer
-    hypolimnetic depletion is real) and no same-depth Winkler sample exists to check them. So they are
+    hypolimnetic depletion is real). When no same-depth Winkler sample exists to check them, they are
     DIAGNOSTIC (sat_offset_unconfirmed), not excluded. See dt_wasp_041.
   remedy: 'Score with prepare_wqp_lake_obs.py + parse_wasp_engine_output.py: the headline is ALWAYS do_all
     (every station-day); do_sensor_qc (value_qc) leaves out only cruises with proven sensor faults and
